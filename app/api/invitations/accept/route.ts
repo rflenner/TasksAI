@@ -1,8 +1,10 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { companies, dimensionValues, tasks, users } from "../../../../db/schema";
+import { renderPendingTasksEmail, sendWithResend } from "../../../lib/email";
 import { validateInvitationProfile } from "../../../lib/invitations";
-import { requireSameOrigin } from "../../../lib/request";
+import { personalPendingTasks } from "../../../lib/pending-tasks";
+import { publicRequestOrigin, requireSameOrigin } from "../../../lib/request";
 import { sha256 } from "../../../lib/security";
 import { createSession, setSessionCookie } from "../../../lib/session";
 
@@ -22,5 +24,18 @@ export async function POST(request:Request){
   await tx.insert(dimensionValues).values({type:"person",value:name}).onConflictDoNothing();return{user:nowUser,company:companyRow};
  });
  const session=await createSession(result.user.id);await setSessionCookie(session.value,session.expiresAt);
- return Response.json({user:{id:result.user.id,email:result.user.email,name,companyName:result.company.name,emailVerifiedAt:result.user.emailVerifiedAt}});
+ // Best-effort welcome email if any existing tasks already name this person
+ // (as owner, coworker, or recipient) — matched by their now-confirmed name,
+ // same rule used everywhere else. Never blocks acceptance if it fails.
+ let tasksNotified=0;
+ try{
+  const{tasks:pending,total}=await personalPendingTasks({id:result.user.id,name,role:result.user.role});
+  if(pending.length){
+   const appUrl=publicRequestOrigin(request);
+   const message=renderPendingTasksEmail({firstName:name,appUrl,tasks:pending.slice(0,10),totalPending:total});
+   await sendWithResend({...message,to:result.user.email,idempotencyKey:`welcome-${result.user.id}`});
+   tasksNotified=total;
+  }
+ }catch(error){console.error(`Welcome-tasks email failed for user ${result.user.id}:`,error instanceof Error?error.message:error)}
+ return Response.json({user:{id:result.user.id,email:result.user.email,name,companyName:result.company.name,emailVerifiedAt:result.user.emailVerifiedAt},tasksNotified});
 }
