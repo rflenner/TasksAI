@@ -40,3 +40,29 @@ services:
         value: gpt-5-mini
       - key: RESEND_API_KEY
         sync: false
+  - type: cron
+    name: tasks-ai-daily-reminders
+    runtime: node
+    plan: starter
+    region: frankfurt
+    # 05:00 UTC = 07:00 Europe/Vienna during CEST (summer). Render cron
+    # schedules are fixed UTC and do not shift for daylight saving — once
+    # CET (winter, UTC+1) resumes this will fire at 06:00 local instead of
+    # 07:00. Adjust the hour by hand around the DST changeovers if the exact
+    # local time matters, or move to 06:00 UTC for a winter-correct 07:00.
+    schedule: "0 5 * * *"
+    buildCommand: npm install --global pnpm@11.19.0 && pnpm install --frozen-lockfile
+    startCommand: node --import tsx scripts/send-reminders.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tasks-ai-db-frankfurt
+          property: connectionString
+      - key: APP_URL
+        value: https://tasks.flenner.at
+      - key: TASK_AI_FROM_EMAIL
+        value: Task AI <notifications@tasks.flenner.at>
+      - key: RESEND_API_KEY
+        sync: false

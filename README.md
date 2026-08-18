@@ -37,9 +37,18 @@ pnpm build
 4. On the first deployment only, change `BOOTSTRAP_SITE_ADMIN` to `true` and deploy. Startup applies migrations and idempotently creates `Rizan Flenner <rizan@flenner.at>` as Site Admin.
 5. Immediately set `BOOTSTRAP_SITE_ADMIN` back to `false` and redeploy. The existing admin remains intact.
 6. Add the Render service’s public URL as the custom domain/origin and configure DNS for `tasks.flenner.at` as directed by Render.
-7. Verify `/api/health`, request a magic link for the Site Admin, and send a test invitation.
+7. Verify `/api/health`, request a sign-in code for the Site Admin, and send a test invitation.
+8. The Blueprint also creates a **Cron Job** (`tasks-ai-daily-reminders`) running `scripts/send-reminders.ts` once a day. It needs `RESEND_API_KEY` entered in its own Environment tab too — cron jobs don't share env vars with the web service, even in the same Blueprint.
 
 Database initialization runs before every `next start`; applied migration filenames are recorded in `app_migrations`, so startup is safe and idempotent. A migration failure stops the service instead of starting against an unknown schema.
+
+## Daily reminders
+
+A Render Cron Job (`tasks-ai-daily-reminders` in `render.yaml`) runs `scripts/send-reminders.ts` every morning. For each active user it computes their **personal** open tasks — where they're the owner, a coworker, or a recipient, same rule for every role including admins — filters to items due this week or earlier (never a future week), and emails them via `renderPendingTasksEmail` if there's at least one. Users with nothing due get nothing sent; there's no daily noise for an empty inbox.
+
+The schedule (`0 5 * * *`, i.e. 05:00 UTC) targets 07:00 in Europe/Vienna during CEST (summer). Render cron schedules are fixed UTC and don't shift for daylight saving, so once CET (winter, UTC+1) resumes this drifts to firing at 06:00 local. Adjust the hour by hand around the DST changeovers, or accept the hour of drift twice a year.
+
+Run it manually with `pnpm reminders` (needs `DATABASE_URL`, `APP_URL`, and optionally `RESEND_API_KEY` set — without a Resend key it logs what would have sent instead of erroring).
 
 ## Environment variables
 
