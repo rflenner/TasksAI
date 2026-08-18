@@ -1,4 +1,4 @@
-function publicRequestOrigin(request: Request) {
+export function publicRequestOrigin(request: Request) {
   const firstHeaderValue = (name: string) => request.headers.get(name)?.split(",", 1)[0]?.trim();
   const internalUrl = new URL(request.url);
   const host = firstHeaderValue("x-forwarded-host") || firstHeaderValue("host");
@@ -6,6 +6,10 @@ function publicRequestOrigin(request: Request) {
 
   if (!host || !/^(https?|wss?)$/.test(protocol)) return internalUrl.origin;
   try { return new URL(`${protocol}://${host}`).origin; } catch { return internalUrl.origin; }
+}
+
+export function publicRequestUrl(request: Request, path: string) {
+  return new URL(path, publicRequestOrigin(request));
 }
 
 export function requireSameOrigin(request: Request) {

@@ -1,9 +1,10 @@
 import { renderTaskDigest } from "../../lib/email";
 import { currentActor } from "../../lib/session";
+import { publicRequestOrigin } from "../../lib/request";
 
 export async function GET(request: Request) {
   const actor=await currentActor();if(actor?.role!=="site_admin")return Response.json({error:"Site Admin access required"},{status:403});
-  const appUrl = new URL(request.url).origin;
+  const appUrl = publicRequestOrigin(request);
   const email = renderTaskDigest({
     firstName: "Rizan", appUrl, open: 5, overdue: 1, completed: 3,
     pending: [
