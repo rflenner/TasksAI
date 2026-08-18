@@ -1,0 +1,41 @@
+databases:
+  - name: tasks-ai-db
+    plan: basic-256mb
+    databaseName: tasks_ai
+    user: tasks_ai
+services:
+  - type: web
+    name: tasks-ai
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build
+    startCommand: pnpm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tasks-ai-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TASK_AI_FROM_EMAIL
+        value: Task AI <notifications@tasks.flenner.at>
+      - key: SITE_ADMIN_EMAIL
+        value: rizan@flenner.at
+      - key: SITE_ADMIN_FIRST_NAME
+        value: Rizan
+      - key: SITE_ADMIN_LAST_NAME
+        value: Flenner
+      - key: SITE_ADMIN_COMPANY
+        sync: false
+      - key: BOOTSTRAP_SITE_ADMIN
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5-mini
+      - key: RESEND_API_KEY
+        sync: false
