@@ -9,8 +9,8 @@ services:
     runtime: node
     plan: starter
     region: frankfurt
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build
-    startCommand: pnpm start
+    buildCommand: npm install --global pnpm@11.19.0 && pnpm install --frozen-lockfile && pnpm run build
+    startCommand: node scripts/start.mjs
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
