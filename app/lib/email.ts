@@ -113,7 +113,7 @@ export function renderLoginEmail(input: { name: string; code: string }) {
   return { subject: "Your Task AI sign-in code", html, text: `Your Task AI sign-in code (expires in 15 minutes): ${input.code}` };
 }
 
-export async function sendWithResend(message: { to: string; subject: string; html: string; text: string; idempotencyKey?: string }) {
+export async function sendWithResend(message: { to: string; cc?: string; subject: string; html: string; text: string; idempotencyKey?: string }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.TASK_AI_FROM_EMAIL || "Task AI <notifications@tasks.flenner.at>";
   if (!apiKey) return { sent: false, reason: "Resend is not configured; the secure link is ready for local testing." };
@@ -125,7 +125,7 @@ export async function sendWithResend(message: { to: string; subject: string; htm
       "User-Agent": "TaskAI/0.1",
       ...(message.idempotencyKey ? { "Idempotency-Key": message.idempotencyKey } : {}),
     },
-    body: JSON.stringify({ from, to: [message.to], subject: message.subject, html: message.html, text: message.text, tags: [{ name: "app", value: "task-ai" }] }),
+    body: JSON.stringify({ from, to: [message.to], ...(message.cc ? { cc: [message.cc] } : {}), subject: message.subject, html: message.html, text: message.text, tags: [{ name: "app", value: "task-ai" }] }),
   });
   const result = await response.json() as Record<string, unknown>;
   if (!response.ok) throw new Error(String(result.message || "Resend could not send the email"));
