@@ -1,18 +1,18 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-export const tasks = sqliteTable("tasks", {
-  id: integer("id").primaryKey({ autoIncrement: true }), subject: text("subject").notNull(), description: text("description").notNull().default(""), owner: text("owner").notNull(),
-  collaborators: text("collaborators").notNull().default("[]"), recipients: text("recipients").notNull().default("[]"), due: text("due").notNull(), source: text("source").notNull(),
-  topic: text("topic").notNull(), project: text("project").notNull(), recurringMeeting: text("recurring_meeting").notNull(), status: text("status").notNull().default("Open"),
-  created: text("created").notNull(), updates: text("updates").notNull().default("[]"),
-});
-export const dimensionValues = sqliteTable("dimension_values", {
-  id: integer("id").primaryKey({ autoIncrement: true }), type: text("type").notNull(), value: text("value").notNull(),
-}, table => ({ typeValueUnique: uniqueIndex("dimension_values_type_value_unique").on(table.type, table.value) }));
-export const companies = sqliteTable("companies", {
-  id: integer("id").primaryKey({ autoIncrement: true }), name: text("name").notNull(), normalizedName: text("normalized_name").notNull(), createdAt: text("created_at").notNull(),
-}, table => ({ normalizedNameUnique: uniqueIndex("companies_normalized_name_unique").on(table.normalizedName) }));
-export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }), email: text("email").notNull(), name: text("name").notNull(), role: text("role").notNull(), status: text("status").notNull().default("pending"),
-  firstName: text("first_name"), lastName: text("last_name"), companyId: integer("company_id").references(() => companies.id), emailVerifiedAt: text("email_verified_at"), phone: text("phone"), inviteChannel: text("invite_channel").notNull().default("email"),
-  canInvite: integer("can_invite", { mode: "boolean" }).notNull().default(false), projects: text("projects").notNull().default("[]"), meetings: text("meetings").notNull().default("[]"), topics: text("topics").notNull().default("[]"), inviteTokenHash: text("invite_token_hash"), invitedAt: text("invited_at"), inviteExpiresAt: text("invite_expires_at"), acceptedAt: text("accepted_at"),
-}, table => ({ emailUnique: uniqueIndex("users_email_unique").on(table.email) }));
+import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+
+export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
+export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
+export const companies = pgTable("companies", { id: serial("id").primaryKey(), name: text("name").notNull(), normalizedName: text("normalized_name").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [uniqueIndex("companies_normalized_name_unique").on(table.normalizedName)]);
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(), email: text("email").notNull(), name: text("name").notNull(), firstName: text("first_name"), lastName: text("last_name"), companyId: integer("company_id").references(() => companies.id),
+  role: roleEnum("role").notNull(), status: userStatusEnum("status").notNull().default("pending"), emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }), phone: text("phone"), inviteChannel: text("invite_channel").notNull().default("email"),
+  canInvite: boolean("can_invite").notNull().default(false), projects: jsonb("projects").$type<string[]>().notNull().default([]), meetings: jsonb("meetings").$type<string[]>().notNull().default([]), topics: jsonb("topics").$type<string[]>().notNull().default([]),
+  inviteTokenHash: text("invite_token_hash"), invitedAt: timestamp("invited_at", { withTimezone: true }), inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true }), acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+}, table => [uniqueIndex("users_email_unique").on(table.email)]);
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(), subject: text("subject").notNull(), description: text("description").notNull().default(""), owner: text("owner").notNull(), collaborators: jsonb("collaborators").$type<string[]>().notNull().default([]), recipients: jsonb("recipients").$type<string[]>().notNull().default([]),
+  due: text("due").notNull(), source: text("source").notNull(), topic: text("topic").notNull(), project: text("project").notNull(), recurringMeeting: text("recurring_meeting").notNull(), status: text("status").notNull().default("Open"), created: text("created").notNull(), updates: jsonb("updates").$type<Array<{ text: string; at: string }>>().notNull().default([]),
+}, table => [index("tasks_owner_idx").on(table.owner), index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic)]);
+export const dimensionValues = pgTable("dimension_values", { id: serial("id").primaryKey(), type: text("type").notNull(), value: text("value").notNull() }, table => [uniqueIndex("dimension_values_type_value_unique").on(table.type, table.value)]);
+export const sessions = pgTable("sessions", { idHash: text("id_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);
+export const loginTokens = pgTable("login_tokens", { tokenHash: text("token_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), usedAt: timestamp("used_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("login_tokens_user_idx").on(table.userId)]);

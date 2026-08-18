@@ -20,7 +20,7 @@ type DigestInput = {
   accomplished: DigestTask[];
 };
 
-const esc = (value: unknown) => String(value ?? "").replace(/[&<>\"']/g, character => ({
+const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
 }[character] || character));
 
@@ -93,10 +93,16 @@ export function renderInvitationEmail(input: { name?: string; inviteUrl: string;
   return { subject: "You’re invited to Task AI", html, text: `You have been invited to Task AI. Confirm your profile and view your tasks: ${input.inviteUrl}` };
 }
 
+export function renderLoginEmail(input: { name: string; loginUrl: string }) {
+  const firstName = input.name.split(" ")[0] || "there";
+  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">SECURE SIGN-IN</div><h1 style="margin:10px 0;color:#102f59;font-size:27px">Welcome back, ${esc(firstName)}.</h1><p style="color:#687384;font-size:15px;line-height:1.6">Use this one-time link to sign in to Task AI.</p><a href="${esc(input.loginUrl)}" style="display:inline-block;margin-top:15px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Sign in to Task AI</a><p style="margin-top:28px;color:#9299a3;font-size:11px">This link expires in 15 minutes and can only be used once. If you did not request it, ignore this email.</p></td></tr></table></td></tr></table></body></html>`;
+  return { subject: "Your secure Task AI sign-in link", html, text: `Sign in to Task AI (link expires in 15 minutes): ${input.loginUrl}` };
+}
+
 export async function sendWithResend(message: { to: string; subject: string; html: string; text: string; idempotencyKey?: string }) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.TASK_AI_FROM_EMAIL;
-  if (!apiKey || !from) return { sent: false, reason: "Resend is not configured; invitation link is ready for local testing." };
+  const from = process.env.TASK_AI_FROM_EMAIL || "Task AI <notifications@tasks.flenner.at>";
+  if (!apiKey) return { sent: false, reason: "Resend is not configured; the secure link is ready for local testing." };
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
