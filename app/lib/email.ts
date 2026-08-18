@@ -93,16 +93,11 @@ export function renderInvitationEmail(input: { name?: string; inviteUrl: string;
   return { subject: "You’re invited to Task AI", html, text: `You have been invited to Task AI. Confirm your profile and view your tasks: ${input.inviteUrl}` };
 }
 
-export type PendingTaskLine = { subject: string; project?: string; meeting?: string; due?: string; overdue?: boolean; role?: "Owner" | "Coworker" | "Recipient" };
+export type PendingTaskLine = { subject: string; description?: string; project?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress"; role?: "Owner" | "Coworker" | "Recipient"; url?: string };
 export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; tasks: PendingTaskLine[]; totalPending: number }) {
   const firstName = input.firstName.split(" ")[0] || "there";
   const plural = input.totalPending === 1 ? "" : "s";
-  const rows = input.tasks.map(task => {
-    const tags = [task.project, task.meeting].filter(Boolean).map(esc).join(" · ");
-    const dueText = task.due ? `${task.overdue ? "Overdue" : "Due"} · ${esc(task.due)}` : "";
-    const meta = [tags, dueText, task.role ? `For ${esc(task.role)}` : ""].filter(Boolean).join(" &nbsp;·&nbsp; ");
-    return `<tr><td style="padding:14px 0;border-bottom:1px solid #eef1f5"><div style="font-size:15px;color:#173f76;font-weight:700">${esc(task.subject)}</div><div style="margin-top:5px;font-size:12px;color:${task.overdue ? "#c87300" : "#8b929d"}">${meta}</div></td></tr>`;
-  }).join("");
+  const rows = input.tasks.map(task => taskCard({ ...task, url: task.url || input.appUrl })).join("");
   const more = input.totalPending > input.tasks.length ? `<p style="margin-top:14px;color:#9299a3;font-size:12px">+${input.totalPending - input.tasks.length} more pending in Task AI.</p>` : "";
   const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">PENDING TASKS</div><h1 style="margin:10px 0;color:#102f59;font-size:27px">Hi ${esc(firstName)}, you have ${input.totalPending} pending action item${plural}.</h1><table role="presentation" width="100%" style="margin-top:10px;border-collapse:collapse">${rows}</table>${more}<a href="${esc(input.appUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
   const text = `Hi ${firstName}, you have ${input.totalPending} pending action item${plural}:\n\n${input.tasks.map(task => `- ${task.subject}${task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n\n+${input.totalPending - input.tasks.length} more pending in Task AI.` : ""}\n\nOpen Task AI: ${input.appUrl}`;

@@ -19,10 +19,12 @@ export async function POST(request:Request){
   .filter(task=>task.status!=="Closed"&&canSeeTask(task,targetActor))
   .map(task=>({
    subject:task.subject,
+   description:task.description||undefined,
    project:task.project||undefined,
    meeting:task.recurringMeeting||undefined,
    due:task.due||undefined,
    overdue:Boolean(task.due)&&task.due<today,
+   status:(task.status==="In progress"?"In progress":"Open") as "Open"|"In progress",
    role:(task.owner===target.name?"Owner":task.collaborators.includes(target.name)?"Coworker":task.recipients.includes(target.name)?"Recipient":undefined) as "Owner"|"Coworker"|"Recipient"|undefined,
   }))
   .sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
