@@ -24,7 +24,7 @@ pnpm build
 
 - Invitations contain random single-use tokens; only SHA-256 hashes are stored.
 - Accepting an unexpired invitation verifies the invited email address and requires first name, last name, and company.
-- Returning users request a 15-minute, single-use email magic link.
+- Returning users request an 8-character one-time code (32-character alphabet, ambiguous characters excluded), sent by email and typed back into the sign-in form. It expires in 15 minutes and is single-use. Unlike a clickable magic link, this never puts a token in a URL — email scanners/prefetchers can't burn it, and it doesn't trigger Chrome's phishing heuristics the way a bare `?token=...` auto-redirect endpoint does.
 - Browser sessions use a random opaque identifier signed with HMAC-SHA256. Only its hash is stored in PostgreSQL; the cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - Mutating APIs reject cross-origin requests.
 - All API authorization is derived from the active session and database role. Client-provided email headers and unsigned identity cookies are ignored.
