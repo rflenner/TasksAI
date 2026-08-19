@@ -39,6 +39,7 @@ pnpm build
 6. Add the Render service’s public URL as the custom domain/origin and configure DNS for `tasks.flenner.at` as directed by Render.
 7. Verify `/api/health`, request a sign-in code for the Site Admin, and send a test invitation.
 8. The Blueprint also creates a **Cron Job** (`tasks-ai-daily-reminders`) running `scripts/send-reminders.ts` once a day. It needs `RESEND_API_KEY` entered in its own Environment tab too — cron jobs don't share env vars with the web service, even in the same Blueprint.
+9. In the Resend dashboard, add a **Webhook** pointed at `https://tasks.flenner.at/api/webhooks/resend`, subscribed to `email.delivered`, `email.bounced`, `email.complained`, and `email.delivery_delayed`. Copy its signing secret into `RESEND_WEBHOOK_SECRET` on the web service (`sync: false`, web service only — the cron job doesn't send invitations so it doesn't need this one). Without it the webhook endpoint just logs and no-ops; invitations still send, but bounce/complaint status won't show up in Users & access.
 
 Database initialization runs before every `next start`; applied migration filenames are recorded in `app_migrations`, so startup is safe and idempotent. A migration failure stops the service instead of starting against an unknown schema.
 
@@ -56,6 +57,10 @@ Each task's detail drawer has a collapsible **Task History** section below Statu
 - Every edit as a readable auto-generated line ("Sarah changed due date from Aug 17 to Aug 24", "Sarah added Maya Chen as coworker"), computed by diffing the task before/after each save.
 - **Last** viewed-by-person, not a full open log — one line per viewer, refreshing on each open. A full per-open log was considered and rejected: too noisy for a task someone checks repeatedly while working on it.
 - When the task was created and by whom, where known — `created_by` is only populated for tasks created after this feature shipped; older/seeded tasks show no attribution.
+
+## Invitation delivery status
+
+Resend accepting an email for sending only means it was handed off — not that it reached an inbox. `app/api/webhooks/resend/route.ts` listens for Resend's async delivery events (Svix-signed, verified against `RESEND_WEBHOOK_SECRET`) and records the outcome for the most recent invitation email against that user: `delivered`, `bounced`, `complained`, or `delayed`, plus Resend's reason text where it provides one. Users & access shows this as a badge next to a pending invitation ("⚠ Bounced", "⚠ Marked as spam", "⏳ Delivery delayed", "✓ Delivered"), so "did they actually get it" no longer requires asking the recipient or digging through Resend's dashboard. Sending a fresh invite (including **Resend invitation**) clears the badge until the new send reports back.
 
 Session `lastSeenAt` now actually updates (throttled to once a minute per session) — it existed in the schema before but nothing refreshed it. "Last active" per person shows on the Users & access page.
 

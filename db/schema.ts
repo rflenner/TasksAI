@@ -8,6 +8,12 @@ export const users = pgTable("users", {
   role: roleEnum("role").notNull(), status: userStatusEnum("status").notNull().default("pending"), emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }), phone: text("phone"), inviteChannel: text("invite_channel").notNull().default("email"),
   canInvite: boolean("can_invite").notNull().default(false), projects: jsonb("projects").$type<string[]>().notNull().default([]), meetings: jsonb("meetings").$type<string[]>().notNull().default([]), topics: jsonb("topics").$type<string[]>().notNull().default([]),
   inviteTokenHash: text("invite_token_hash"), invitedAt: timestamp("invited_at", { withTimezone: true }), inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true }), acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  // Resend delivery tracking for the most recent invitation email: lastEmailId
+  // correlates an inbound Resend webhook event back to this row; emailStatus
+  // is null until Resend reports something noteworthy (delivered/bounced/
+  // complained/delayed) — see app/api/webhooks/resend/route.ts. Reset to
+  // null on every new send so a stale bounce doesn't outlive a successful resend.
+  lastEmailId: text("last_email_id"), emailStatus: text("email_status"), emailStatusDetail: text("email_status_detail"), emailStatusAt: timestamp("email_status_at", { withTimezone: true }),
 }, table => [uniqueIndex("users_email_unique").on(table.email)]);
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(), subject: text("subject").notNull(), description: text("description").notNull().default(""), owner: text("owner").notNull(), collaborators: jsonb("collaborators").$type<string[]>().notNull().default([]), recipients: jsonb("recipients").$type<string[]>().notNull().default([]),
