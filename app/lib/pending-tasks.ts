@@ -19,6 +19,7 @@ export async function personalPendingTasks(target: TargetUser): Promise<{ tasks:
       subject: task.subject,
       description: task.description || undefined,
       project: task.project || undefined,
+      topic: task.topic || undefined,
       meeting: task.recurringMeeting || undefined,
       due: task.due || undefined,
       overdue: Boolean(task.due) && task.due < today,
