@@ -40,6 +40,8 @@ services:
         value: gpt-5-mini
       - key: RESEND_API_KEY
         sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
   - type: cron
     name: tasks-ai-daily-reminders
     runtime: node
