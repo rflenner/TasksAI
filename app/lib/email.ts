@@ -2,6 +2,7 @@ export type DigestTask = {
   subject: string;
   description?: string;
   project?: string;
+  topic?: string;
   meeting?: string;
   due?: string;
   role?: "Owner" | "Coworker" | "Recipient";
@@ -24,31 +25,48 @@ const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, characte
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
 }[character] || character));
 
+// Secondary metadata, not a call-out — kept visually quiet next to the due/
+// role/status row above it.
 function tag(label: string, value?: string) {
   if (!value) return "";
-  const icon = label === "Project" ? "▰" : label === "Meeting" ? "↻" : "";
-  return `<span style="display:inline-block;margin:0 8px 5px 0;padding:4px 9px;border:1px solid #d9e4f2;border-radius:999px;background:#f1f6fc;color:#49698e;font-size:11px;line-height:1.1">${icon ? `${icon}&nbsp;&nbsp;` : ""}${esc(value)}</span>`;
+  const icon = label === "Project" ? "▰" : label === "Meeting" ? "↻" : label === "Topic" ? "#" : "";
+  return `<span style="display:inline-block;margin:0 5px 5px 0;padding:2px 6px;border:1px solid #e6ebf1;border-radius:999px;background:#f6f8fa;color:#8993a2;font-size:9.5px;line-height:1.3">${icon ? `${icon}&nbsp;` : ""}${esc(value)}</span>`;
+}
+
+// Mobile clients that honor the <style> media query (Apple Mail, Gmail app,
+// Outlook mobile) swap to the pre-truncated span; everyone else — including
+// Outlook desktop, which ignores @media entirely — just sees the full text.
+function truncated(text: string, max = 80) {
+  return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }
 
 function taskCard(task: DigestTask) {
-  const color = task.overdue ? "#c87300" : task.status === "Completed" ? "#25784b" : "#173f76";
-  const date = task.overdue ? `Overdue · ${task.due || "Due date passed"}` : task.due ? `Due · ${task.due}` : "No due date";
   const status = task.status || "Open";
+  const dueColor = task.overdue ? "#c87300" : "#5c6b7d";
+  const dueLabel = task.overdue ? `Overdue${task.due ? ` · ${task.due}` : ""}` : task.due ? `Due · ${task.due}` : "No due date";
   const statusBackground = status === "Completed" ? "#e4f4eb" : status === "In progress" ? "#fff1d6" : "#f2f4f7";
   const statusColor = status === "Completed" ? "#25784b" : status === "In progress" ? "#9b5d00" : "#202735";
+  const description = task.description ? `<tr><td class="tai-desc" style="padding:10px 18px 0;font-size:13px;line-height:1.5;color:#6f7885">
+    <span class="tai-desc-full">${esc(task.description)}</span><span class="tai-desc-short" style="display:none">${esc(truncated(task.description))}</span>
+  </td></tr>` : "";
+  const tags = `${tag("Project", task.project)}${tag("Topic", task.topic)}${tag("Meeting", task.meeting)}`;
   return `<tr><td style="padding:0 0 12px">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dfe5ec;border-radius:12px;background:#ffffff">
-      <tr>
-        <td width="48" valign="top" style="padding:20px 0 18px 20px"><span style="display:inline-block;width:19px;height:19px;border:2px solid #9da8b5;border-radius:5px;color:${task.status === "Completed" ? "#fff" : "transparent"};background:${task.status === "Completed" ? "#173f76" : "#fff"};font-size:13px;line-height:19px;text-align:center">✓</span></td>
-        <td valign="top" style="padding:18px 8px 17px 0">
-          <div style="font-size:17px;line-height:1.4;font-weight:400;color:#173f76">${esc(task.subject)}</div>
-          ${task.description ? `<div style="margin-top:6px;font-size:13px;line-height:1.5;color:#6f7885">${esc(task.description)}</div>` : ""}
-          <div style="margin-top:13px">${tag("Project", task.project)}${tag("Meeting", task.meeting)}<span style="display:inline-block;margin:0 12px 5px 0;color:${color};font-size:11px">▣&nbsp;&nbsp;${esc(date)}</span>${task.role ? `<span style="display:inline-block;margin:0 8px 5px 0;color:#7a8492;font-size:11px">For ${esc(task.role)}</span>` : ""}</div>
-        </td>
-        <td width="88" valign="top" align="right" style="padding:18px 17px 17px 0"><span style="display:inline-block;padding:5px 9px;border-radius:999px;background:${statusBackground};color:${statusColor};font-size:11px;font-weight:700">${esc(status)}</span></td>
-        <td width="25" valign="top" align="right" style="padding:19px 16px 17px 0"><a href="${esc(task.url || "#")}" aria-label="View ${esc(task.subject)}" style="color:#202735;font-size:25px;line-height:1;text-decoration:none">›</a></td>
-      </tr>
-    </table>
+    <a href="${esc(task.url || "#")}" aria-label="View ${esc(task.subject)}" style="display:block;overflow:hidden;text-decoration:none;color:inherit;border:1px solid #dfe5ec;border-radius:12px;background:#ffffff">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+        <tr><td class="tai-head" style="padding:14px 18px;background:#eef3fa;border-radius:11px 11px 0 0">
+          <div style="font-size:16px;line-height:1.35;font-weight:700;color:#173f76">${esc(task.subject)}</div>
+        </td></tr>
+        <tr><td class="tai-head" style="padding:10px 18px 0">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+            <td style="white-space:nowrap;font-size:11px;font-weight:700;color:${dueColor}">${esc(dueLabel)}</td>
+            <td style="padding-left:10px;font-size:11px;color:#7a8492">${task.role ? `Role: ${esc(task.role)}` : ""}</td>
+            <td align="right" style="white-space:nowrap"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:${statusBackground};color:${statusColor};font-size:10.5px;font-weight:700">${esc(status)}</span></td>
+          </tr></table>
+        </td></tr>
+        ${description}
+        <tr><td class="tai-head" style="padding:12px 18px 14px">${tags}</td></tr>
+      </table>
+    </a>
   </td></tr>`;
 }
 
@@ -93,17 +111,31 @@ export function renderInvitationEmail(input: { name?: string; inviteUrl: string;
   return { subject: "You’re invited to Task AI", html, text: `You have been invited to Task AI. Confirm your profile and view your tasks: ${input.inviteUrl}` };
 }
 
-export type PendingTaskLine = { subject: string; description?: string; project?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress"; role?: "Owner" | "Coworker" | "Recipient"; url?: string };
-export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; tasks: PendingTaskLine[]; totalPending: number }) {
+export type PendingTaskLine = { subject: string; description?: string; project?: string; topic?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress"; role?: "Owner" | "Coworker" | "Recipient"; url?: string };
+export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; tasks: PendingTaskLine[]; totalPending: number; overdueCount?: number }) {
   const firstName = input.firstName.split(" ")[0] || "there";
   const plural = input.totalPending === 1 ? "" : "s";
+  // Falls back to counting the shown slice when the caller doesn't have the
+  // full-list count handy; accurate as long as overdue items (which always
+  // sort first) don't themselves exceed the shown slice.
+  const overdueCount = input.overdueCount ?? input.tasks.filter(task => task.overdue).length;
+  const overdueClause = overdueCount ? `, of which ${overdueCount} ${overdueCount === 1 ? "is" : "are"} overdue` : "";
   // Opens the app pre-filtered to the same personal, due-this-week-or-earlier
   // view shown below — not just the bare app root.
   const linkUrl = `${input.appUrl}/?view=reminder`;
   const rows = input.tasks.map(task => taskCard({ ...task, url: task.url || linkUrl })).join("");
   const more = input.totalPending > input.tasks.length ? `<p style="margin-top:14px;color:#9299a3;font-size:12px">+${input.totalPending - input.tasks.length} more pending in Task AI.</p>` : "";
-  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">PENDING TASKS</div><h1 style="margin:10px 0;color:#102f59;font-size:27px">Hi ${esc(firstName)}, you have ${input.totalPending} pending action item${plural}.</h1><table role="presentation" width="100%" style="margin-top:10px;border-collapse:collapse">${rows}</table>${more}<a href="${esc(linkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
-  const text = `Hi ${firstName}, you have ${input.totalPending} pending action item${plural}:\n\n${input.tasks.map(task => `- ${task.subject}${task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n\n+${input.totalPending - input.tasks.length} more pending in Task AI.` : ""}\n\nOpen Task AI: ${linkUrl}`;
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
+    @media screen and (max-width:480px){
+      .tai-outer{padding:20px 8px !important}
+      .tai-inner{padding:22px 16px !important}
+      .tai-head{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc-full{display:none !important}
+      .tai-desc-short{display:inline !important}
+    }
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Pending Tasks Update</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#102f59;font-size:14px;font-weight:700">you have ${input.totalPending} pending task${plural}${overdueClause}.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">Please review below or open Task AI.</div><table role="presentation" width="100%" style="margin-top:14px;border-collapse:collapse">${rows}</table>${more}<a href="${esc(linkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${firstName},\n\nyou have ${input.totalPending} pending task${plural}${overdueClause}.\nPlease review below or open Task AI.\n\n${input.tasks.map(task => `- ${task.subject}${task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n\n+${input.totalPending - input.tasks.length} more pending in Task AI.` : ""}\n\nOpen Task AI: ${linkUrl}`;
   return { subject: `You have ${input.totalPending} pending task${plural} in Task AI`, html, text };
 }
 

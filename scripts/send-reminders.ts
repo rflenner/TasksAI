@@ -28,7 +28,8 @@ for (const user of active) {
     const { tasks } = await personalPendingTasks(user);
     const due = tasks.filter(task => (task.due || "") <= weekEnd);
     if (!due.length) { skipped++; continue; }
-    const message = renderPendingTasksEmail({ firstName: user.name, appUrl, tasks: due.slice(0, 10), totalPending: due.length });
+    const overdueCount = due.filter(task => task.overdue).length;
+    const message = renderPendingTasksEmail({ firstName: user.name, appUrl, tasks: due.slice(0, 10), totalPending: due.length, overdueCount });
     const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey: `daily-${user.id}-${new Date().toISOString().slice(0, 10)}` });
     if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${due.length} due this week or earlier`); }
     else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
