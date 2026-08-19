@@ -16,6 +16,11 @@ export async function setSessionCookie(value: string, expiresAt: Date) { (await 
 export async function clearSession() { const jar=await cookies(),id=verifySignedValue(jar.get(SESSION_COOKIE)?.value);if(id)await getDb().delete(sessions).where(eq(sessions.idHash,sha256(id)));jar.set(SESSION_COOKIE, "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 0 }); }
 export async function currentActor(): Promise<Actor | null> {
   const id = verifySignedValue((await cookies()).get(SESSION_COOKIE)?.value); if (!id) return null;
-  const [row] = await getDb().select({ id: users.id, email: users.email, name: users.name, role: users.role, status: users.status, canInvite: users.canInvite, projects: users.projects, meetings: users.meetings, topics: users.topics }).from(sessions).innerJoin(users, eq(users.id, sessions.userId)).where(and(eq(sessions.idHash, sha256(id)), gt(sessions.expiresAt, new Date()), eq(users.status, "active"))).limit(1);
-  return row ?? null;
+  const idHash = sha256(id);
+  const [row] = await getDb().select({ id: users.id, email: users.email, name: users.name, role: users.role, status: users.status, canInvite: users.canInvite, projects: users.projects, meetings: users.meetings, topics: users.topics, lastSeenAt: sessions.lastSeenAt }).from(sessions).innerJoin(users, eq(users.id, sessions.userId)).where(and(eq(sessions.idHash, idHash), gt(sessions.expiresAt, new Date()), eq(users.status, "active"))).limit(1);
+  if (!row) return null;
+  // Throttled to once a minute per session so "last active" stays fresh
+  // without a write on every single request in a page load.
+  if (Date.now() - row.lastSeenAt.getTime() > 60000) await getDb().update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.idHash, idHash));
+  return { id: row.id, email: row.email, name: row.name, role: row.role, status: row.status, canInvite: row.canInvite, projects: row.projects, meetings: row.meetings, topics: row.topics };
 }
