@@ -24,7 +24,7 @@ pnpm build
 
 - Invitations contain random single-use tokens; only SHA-256 hashes are stored.
 - Accepting an unexpired invitation verifies the invited email address and requires first name, last name, and company.
-- Returning users request an 8-character one-time code (32-character alphabet, ambiguous characters excluded), sent by email and typed back into the sign-in form. It expires in 15 minutes and is single-use. Unlike a clickable magic link, this never puts a token in a URL — email scanners/prefetchers can't burn it, and it doesn't trigger Chrome's phishing heuristics the way a bare `?token=...` auto-redirect endpoint does.
+- Returning users get an email with a one-click sign-in link, plus the same 8-character one-time code (32-character alphabet, ambiguous characters excluded) as a fallback for signing in on a different device. Both expire in 15 minutes and are single-use. The link points at `/login/confirm` — a normal page, not an API route — and only calls `/api/auth/verify` when the person explicitly clicks "Sign in to Task AI" there. That's deliberate: an API route that auto-verifies and redirects on a bare GET is what triggered Chrome's phishing heuristic on this domain previously, and is also the shape that gets silently "clicked" (and the one-time code burned) by email link-scanners like Outlook Safe Links before the recipient ever opens the message.
 - Browser sessions use a random opaque identifier signed with HMAC-SHA256. Only its hash is stored in PostgreSQL; the cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - Mutating APIs reject cross-origin requests.
 - All API authorization is derived from the active session and database role. Client-provided email headers and unsigned identity cookies are ignored.
