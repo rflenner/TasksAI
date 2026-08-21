@@ -40,12 +40,13 @@ function truncated(text: string, max = 80) {
   return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }
 
-function taskCard(task: DigestTask) {
+function taskCard(task: Omit<DigestTask, "status"> & { status?: DigestTask["status"] | "Closed"; closedAt?: string }) {
   const status = task.status || "Open";
-  const dueColor = task.overdue ? "#c87300" : "#5c6b7d";
-  const dueLabel = task.overdue ? `Overdue${task.due ? ` · ${task.due}` : ""}` : task.due ? `Due · ${task.due}` : "No due date";
-  const statusBackground = status === "Completed" ? "#e4f4eb" : status === "In progress" ? "#fff1d6" : "#f2f4f7";
-  const statusColor = status === "Completed" ? "#25784b" : status === "In progress" ? "#9b5d00" : "#202735";
+  const closed = status === "Closed" || status === "Completed";
+  const dueColor = closed ? "#25784b" : task.overdue ? "#c87300" : "#5c6b7d";
+  const dueLabel = closed ? `Closed${task.closedAt ? ` · ${task.closedAt}` : ""}` : task.overdue ? `Overdue${task.due ? ` · ${task.due}` : ""}` : task.due ? `Due · ${task.due}` : "No due date";
+  const statusBackground = closed ? "#e4f4eb" : status === "In progress" ? "#fff1d6" : "#f2f4f7";
+  const statusColor = closed ? "#25784b" : status === "In progress" ? "#9b5d00" : "#202735";
   const description = task.description ? `<tr><td class="tai-desc" style="padding:10px 18px 0;font-size:13px;line-height:1.5;color:#6f7885">
     <span class="tai-desc-full">${esc(task.description)}</span><span class="tai-desc-short" style="display:none">${esc(truncated(task.description))}</span>
   </td></tr>` : "";
@@ -111,20 +112,42 @@ export function renderInvitationEmail(input: { name?: string; inviteUrl: string;
   return { subject: "You’re invited to Task AI", html, text: `You have been invited to Task AI. Confirm your profile and view your tasks: ${input.inviteUrl}` };
 }
 
-export type PendingTaskLine = { subject: string; description?: string; project?: string; topic?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress"; role?: "Owner" | "Coworker" | "Recipient"; url?: string };
-export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; tasks: PendingTaskLine[]; totalPending: number; overdueCount?: number }) {
+export type PendingTaskLine = { subject: string; description?: string; project?: string; topic?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress" | "Closed"; role?: "Owner" | "Coworker" | "Recipient"; closedAt?: string; url?: string };
+// Each caller decides how many items to hand in per bucket (the manual
+// "Send task summary" button sends everything; the daily cron pre-filters
+// and caps); this just enforces a hard display ceiling so no single section
+// can blow out an otherwise-short email, with a "+N more" note when capped.
+const SECTION_CAP: Record<"myTasks" | "delegatedTasks" | "recentlyClosed", number> = { myTasks: 8, delegatedTasks: 8, recentlyClosed: 5 };
+function section(title: string, tasks: PendingTaskLine[], key: keyof typeof SECTION_CAP, linkUrl: string) {
+  if (!tasks.length) return { html: "", text: "" };
+  const cap = SECTION_CAP[key];
+  const shown = tasks.slice(0, cap);
+  const rows = shown.map(task => taskCard({ ...task, url: task.url || linkUrl })).join("");
+  const more = tasks.length > shown.length ? `<p style="margin:8px 0 0;color:#9299a3;font-size:12px">+${tasks.length - shown.length} more in Task AI.</p>` : "";
+  const html = `<h2 style="margin:24px 0 12px;color:#102f59;font-size:16px">${esc(title)}</h2><table role="presentation" width="100%" style="border-collapse:collapse">${rows}</table>${more}`;
+  const text = `${title.toUpperCase()}\n${shown.map(task => `- ${task.subject}${task.status === "Closed" ? task.closedAt ? ` (closed ${task.closedAt})` : " (closed)" : task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n+${tasks.length - shown.length} more in Task AI.` : ""}`;
+  return { html, text };
+}
+export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; myTasks: PendingTaskLine[]; delegatedTasks: PendingTaskLine[]; recentlyClosed: PendingTaskLine[]; overdueCount?: number }) {
   const firstName = input.firstName.split(" ")[0] || "there";
-  const plural = input.totalPending === 1 ? "" : "s";
-  // Falls back to counting the shown slice when the caller doesn't have the
-  // full-list count handy; accurate as long as overdue items (which always
-  // sort first) don't themselves exceed the shown slice.
-  const overdueCount = input.overdueCount ?? input.tasks.filter(task => task.overdue).length;
-  const overdueClause = overdueCount ? `, of which ${overdueCount} ${overdueCount === 1 ? "is" : "are"} overdue` : "";
+  const totalOpen = input.myTasks.length + input.delegatedTasks.length;
+  const overdueCount = input.overdueCount ?? [...input.myTasks, ...input.delegatedTasks].filter(task => task.overdue).length;
+  const overdueClause = overdueCount ? `, ${overdueCount} overdue` : "";
+  const summaryParts = [
+    input.myTasks.length ? `${input.myTasks.length} task${input.myTasks.length === 1 ? "" : "s"} of your own` : "",
+    input.delegatedTasks.length ? `${input.delegatedTasks.length} delegated task${input.delegatedTasks.length === 1 ? "" : "s"} you're tracking` : "",
+  ].filter(Boolean);
+  const summary = summaryParts.length ? summaryParts.join(" and ") : "no open tasks right now";
   // Opens the app pre-filtered to the same personal, due-this-week-or-earlier
-  // view shown below — not just the bare app root.
-  const linkUrl = `${input.appUrl}/?view=reminder`;
-  const rows = input.tasks.map(task => taskCard({ ...task, url: task.url || linkUrl })).join("");
-  const more = input.totalPending > input.tasks.length ? `<p style="margin-top:14px;color:#9299a3;font-size:12px">+${input.totalPending - input.tasks.length} more pending in Task AI.</p>` : "";
+  // view shown below — not just the bare app root. Closed cards link to the
+  // completed tab instead, since the reminder view excludes closed tasks.
+  const openLinkUrl = `${input.appUrl}/?view=reminder`;
+  const closedLinkUrl = `${input.appUrl}/?view=completed`;
+  const myTasksSection = section("My tasks", input.myTasks, "myTasks", openLinkUrl);
+  const delegatedSection = section("Delegated tasks", input.delegatedTasks, "delegatedTasks", openLinkUrl);
+  const closedSection = section("Recently closed", input.recentlyClosed, "recentlyClosed", closedLinkUrl);
+  const sectionsHtml = myTasksSection.html + delegatedSection.html + closedSection.html;
+  const subject = totalOpen ? `You have ${totalOpen} pending task${totalOpen === 1 ? "" : "s"} in Task AI` : `${input.recentlyClosed.length} task${input.recentlyClosed.length === 1 ? "" : "s"} closed recently in Task AI`;
   const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
     @media screen and (max-width:480px){
       .tai-outer{padding:20px 8px !important}
@@ -134,9 +157,9 @@ export function renderPendingTasksEmail(input: { firstName: string; appUrl: stri
       .tai-desc-full{display:none !important}
       .tai-desc-short{display:inline !important}
     }
-  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Pending Tasks Update</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#102f59;font-size:14px;font-weight:700">you have ${input.totalPending} pending task${plural}${overdueClause}.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">Please review below or open Task AI.</div><table role="presentation" width="100%" style="margin-top:14px;border-collapse:collapse">${rows}</table>${more}<a href="${esc(linkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
-  const text = `Hi ${firstName},\n\nyou have ${input.totalPending} pending task${plural}${overdueClause}.\nPlease review below or open Task AI.\n\n${input.tasks.map(task => `- ${task.subject}${task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n\n+${input.totalPending - input.tasks.length} more pending in Task AI.` : ""}\n\nOpen Task AI: ${linkUrl}`;
-  return { subject: `You have ${input.totalPending} pending task${plural} in Task AI`, html, text };
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Pending Tasks Update</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#102f59;font-size:14px;font-weight:700">you have ${esc(summary)}${overdueClause}.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">Please review below or open Task AI.</div>${sectionsHtml}<a href="${esc(openLinkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${firstName},\n\nyou have ${summary}${overdueClause}.\nPlease review below or open Task AI.\n\n${[myTasksSection.text, delegatedSection.text, closedSection.text].filter(Boolean).join("\n\n")}\n\nOpen Task AI: ${openLinkUrl}`;
+  return { subject, html, text };
 }
 
 export function renderLoginEmail(input: { name: string; code: string; link: string }) {

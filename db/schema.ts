@@ -18,6 +18,11 @@ export const users = pgTable("users", {
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(), subject: text("subject").notNull(), description: text("description").notNull().default(""), owner: text("owner").notNull(), collaborators: jsonb("collaborators").$type<string[]>().notNull().default([]), recipients: jsonb("recipients").$type<string[]>().notNull().default([]),
   due: text("due").notNull(), source: text("source").notNull(), topic: text("topic").notNull(), project: text("project").notNull(), recurringMeeting: text("recurring_meeting").notNull(), status: text("status").notNull().default("Open"), created: text("created").notNull(), createdBy: text("created_by"), updates: jsonb("updates").$type<Array<{ text: string; at: string; by?: string }>>().notNull().default([]),
+  // Set automatically by the PATCH handler whenever status transitions to
+  // "Closed", cleared if it's reopened. Powers the "Recently closed" section
+  // of the pending-tasks digest — only tasks closed after this shipped have
+  // a real value here, older closures show no close date.
+  closedAt: timestamp("closed_at", { withTimezone: true }),
 }, table => [index("tasks_owner_idx").on(table.owner), index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic)]);
 export const dimensionValues = pgTable("dimension_values", { id: serial("id").primaryKey(), type: text("type").notNull(), value: text("value").notNull() }, table => [uniqueIndex("dimension_values_type_value_unique").on(table.type, table.value)]);
 export const sessions = pgTable("sessions", { idHash: text("id_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);

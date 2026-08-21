@@ -45,7 +45,12 @@ Database initialization runs before every `next start`; applied migration filena
 
 ## Daily reminders
 
-A Render Cron Job (`tasks-ai-daily-reminders` in `render.yaml`) runs `scripts/send-reminders.ts` every morning. For each active user it computes their **personal** open tasks — where they're the owner, a coworker, or a recipient, same rule for every role including admins — filters to items due this week or earlier (never a future week), and emails them via `renderPendingTasksEmail` if there's at least one. Users with nothing due get nothing sent; there's no daily noise for an empty inbox.
+A Render Cron Job (`tasks-ai-daily-reminders` in `render.yaml`) runs `scripts/send-reminders.ts` every morning. For each active user it computes their **personal** task digest (`personalTaskDigest`, same rule for every role including admins) and emails it via `renderPendingTasksEmail`, split into three sections:
+- **My tasks** — open tasks where they're the owner or a coworker, i.e. work that's theirs to do.
+- **Delegated tasks** — open tasks where they're a recipient only (not also owner/coworker) — work they asked someone else to do and are tracking, not doing themselves.
+- **Recently closed** — tasks of theirs (any role) closed in the last 24 hours, so a close doesn't just vanish silently. `closedAt` is set automatically by the tasks API on the Open/In progress → Closed transition and cleared on reopen; tasks closed before this shipped have no `closedAt` and never appear here.
+
+My tasks and delegated tasks are filtered to items due this week or earlier (never a future week); recently closed isn't due-filtered, it's driven by `closedAt` instead. A user is skipped entirely only if both open buckets are empty *and* nothing of theirs closed recently — there's no daily noise for someone with nothing to report either way.
 
 The schedule (`0 5 * * *`, i.e. 05:00 UTC) targets 07:00 in Europe/Vienna during CEST (summer). Render cron schedules are fixed UTC and don't shift for daylight saving, so once CET (winter, UTC+1) resumes this drifts to firing at 06:00 local. Adjust the hour by hand around the DST changeovers, or accept the hour of drift twice a year.
 
