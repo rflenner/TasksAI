@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { companies, dimensionValues, tasks, users } from "../../../../db/schema";
 import { renderPendingTasksEmail, sendWithResend } from "../../../lib/email";
 import { validateInvitationProfile } from "../../../lib/invitations";
-import { personalPendingTasks } from "../../../lib/pending-tasks";
+import { personalTaskDigest } from "../../../lib/pending-tasks";
 import { publicRequestOrigin, requireSameOrigin } from "../../../lib/request";
 import { sha256 } from "../../../lib/security";
 import { createSession, setSessionCookie } from "../../../lib/session";
@@ -29,10 +29,11 @@ export async function POST(request:Request){
  // same rule used everywhere else. Never blocks acceptance if it fails.
  let tasksNotified=0;
  try{
-  const{tasks:pending,total}=await personalPendingTasks({id:result.user.id,name,role:result.user.role});
-  if(pending.length){
+  const{myTasks,delegatedTasks,recentlyClosed}=await personalTaskDigest({id:result.user.id,name,role:result.user.role});
+  const total=myTasks.length+delegatedTasks.length;
+  if(total||recentlyClosed.length){
    const appUrl=publicRequestOrigin(request);
-   const message=renderPendingTasksEmail({firstName:name,appUrl,tasks:pending.slice(0,10),totalPending:total});
+   const message=renderPendingTasksEmail({firstName:name,appUrl,myTasks,delegatedTasks,recentlyClosed});
    await sendWithResend({...message,to:result.user.email,idempotencyKey:`welcome-${result.user.id}`});
    tasksNotified=total;
   }
