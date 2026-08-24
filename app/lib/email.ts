@@ -175,6 +175,16 @@ export function renderLoginEmail(input: { name: string; code: string; link: stri
   return { subject: "Your Task AI sign-in link", html, text: `Sign in to Task AI: ${input.link}\n\nOn a different device? Use this code instead (expires in 15 minutes): ${input.code}` };
 }
 
+// One-off broadcast for "the app's web address changed" — e.g. moving off a
+// custom domain that broke, or onto a new one later. Not part of the
+// pending-tasks digest; triggered by a Site Admin from Users & access, sent
+// to every active user. See app/api/users/notify-link-change/route.ts.
+export function renderAppUrlChangedEmail(input: { name: string; appUrl: string }) {
+  const firstName = input.name.split(" ")[0] || "there";
+  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">APP UPDATE</div><h1 style="margin:10px 0;color:#102f59;font-size:27px">Hi ${esc(firstName)}, Task AI has a new web address.</h1><p style="color:#687384;font-size:15px;line-height:1.6">Please update any bookmarks or shortcuts you've saved. Your account, tasks, and access are unchanged — only the link is different.</p><a href="${esc(input.appUrl)}" style="display:inline-block;margin-top:15px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a><p style="margin-top:28px;color:#9299a3;font-size:11px">New address: ${esc(input.appUrl)}</p></td></tr></table></td></tr></table></body></html>`;
+  return { subject: "Task AI has a new web address", html, text: `Hi ${firstName},\n\nTask AI has a new web address. Please update any bookmarks or shortcuts — your account, tasks, and access are unchanged, only the link is different.\n\nOpen Task AI: ${input.appUrl}` };
+}
+
 export async function sendWithResend(message: { to: string; cc?: string; subject: string; html: string; text: string; idempotencyKey?: string }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.TASK_AI_FROM_EMAIL || "Task AI <notifications@tasks.flenner.at>";
