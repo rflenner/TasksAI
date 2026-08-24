@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyForDigest, endOfThisWeek } from "../app/lib/pending-tasks";
+import { classifyForDigest, endOfThisWeek, taskLineFor, tasksReferencingName } from "../app/lib/pending-tasks";
 
 test("endOfThisWeek resolves to the coming Sunday, inclusive of a Sunday itself", () => {
   assert.equal(endOfThisWeek(new Date("2026-08-18T09:00:00Z")), "2026-08-23"); // Tuesday -> Sunday
@@ -36,4 +36,28 @@ test("classifyForDigest only surfaces a closed task if it's within the lookback 
   assert.equal(classifyForDigest({ ...closedTask, closedAt: new Date("2026-08-10T00:00:00Z") }, collaborator, closedSince), null, "closed well before the cutoff: excluded");
   assert.equal(classifyForDigest({ ...closedTask, closedAt: null }, collaborator, closedSince), null, "closed with no recorded closedAt (pre-feature data): excluded, never shown with a blank date");
   assert.equal(classifyForDigest({ ...closedTask, owner: "Someone Else", closedAt: new Date("2026-08-20T00:00:00Z") }, collaborator, closedSince), null, "closed but no personal relationship: excluded");
+});
+
+// tasksReferencingName / taskLineFor back the external-invite feature: a
+// task can name someone by a plain string before they ever have an
+// account, so matching works purely off that string — no id required.
+test("tasksReferencingName finds a name in any of owner/coworker/recipient, excludes closed tasks, and doesn't require an account to exist", () => {
+  const jane = { ...base, owner: "Jane Doe" };
+  const bySpelling = { ...base, collaborators: ["Jane Doe"] };
+  const asRecipient = { ...base, recipients: ["Jane Doe"] };
+  const closed = { ...base, owner: "Jane Doe", status: "Closed" };
+  const unrelated = { ...base, owner: "Someone Else" };
+  assert.deepEqual(tasksReferencingName([jane, bySpelling, asRecipient, closed, unrelated], "Jane Doe"), [jane, bySpelling, asRecipient]);
+  assert.deepEqual(tasksReferencingName([unrelated], "Jane Doe"), []);
+});
+
+test("taskLineFor reports the matched name's role and marks a task overdue only when open", () => {
+  const today = "2026-08-20";
+  const owned = taskLineFor({ subject: "Ship it", description: "", project: "", topic: "", recurringMeeting: "", due: "2026-08-10", status: "Open", owner: "Jane Doe", collaborators: [], recipients: [], closedAt: null }, "Jane Doe", today);
+  assert.equal(owned.role, "Owner");
+  assert.equal(owned.overdue, true);
+  const delegated = taskLineFor({ subject: "Review", description: "", project: "", topic: "", recurringMeeting: "", due: "2026-08-10", status: "Closed", owner: "Someone Else", collaborators: [], recipients: ["Jane Doe"], closedAt: new Date("2026-08-19T00:00:00Z") }, "Jane Doe", today);
+  assert.equal(delegated.role, "Recipient");
+  assert.equal(delegated.overdue, false, "a closed task is never reported as overdue even if its due date has passed");
+  assert.equal(delegated.closedAt, "2026-08-19");
 });
