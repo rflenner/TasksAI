@@ -17,7 +17,7 @@ export async function POST(request:Request){
  if(!total&&!recentlyClosed.length)return Response.json({error:`${target.name} has no pending tasks right now`},{status:400});
  const appUrl=appLinkOrigin(request);
  const overdueCount=[...myTasks,...delegatedTasks].filter(task=>task.overdue).length;
- const message=renderPendingTasksEmail({firstName:target.name,appUrl,myTasks,delegatedTasks,recentlyClosed,overdueCount});
+ const message=renderPendingTasksEmail({firstName:target.name,appUrl,myTasks,delegatedTasks,recentlyClosed,overdueCount,notice:process.env.APP_NOTICE||undefined});
  try{
   const delivery=await sendWithResend({...message,to:target.email,idempotencyKey:`pending-${target.id}-${Date.now()}`});
   return Response.json({sent:delivery.sent,reason:"reason" in delivery?delivery.reason:undefined,count:total});

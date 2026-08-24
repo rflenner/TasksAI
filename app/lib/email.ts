@@ -128,7 +128,7 @@ function section(title: string, tasks: PendingTaskLine[], key: keyof typeof SECT
   const text = `${title.toUpperCase()}\n${shown.map(task => `- ${task.subject}${task.status === "Closed" ? task.closedAt ? ` (closed ${task.closedAt})` : " (closed)" : task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n+${tasks.length - shown.length} more in Task AI.` : ""}`;
   return { html, text };
 }
-export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; myTasks: PendingTaskLine[]; delegatedTasks: PendingTaskLine[]; recentlyClosed: PendingTaskLine[]; overdueCount?: number }) {
+export function renderPendingTasksEmail(input: { firstName: string; appUrl: string; myTasks: PendingTaskLine[]; delegatedTasks: PendingTaskLine[]; recentlyClosed: PendingTaskLine[]; overdueCount?: number; notice?: string }) {
   const firstName = input.firstName.split(" ")[0] || "there";
   const totalOpen = input.myTasks.length + input.delegatedTasks.length;
   const overdueCount = input.overdueCount ?? [...input.myTasks, ...input.delegatedTasks].filter(task => task.overdue).length;
@@ -148,6 +148,12 @@ export function renderPendingTasksEmail(input: { firstName: string; appUrl: stri
   const closedSection = section("Recently closed", input.recentlyClosed, "recentlyClosed", closedLinkUrl);
   const sectionsHtml = myTasksSection.html + delegatedSection.html + closedSection.html;
   const subject = totalOpen ? `You have ${totalOpen} pending task${totalOpen === 1 ? "" : "s"} in Task AI` : `${input.recentlyClosed.length} task${input.recentlyClosed.length === 1 ? "" : "s"} closed recently in Task AI`;
+  // Optional one-off banner, e.g. "the app's link changed" — set via
+  // APP_NOTICE, plumbed through by the caller. Deliberately just a plain
+  // string, not a fixed announcement type: whatever's worth saying for a
+  // while, without inventing a whole banner-content system for it. Sits
+  // right above the CTA, at the bottom, not competing with the task list.
+  const noticeHtml = input.notice ? `<div style="margin-top:20px;padding:14px 16px;border-radius:8px;background:#fff7e8;border:1px solid #ffe1a8;font-size:12px;color:#766545;line-height:1.5"><b style="color:#9c5c00">Note:</b> ${esc(input.notice)}</div>` : "";
   const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
     @media screen and (max-width:480px){
       .tai-outer{padding:20px 8px !important}
@@ -157,8 +163,8 @@ export function renderPendingTasksEmail(input: { firstName: string; appUrl: stri
       .tai-desc-full{display:none !important}
       .tai-desc-short{display:inline !important}
     }
-  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Pending Tasks Update</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#102f59;font-size:14px;font-weight:700">you have ${esc(summary)}${overdueClause}.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">Please review below or open Task AI.</div>${sectionsHtml}<a href="${esc(openLinkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
-  const text = `Hi ${firstName},\n\nyou have ${summary}${overdueClause}.\nPlease review below or open Task AI.\n\n${[myTasksSection.text, delegatedSection.text, closedSection.text].filter(Boolean).join("\n\n")}\n\nOpen Task AI: ${openLinkUrl}`;
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Pending Tasks Update</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#102f59;font-size:14px;font-weight:700">you have ${esc(summary)}${overdueClause}.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">Please review below or open Task AI.</div>${sectionsHtml}${noticeHtml}<a href="${esc(openLinkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${firstName},\n\nyou have ${summary}${overdueClause}.\nPlease review below or open Task AI.\n\n${[myTasksSection.text, delegatedSection.text, closedSection.text].filter(Boolean).join("\n\n")}${input.notice ? `\n\nNote: ${input.notice}` : ""}\n\nOpen Task AI: ${openLinkUrl}`;
   return { subject, html, text };
 }
 

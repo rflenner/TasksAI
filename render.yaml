@@ -31,6 +31,12 @@ services:
       # a different subdomain for the app.
       - key: APP_URL
         value: https://tasks-ai.onrender.com
+      # Optional one-off banner shown at the bottom of "Send task summary"
+      # emails — see the notice param on renderPendingTasksEmail. Plain
+      # text, no markup. Remove this key entirely once it's no longer
+      # relevant; nothing else about the email changes when it's unset.
+      - key: APP_NOTICE
+        value: Task AI's web address recently changed — please update any bookmarks or shortcuts. The button below uses the new link.
       - key: TASK_AI_FROM_EMAIL
         value: Task AI <notifications@tasks.flenner.at>
       - key: SITE_ADMIN_EMAIL
