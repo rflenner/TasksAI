@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
 import { renderPendingTasksEmail, sendWithResend } from "../../../lib/email";
 import { personalTaskDigest } from "../../../lib/pending-tasks";
-import { publicRequestOrigin, requireSameOrigin } from "../../../lib/request";
+import { appLinkOrigin, requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
 export async function POST(request:Request){
  const invalid=requireSameOrigin(request);if(invalid)return invalid;
@@ -15,7 +15,7 @@ export async function POST(request:Request){
  const{myTasks,delegatedTasks,recentlyClosed}=await personalTaskDigest(target);
  const total=myTasks.length+delegatedTasks.length;
  if(!total&&!recentlyClosed.length)return Response.json({error:`${target.name} has no pending tasks right now`},{status:400});
- const appUrl=publicRequestOrigin(request);
+ const appUrl=appLinkOrigin(request);
  const overdueCount=[...myTasks,...delegatedTasks].filter(task=>task.overdue).length;
  const message=renderPendingTasksEmail({firstName:target.name,appUrl,myTasks,delegatedTasks,recentlyClosed,overdueCount});
  try{
