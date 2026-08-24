@@ -4,7 +4,7 @@ import { companies, dimensionValues, tasks, users } from "../../../../db/schema"
 import { renderPendingTasksEmail, sendWithResend } from "../../../lib/email";
 import { validateInvitationProfile } from "../../../lib/invitations";
 import { personalTaskDigest } from "../../../lib/pending-tasks";
-import { publicRequestOrigin, requireSameOrigin } from "../../../lib/request";
+import { appLinkOrigin, requireSameOrigin } from "../../../lib/request";
 import { sha256 } from "../../../lib/security";
 import { createSession, setSessionCookie } from "../../../lib/session";
 
@@ -32,7 +32,7 @@ export async function POST(request:Request){
   const{myTasks,delegatedTasks,recentlyClosed}=await personalTaskDigest({id:result.user.id,name,role:result.user.role});
   const total=myTasks.length+delegatedTasks.length;
   if(total||recentlyClosed.length){
-   const appUrl=publicRequestOrigin(request);
+   const appUrl=appLinkOrigin(request);
    const message=renderPendingTasksEmail({firstName:name,appUrl,myTasks,delegatedTasks,recentlyClosed});
    await sendWithResend({...message,to:result.user.email,idempotencyKey:`welcome-${result.user.id}`});
    tasksNotified=total;

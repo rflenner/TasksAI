@@ -22,6 +22,15 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
+      # Used for links inside outgoing emails (invitations, sign-in links,
+      # "Open Task AI" buttons) — see appLinkOrigin/appLinkUrl in
+      # app/lib/request.ts. Currently the Render URL, not tasks.flenner.at:
+      # that custom domain's DNS is blocked by an MX record on the same
+      # `tasks` host (needed for inbound mail on another app) that conflicts
+      # with the CNAME the site needs. Revisit once that's resolved, e.g. via
+      # a different subdomain for the app.
+      - key: APP_URL
+        value: https://tasks-ai.onrender.com
       - key: TASK_AI_FROM_EMAIL
         value: Task AI <notifications@tasks.flenner.at>
       - key: SITE_ADMIN_EMAIL
@@ -63,7 +72,7 @@ services:
           name: tasks-ai-db-frankfurt
           property: connectionString
       - key: APP_URL
-        value: https://tasks.flenner.at
+        value: https://tasks-ai.onrender.com
       - key: TASK_AI_FROM_EMAIL
         value: Task AI <notifications@tasks.flenner.at>
       - key: RESEND_API_KEY
