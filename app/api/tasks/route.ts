@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { dimensionValues, tasks } from "../../../db/schema";
+import { dimensionValues, tasks, users } from "../../../db/schema";
 import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
@@ -11,7 +11,14 @@ function values(input:Input){return{subject:String(input.subject||"").trim(),des
 function entries(task:Input):Array<[DimensionType,string]>{return [["project",task.project],["meeting",task.recurringMeeting],["topic",task.topic],["person",task.owner],...cleanList(task.collaborators).map(x=>["person",x]),...cleanList(task.recipients).map(x=>["person",x])].map(([t,v])=>[t as DimensionType,String(v||"").trim()]).filter((x):x is [DimensionType,string]=>Boolean(x[1]))}
 async function register(task:Input){for(const[type,value]of entries(task))await getDb().insert(dimensionValues).values({type,value}).onConflictDoNothing()}
 async function dimensions(){const rows=await getDb().select().from(dimensionValues).orderBy(dimensionValues.value);return{project:rows.filter(x=>x.type==="project").map(x=>x.value),meeting:rows.filter(x=>x.type==="meeting").map(x=>x.value),topic:rows.filter(x=>x.type==="topic").map(x=>x.value),person:rows.filter(x=>x.type==="person").map(x=>x.value)}}
-export async function GET(){const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const all=await getDb().select().from(tasks).orderBy(desc(tasks.id));const visible=all.filter(task=>canSeeTask(task,actor));const scoped={project:[...new Set(visible.map(x=>x.project))],meeting:[...new Set(visible.map(x=>x.recurringMeeting))],topic:[...new Set(visible.map(x=>x.topic))],person:[...new Set(visible.flatMap(x=>[x.owner,...x.collaborators,...x.recipients]))]};return Response.json({tasks:visible,dimensions:actor.role==="site_admin"?await dimensions():scoped,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly"}})}
+export async function GET(){const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const all=await getDb().select().from(tasks).orderBy(desc(tasks.id));const visible=all.filter(task=>canSeeTask(task,actor));const scoped={project:[...new Set(visible.map(x=>x.project))],meeting:[...new Set(visible.map(x=>x.recurringMeeting))],topic:[...new Set(visible.map(x=>x.topic))],person:[...new Set(visible.flatMap(x=>[x.owner,...x.collaborators,...x.recipients]))]};
+ // Every name that already has a users row (pending or active — a second
+ // invite for someone mid-invitation should go through Resend invitation,
+ // not this flow) — lets the client flag a task's owner/coworker/recipient
+ // as "not yet on Task AI" and offer to invite them, without a whole
+ // separate endpoint just for that.
+ const registeredPeople=(await getDb().select({name:users.name}).from(users)).map(row=>row.name);
+ return Response.json({tasks:visible,dimensions:actor.role==="site_admin"?await dimensions():scoped,registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
 export async function POST(request:Request){const invalid=requireSameOrigin(request);if(invalid)return invalid;const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const input=values(await request.json());if(!canCreateTask(input,actor))return Response.json({error:"You cannot create this task"},{status:403});if(!input.subject||!input.owner)return Response.json({error:"Subject and owner are required"},{status:400});const[task]=await getDb().insert(tasks).values({...input,createdBy:actor.name,closedAt:input.status==="Closed"?new Date():null}).returning();await register(task);return Response.json({task,dimensions:await dimensions()},{status:201})}
 // closedAt tracks the most recent Open/In progress → Closed transition:
 // newly closed gets a fresh timestamp, already-closed keeps its original one

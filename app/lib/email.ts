@@ -106,10 +106,38 @@ export function renderTaskDigest(input: DigestInput) {
   return { subject: `${input.overdue ? `${input.overdue} overdue · ` : ""}Your Task AI summary`, html, text };
 }
 
-export function renderInvitationEmail(input: { name?: string; inviteUrl: string; invitedBy?: string }) {
+// Task cap for the invitation preview, deliberately smaller than the digest
+// email's section caps (8) — this is a hook to get someone to register, not
+// a full list; the rest is one click away once they're in.
+const INVITE_TASK_CAP = 6;
+export function renderInvitationEmail(input: { name?: string; inviteUrl: string; invitedBy?: string; tasks?: PendingTaskLine[] }) {
   const name = input.name && input.name !== "Invited user" ? input.name.split(" ")[0] : "there";
-  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">YOU’RE INVITED</div><h1 style="margin:10px 0;color:#102f59;font-size:27px">Hello ${esc(name)}, join your team in Task AI.</h1><p style="color:#687384;font-size:15px;line-height:1.6">${esc(input.invitedBy || "Your team")} invited you to confirm your profile and see the action items shared with you.</p><a href="${esc(input.inviteUrl)}" style="display:inline-block;margin-top:15px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Confirm profile & view tasks</a><p style="margin-top:28px;color:#9299a3;font-size:11px">This secure invitation expires after seven days and can only be used once.</p></td></tr></table></td></tr></table></body></html>`;
-  return { subject: "You’re invited to Task AI", html, text: `You have been invited to Task AI. Confirm your profile and view your tasks: ${input.inviteUrl}` };
+  const tasks = input.tasks || [];
+  const shown = tasks.slice(0, INVITE_TASK_CAP);
+  const more = tasks.length > shown.length ? tasks.length - shown.length : 0;
+  const invitedByName = input.invitedBy || "Your team";
+  // When we know of open items naming this person, lead with that instead
+  // of the generic "join your team" pitch — the tasks are the reason
+  // they'd want to register in the first place, not an afterthought.
+  const introPlain = shown.length
+    ? `${invitedByName} invited you to Task AI — you have ${tasks.length} open item${tasks.length === 1 ? "" : "s"} waiting below. Confirm your profile to view and manage them.`
+    : `${invitedByName} invited you to confirm your profile and see the action items shared with you.`;
+  const rows = shown.map(task => taskCard(task)).join("");
+  const moreHtml = more ? `<p style="margin:8px 0 0;color:#9299a3;font-size:12px">+${more} more once you're in.</p>` : "";
+  const tasksHtml = shown.length ? `<h2 style="margin:26px 0 12px;color:#102f59;font-size:16px">Waiting for you</h2><table role="presentation" width="100%" style="border-collapse:collapse">${rows}</table>${moreHtml}` : "";
+  const tasksText = shown.length ? `\n\nWAITING FOR YOU\n${shown.map(task => `- ${task.subject}${task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n+${more} more once you're in.` : ""}` : "";
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
+    @media screen and (max-width:480px){
+      .tai-outer{padding:20px 8px !important}
+      .tai-inner{padding:22px 16px !important}
+      .tai-head{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc-full{display:none !important}
+      .tai-desc-short{display:inline !important}
+    }
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">YOU’RE INVITED</div><h1 style="margin:10px 0;color:#102f59;font-size:27px">Hello ${esc(name)}, join your team in Task AI.</h1><p style="color:#687384;font-size:15px;line-height:1.6">${esc(introPlain)}</p>${tasksHtml}<a href="${esc(input.inviteUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Confirm profile & view tasks</a><p style="margin-top:28px;color:#9299a3;font-size:11px">This secure invitation expires after seven days and can only be used once.</p></td></tr></table></td></tr></table></body></html>`;
+  const subject = shown.length ? `You have ${tasks.length} open item${tasks.length === 1 ? "" : "s"} waiting in Task AI` : "You’re invited to Task AI";
+  return { subject, html, text: `${introPlain}${tasksText}\n\nConfirm your profile and view your tasks: ${input.inviteUrl}` };
 }
 
 export type PendingTaskLine = { subject: string; description?: string; project?: string; topic?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress" | "Closed"; role?: "Owner" | "Coworker" | "Recipient"; closedAt?: string; url?: string };

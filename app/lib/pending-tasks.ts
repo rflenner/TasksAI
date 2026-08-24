@@ -36,16 +36,16 @@ export function classifyForDigest(task: ClassifiableTask, actor: { name: string;
   return null;
 }
 
-// Splits a person's personally-relevant tasks into three buckets for the
-// pending-tasks digest — same rule for every role, including admins: this is
-// about what's personally on their plate, not the broader "everything my
-// role can see" (canSeeTask). See classifyForDigest for the exact rules.
-export async function personalTaskDigest(target: TargetUser, closedWithinHours = 24): Promise<TaskDigest> {
-  const all = await getDb().select().from(tasks);
-  const today = new Date().toISOString().slice(0, 10);
-  const closedSince = new Date(Date.now() - closedWithinHours * 3600000);
-  const roleOf = (task: typeof all[number]) => (task.owner === target.name ? "Owner" : task.collaborators.includes(target.name) ? "Coworker" : task.recipients.includes(target.name) ? "Recipient" : undefined) as "Owner" | "Coworker" | "Recipient" | undefined;
-  const toLine = (task: typeof all[number]): PendingTaskLine => ({
+type RawTask = { subject: string; description: string; project: string; topic: string; recurringMeeting: string; due: string; status: string; owner: string; collaborators: string[]; recipients: string[]; closedAt: Date | null };
+
+// Maps a raw task row to the shape the pending-tasks/invitation email
+// templates render, from the perspective of `name` (owner/coworker/
+// recipient — whichever applies). Shared by personalTaskDigest and the
+// external-invite task preview so both compute "role" and "overdue" the
+// same way.
+export function taskLineFor(task: RawTask, name: string, today = new Date().toISOString().slice(0, 10)): PendingTaskLine {
+  const role = (task.owner === name ? "Owner" : task.collaborators.includes(name) ? "Coworker" : task.recipients.includes(name) ? "Recipient" : undefined) as "Owner" | "Coworker" | "Recipient" | undefined;
+  return {
     subject: task.subject,
     description: task.description || undefined,
     project: task.project || undefined,
@@ -54,13 +54,35 @@ export async function personalTaskDigest(target: TargetUser, closedWithinHours =
     due: task.due || undefined,
     overdue: Boolean(task.due) && task.due < today && task.status !== "Closed",
     status: (task.status === "Closed" ? "Closed" : task.status === "In progress" ? "In progress" : "Open") as "Open" | "In progress" | "Closed",
-    role: roleOf(task),
+    role,
     closedAt: task.closedAt ? task.closedAt.toISOString().slice(0, 10) : undefined,
-  });
+  };
+}
+
+// Open (never closed) tasks where `name` appears as owner, coworker, or
+// recipient — a plain filter, not role-aware like classifyForDigest. Used
+// both for the "N tasks reference this name" preview when composing an
+// invitation and for the task preview baked into the invitation email
+// itself. The caller is responsible for any visibility scoping first (e.g.
+// an inviting admin should only ever see/send tasks they themselves can
+// see — see app/api/tasks/match-name/route.ts), since this function has no
+// concept of who's asking.
+export function tasksReferencingName<T extends { owner: string; collaborators: string[]; recipients: string[]; status: string }>(all: T[], name: string): T[] {
+  return all.filter(task => task.status !== "Closed" && (task.owner === name || task.collaborators.includes(name) || task.recipients.includes(name)));
+}
+
+// Splits a person's personally-relevant tasks into three buckets for the
+// pending-tasks digest — same rule for every role, including admins: this is
+// about what's personally on their plate, not the broader "everything my
+// role can see" (canSeeTask). See classifyForDigest for the exact rules.
+export async function personalTaskDigest(target: TargetUser, closedWithinHours = 24): Promise<TaskDigest> {
+  const all = await getDb().select().from(tasks);
+  const today = new Date().toISOString().slice(0, 10);
+  const closedSince = new Date(Date.now() - closedWithinHours * 3600000);
   const digest: TaskDigest = { myTasks: [], delegatedTasks: [], recentlyClosed: [] };
   for (const task of all) {
     const bucket = classifyForDigest(task, target, closedSince);
-    if (bucket) digest[bucket].push(toLine(task));
+    if (bucket) digest[bucket].push(taskLineFor(task, target.name, today));
   }
   digest.myTasks.sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
   digest.delegatedTasks.sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
