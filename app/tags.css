@@ -21,6 +21,14 @@
 .nav-children button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .side nav .nav-children em{background:transparent;padding:0;color:#9aa2ad}
 @media(max-width:900px){.nav-children{display:none}}
+/* The 900px tier hides an expanded category's sub-list entirely — there's
+   no room for it on the icon-only rail at that width. Below 620px the
+   sidebar isn't a rail anymore, it's the full off-canvas drawer (see
+   globals.css), which has plenty of room — but a phone matches both media
+   queries at once, so the 900px display:none was silently winning there
+   too, and tapping a category (e.g. Projects) never showed its list of
+   names. Restore it specifically for the drawer tier. */
+@media(max-width:620px){.nav-children{display:grid}}
 .edit-section{display:grid;gap:16px;margin:24px 0}
 .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
 .editable-field{display:flex;flex-direction:column;gap:6px}
