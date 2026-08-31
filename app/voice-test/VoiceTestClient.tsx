@@ -7,7 +7,7 @@ type Provider = { key: string; label: string; endpoint: string };
 
 const PROVIDERS: Provider[] = [
   { key: "openai", label: "OpenAI (Whisper-1)", endpoint: "/api/voice-test" },
-  { key: "deepgram", label: "Deepgram", endpoint: "/api/voice-test-deepgram" },
+  { key: "deepgram", label: "Deepgram (keyword-boosted)", endpoint: "/api/voice-test-deepgram" },
 ];
 
 // Picks a mimeType MediaRecorder can actually produce on this browser.
