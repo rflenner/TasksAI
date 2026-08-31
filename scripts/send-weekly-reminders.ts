@@ -4,19 +4,24 @@ import { endOfThisWeek, personalTaskDigest } from "../app/lib/pending-tasks";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
 
-// Runs once daily as a Render Cron Job (see render.yaml). Sends each active
-// user their personal open tasks due this week or earlier — never a future
-// week — split into "My tasks" (owner/coworker) and "Delegated tasks"
-// (recipient only), plus anything of theirs closed since yesterday. Never a
-// user with nothing to report, so this stays a short, relevant nudge rather
-// than noise.
+// Runs once weekly (Monday mornings — see render.yaml) as a Render Cron
+// Job. Sends each active user their personal open tasks due this week or
+// earlier — never a future week — split into "My tasks" (owner/coworker)
+// and "Delegated tasks" (recipient only), plus anything of theirs closed
+// since last run. Never a user with nothing to report, so this stays a
+// short, relevant nudge rather than noise.
+//
+// This used to run daily (scripts/send-reminders.ts, now this file) — the
+// full digest moved to weekly on its own; overdue tasks get a separate,
+// more frequent nudge instead (scripts/send-overdue-nudges.ts), so this
+// script no longer needs to carry that urgency on its own.
 const appUrl = process.env.APP_URL;
 if (!appUrl) throw new Error("APP_URL is required");
 const weekEnd = endOfThisWeek();
 
 // TEST_EMAIL restricts a manually-triggered run to one address instead of
 // every active user — set it temporarily on the Cron Job's Environment tab
-// before clicking Trigger Run, then remove it so the real 05:00 UTC run goes
+// before clicking Trigger Run, then remove it so the real Monday run goes
 // out to everyone again.
 const testEmail = process.env.TEST_EMAIL?.trim().toLowerCase();
 if (testEmail) console.log(`TEST MODE: restricting this run to ${testEmail}`);
@@ -34,7 +39,7 @@ for (const user of active) {
     if (!totalOpen && !digest.recentlyClosed.length) { skipped++; continue; }
     const overdueCount = [...myTasks, ...delegatedTasks].filter(task => task.overdue).length;
     const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey: `daily-${user.id}-${new Date().toISOString().slice(0, 10)}` });
+    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey: `weekly-${user.id}-${new Date().toISOString().slice(0, 10)}` });
     if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${totalOpen} due this week or earlier, ${digest.recentlyClosed.length} recently closed`); }
     else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
   } catch (error) {
@@ -43,6 +48,6 @@ for (const user of active) {
   }
 }
 
-console.log(`Daily reminders done: ${sent} sent, ${skipped} skipped, ${failed} failed (of ${active.length} active users)`);
+console.log(`Weekly reminders done: ${sent} sent, ${skipped} skipped, ${failed} failed (of ${active.length} active users)`);
 await getSql().end();
 if (failed) process.exitCode = 1;
