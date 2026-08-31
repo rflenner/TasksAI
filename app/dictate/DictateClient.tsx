@@ -51,15 +51,25 @@ export default function DictateClient() {
   const [finalText, setFinalText] = useState("");
   const [editableText, setEditableText] = useState("");
   const [seconds, setSeconds] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stoppingRef = useRef(false);
+  // finalText/liveText mirrored into refs so stop() always reads the
+  // current transcript. ws.onmessage is assigned once, inside start(),
+  // and never reassigned on re-render — so a plain closure over finalText/
+  // liveText state would freeze at whatever those were at connection time
+  // (almost always empty), silently dropping the transcript on any
+  // server-triggered auto-stop even if the stop itself fired correctly.
+  const finalTextRef = useRef("");
+  const liveTextRef = useRef("");
 
   async function start() {
     setError(""); setLiveText(""); setFinalText(""); setEditableText("");
+    finalTextRef.current = ""; liveTextRef.current = "";
     stoppingRef.current = false;
     setStatus("connecting");
     try {
@@ -72,11 +82,16 @@ export default function DictateClient() {
         smart_format: "true",
         punctuate: "true",
         interim_results: "true",
-        // 5s of silence after speech marks the utterance speech_final —
-        // that's what drives the auto-stop-on-silence behavior below,
-        // using Deepgram's own server-side voice-activity detection
-        // instead of hand-rolled client-side amplitude thresholds.
+        // Two overlapping silence signals: endpointing marks speech_final
+        // on the results message that closes out an utterance after this
+        // many ms of trailing silence; utterance_end_ms is Deepgram's
+        // purpose-built "user stopped talking" event, sent as its own
+        // message type rather than riding along a transcript message —
+        // more reliable on its own since it doesn't depend on exactly
+        // how/when a final transcript message happens to be emitted.
+        // Listening for both and stopping on whichever fires first.
         endpointing: "5000",
+        utterance_end_ms: "5000",
       });
       for (const term of tokenData.glossary || []) params.append("keyterm", term);
       const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ["token", tokenData.token]);
@@ -88,12 +103,18 @@ export default function DictateClient() {
       ws.onmessage = event => {
         try {
           const msg = JSON.parse(event.data as string) as { type?: string; is_final?: boolean; speech_final?: boolean; channel?: { alternatives?: Array<{ transcript?: string }> } };
+          if (msg.type === "UtteranceEnd") { void stop(); return; }
           if (msg.type !== "Results") return;
           const transcript = msg.channel?.alternatives?.[0]?.transcript || "";
           if (msg.is_final) {
-            if (transcript) setFinalText(prev => prev ? `${prev} ${transcript}` : transcript);
+            if (transcript) {
+              finalTextRef.current = finalTextRef.current ? `${finalTextRef.current} ${transcript}` : transcript;
+              setFinalText(finalTextRef.current);
+            }
+            liveTextRef.current = "";
             setLiveText("");
           } else {
+            liveTextRef.current = transcript;
             setLiveText(transcript);
           }
           if (msg.speech_final) void stop();
@@ -133,15 +154,34 @@ export default function DictateClient() {
       try { ws.send(JSON.stringify({ type: "CloseStream" })); } catch { /* socket already gone */ }
       setTimeout(() => ws.close(), 300);
     }
-    setStatus(prev => {
-      const settled = (finalText + (liveText ? ` ${liveText}` : "")).trim();
-      setEditableText(settled || "");
-      return prev === "error" ? prev : "stopped";
-    });
+    const settled = (finalTextRef.current + (liveTextRef.current ? ` ${liveTextRef.current}` : "")).trim();
+    setEditableText(settled);
+    setStatus(prev => prev === "error" ? prev : "stopped");
   }
 
   function startOver() {
     setStatus("idle"); setError(""); setLiveText(""); setFinalText(""); setEditableText(""); setSeconds(0);
+    finalTextRef.current = ""; liveTextRef.current = "";
+  }
+
+  async function readBack() {
+    if (!editableText.trim() || speaking) return;
+    setSpeaking(true); setError("");
+    try {
+      const res = await fetch("/api/dictate/speak", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: editableText }) });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        setError(data.error || "Could not read the text back"); setSpeaking(false); return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+      await audio.play();
+    } catch {
+      setError("Could not read the text back."); setSpeaking(false);
+    }
   }
 
   async function createTask() {
@@ -184,7 +224,12 @@ export default function DictateClient() {
           </>
         )}
         {(status === "stopped" || status === "creating") && (
-          <button onClick={startOver} className="h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]">Record again</button>
+          <>
+            <button onClick={startOver} className="h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]">Record again</button>
+            <button onClick={() => void readBack()} disabled={speaking || !editableText.trim()} className="h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3] disabled:opacity-50">
+              {speaking ? "🔊 Reading…" : "🔊 Read it back"}
+            </button>
+          </>
         )}
       </div>
 
