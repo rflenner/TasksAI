@@ -90,6 +90,17 @@ export async function personalTaskDigest(target: TargetUser, closedWithinHours =
   return digest;
 }
 
+// Open, overdue tasks where `target` is specifically the owner — not
+// coworker, not recipient. Deliberately stricter than classifyForDigest's
+// myTasks bucket (owner OR coworker): the overdue nudge is meant to land
+// squarely on whoever's actually accountable for missing the date, not
+// everyone loosely associated with the task.
+export async function overdueOwnedTasks(target: TargetUser, today = new Date().toISOString().slice(0, 10)): Promise<PendingTaskLine[]> {
+  const all = await getDb().select().from(tasks);
+  const overdue = all.filter(task => task.owner === target.name && task.status !== "Closed" && task.due && task.due < today);
+  return overdue.map(task => taskLineFor(task, target.name, today)).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+}
+
 // End of the current ISO week (the coming Sunday), as an ISO date string.
 export function endOfThisWeek(today = new Date()): string {
   const isoDay = today.getUTCDay() === 0 ? 7 : today.getUTCDay();

@@ -190,6 +190,30 @@ export function renderPendingTasksEmail(input: { firstName: string; appUrl: stri
   return { subject, html, text };
 }
 
+// Focused nudge for tasks the recipient specifically owns and are now
+// overdue — separate from the broader weekly digest (renderPendingTasksEmail)
+// on purpose: this is meant to read as urgent and owner-specific, not get
+// lost among a week's worth of everything else on their plate.
+export function renderOverdueNudgeEmail(input: { firstName: string; appUrl: string; overdueTasks: PendingTaskLine[] }) {
+  const firstName = input.firstName.split(" ")[0] || "there";
+  const count = input.overdueTasks.length;
+  const openLinkUrl = `${input.appUrl}/?view=reminder`;
+  const overdueSection = section("Overdue — owned by you", input.overdueTasks, "myTasks", openLinkUrl);
+  const subject = `⚠ ${count} overdue task${count === 1 ? "" : "s"} — action needed`;
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
+    @media screen and (max-width:480px){
+      .tai-outer{padding:20px 8px !important}
+      .tai-inner{padding:22px 16px !important}
+      .tai-head{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc-full{display:none !important}
+      .tai-desc-short{display:inline !important}
+    }
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Overdue</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#a84235;font-size:14px;font-weight:700">you own ${count} task${count === 1 ? "" : "s"} past due.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">A quick update or a new due date keeps these off this list.</div>${overdueSection.html}<a href="${esc(openLinkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${firstName},\n\nyou own ${count} task${count === 1 ? "" : "s"} past due.\nA quick update or a new due date keeps these off this list.\n\n${overdueSection.text}\n\nOpen Task AI: ${openLinkUrl}`;
+  return { subject, html, text };
+}
+
 export function renderLoginEmail(input: { name: string; code: string; link: string }) {
   const firstName = input.name.split(" ")[0] || "there";
   // The link goes to a normal page (/login/confirm), never straight to an
