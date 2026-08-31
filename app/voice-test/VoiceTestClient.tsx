@@ -14,6 +14,23 @@ function pickMimeType() {
   return "";
 }
 
+// getUserMedia failures were previously flattened into one generic
+// "denied or unavailable" message regardless of cause, which made this
+// impossible to debug remotely — permission-granted-but-still-failing
+// reports had no way to tell a real block apart from a busy/missing
+// device. Surface the actual DOMException name plus a plain-English
+// guess so both a screenshot and a glance are useful.
+function describeMicError(err: unknown) {
+  const name = err instanceof DOMException ? err.name : "";
+  const hint =
+    name === "NotAllowedError" ? "permission was denied — check the site and OS microphone settings." :
+    name === "NotFoundError" ? "no microphone was found — check a mic is connected and selected as input." :
+    name === "NotReadableError" ? "the microphone is in use or unreachable — try closing other apps that use audio (Zoom, DJ software, etc.) and retry." :
+    name === "SecurityError" ? "this page isn't considered secure enough for mic access — make sure you're on https://." :
+    "an unexpected error occurred.";
+  return name ? `Microphone error (${name}): ${hint}` : "Microphone access was denied or unavailable.";
+}
+
 export default function VoiceTestClient() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
@@ -42,8 +59,8 @@ export default function VoiceTestClient() {
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
       setStatus("recording");
-    } catch {
-      setStatus("error"); setError("Microphone access was denied or unavailable.");
+    } catch (err) {
+      setStatus("error"); setError(describeMicError(err));
     }
   }
 
