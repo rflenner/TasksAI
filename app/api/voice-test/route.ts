@@ -21,7 +21,12 @@ export async function POST(request: Request) {
   const outgoing = new FormData();
   const ext = (audio.type.split("/")[1] || "webm").split(";")[0];
   outgoing.append("file", audio, `clip.${ext}`);
-  outgoing.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-transcribe");
+  // whisper-1 over gpt-4o-transcribe: side-by-side testing showed the
+  // newer chat-model-based transcriber sometimes paraphrases or drops
+  // words (once dropped a name entirely) instead of transcribing verbatim
+  // — a real problem when the whole point is capturing names/projects
+  // exactly. whisper-1 is a straight ASR model without that tendency.
+  outgoing.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1");
 
   const started = Date.now();
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
