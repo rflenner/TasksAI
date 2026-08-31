@@ -3,17 +3,25 @@ import { dimensionValues } from "../../../../db/schema";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
 
-// Mints a short-lived, scoped Deepgram key so the browser can open a live
-// transcription WebSocket directly to Deepgram. Streaming audio through
-// our own server would need a custom WebSocket-capable Node server —
-// Next.js route handlers don't support the upgrade — so instead we follow
-// Deepgram's own guidance for browser clients: never ship the long-lived
-// project key to the page, mint a narrow, single-session one instead.
+// Hands the browser what it needs to open a live transcription WebSocket
+// directly to Deepgram — streaming audio through our own server would
+// need a custom WebSocket-capable Node process (Next.js route handlers
+// don't support the upgrade), so the client has to talk to Deepgram
+// itself. Deepgram's own guidance for that is to mint a short-lived,
+// scoped key per session rather than exposing the long-lived project
+// key — but that needs the key to carry the "keys:write" management
+// scope, which this account's key doesn't have. Using the long-lived key
+// directly is a real tradeoff (any signed-in user with devtools open
+// could see it, for as long as it's valid — not just a 5-minute window)
+// that's acceptable for now since this is an internal tool behind sign-
+// in, not public. Revisit if the key ever gets keys:write scope (restores
+// temporary keys with no other change needed) or if this needs to be
+// tighter later (proxy the WebSocket server-side instead, so no Deepgram
+// credential ever reaches the browser).
 // Also returns the current glossary so the client can build the same
 // Keyterm-Prompting boost list the pre-recorded /api/voice-test-deepgram
 // route uses, tuned for this app's real people/projects.
 const KEYTERM_LIMIT = 100;
-const TOKEN_TTL_SECONDS = 300;
 
 export async function POST(request: Request) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
@@ -24,23 +32,5 @@ export async function POST(request: Request) {
   const glossaryRows = await getDb().select({ value: dimensionValues.value }).from(dimensionValues).limit(KEYTERM_LIMIT);
   const glossary = glossaryRows.map(row => row.value);
 
-  const projectsRes = await fetch("https://api.deepgram.com/v1/projects", { headers: { authorization: `Token ${key}` } });
-  if (!projectsRes.ok) return Response.json({ error: "Could not reach Deepgram", code: "ai_failed" }, { status: 502 });
-  const projectsData = await projectsRes.json() as { projects?: Array<{ project_id: string }> };
-  const projectId = projectsData.projects?.[0]?.project_id;
-  if (!projectId) return Response.json({ error: "No Deepgram project found for this key", code: "ai_failed" }, { status: 502 });
-
-  const keyRes = await fetch(`https://api.deepgram.com/v1/projects/${projectId}/keys`, {
-    method: "POST",
-    headers: { authorization: `Token ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ comment: "task-ai dictate session", scopes: ["usage:write"], time_to_live_in_seconds: TOKEN_TTL_SECONDS }),
-  });
-  if (!keyRes.ok) {
-    const detail = await keyRes.text().catch(() => "");
-    return Response.json({ error: `Could not create a temporary Deepgram key${detail ? `: ${detail.slice(0, 200)}` : ""}`, code: "ai_failed" }, { status: 502 });
-  }
-  const keyData = await keyRes.json() as { key?: string };
-  if (!keyData.key) return Response.json({ error: "Deepgram did not return a key", code: "ai_failed" }, { status: 502 });
-
-  return Response.json({ token: keyData.key, glossary, model: process.env.DEEPGRAM_MODEL || "nova-3" });
+  return Response.json({ token: key, glossary, model: process.env.DEEPGRAM_MODEL || "nova-3" });
 }
