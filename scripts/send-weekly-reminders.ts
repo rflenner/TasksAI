@@ -30,6 +30,13 @@ let active = await getDb().select().from(users).where(eq(users.status, "active")
 if (testEmail) active = active.filter(user => user.email.toLowerCase() === testEmail);
 let sent = 0, skipped = 0, failed = 0;
 
+// Scoped per user per calendar day on purpose — a retried Render cron run
+// shouldn't double-email anyone. In TEST_EMAIL mode that same protection
+// blocks a second manual Trigger Run later the same day (Resend silently
+// treats it as a duplicate of the first), so use a per-run key there
+// instead — see scripts/send-overdue-nudges.ts for the same reasoning.
+const dayKey = new Date().toISOString().slice(0, 10);
+
 for (const user of active) {
   try {
     const digest = await personalTaskDigest(user);
@@ -39,7 +46,8 @@ for (const user of active) {
     if (!totalOpen && !digest.recentlyClosed.length) { skipped++; continue; }
     const overdueCount = [...myTasks, ...delegatedTasks].filter(task => task.overdue).length;
     const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey: `weekly-${user.id}-${new Date().toISOString().slice(0, 10)}` });
+    const idempotencyKey = testEmail ? `weekly-${user.id}-test-${Date.now()}` : `weekly-${user.id}-${dayKey}`;
+    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
     if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${totalOpen} due this week or earlier, ${digest.recentlyClosed.length} recently closed`); }
     else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
   } catch (error) {

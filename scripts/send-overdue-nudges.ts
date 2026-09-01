@@ -29,12 +29,22 @@ let active = await getDb().select().from(users).where(eq(users.status, "active")
 if (testEmail) active = active.filter(user => user.email.toLowerCase() === testEmail);
 let sent = 0, skipped = 0, failed = 0;
 
+// The idempotency key is scoped per user per calendar day on purpose — if
+// Render ever retries a cron run, the same person shouldn't get double-
+// emailed. But that also means a second manual Trigger Run later the same
+// day silently no-ops at Resend (same key = recognized duplicate, nothing
+// new sent, no new line in Resend's own log either). In TEST_EMAIL mode
+// that's actively unhelpful — you want every manual trigger to actually
+// send — so the key includes the current time instead, unique per run.
+const dayKey = new Date().toISOString().slice(0, 10);
+
 for (const user of active) {
   try {
     const overdueTasks = await overdueOwnedTasks(user);
     if (!overdueTasks.length) { skipped++; continue; }
     const message = renderOverdueNudgeEmail({ firstName: user.name, appUrl, overdueTasks });
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey: `overdue-${user.id}-${new Date().toISOString().slice(0, 10)}` });
+    const idempotencyKey = testEmail ? `overdue-${user.id}-test-${Date.now()}` : `overdue-${user.id}-${dayKey}`;
+    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
     if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${overdueTasks.length} overdue and owned`); }
     else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
   } catch (error) {
