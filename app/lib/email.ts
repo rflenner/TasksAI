@@ -197,7 +197,13 @@ export function renderPendingTasksEmail(input: { firstName: string; appUrl: stri
 export function renderOverdueNudgeEmail(input: { firstName: string; appUrl: string; overdueTasks: PendingTaskLine[] }) {
   const firstName = input.firstName.split(" ")[0] || "there";
   const count = input.overdueTasks.length;
-  const openLinkUrl = `${input.appUrl}/?view=reminder`;
+  // Its own view param, distinct from the weekly digest's ?view=reminder:
+  // that one lands on "everything due this week or earlier, any role",
+  // which on click-through looked like "all my tasks" rather than the
+  // owner-only overdue list this email actually promised. ?view=overdue
+  // opens My tasks pre-filtered to Role=Owner, Status=Overdue — matching
+  // this email's content exactly.
+  const openLinkUrl = `${input.appUrl}/?view=overdue`;
   const overdueSection = section("Overdue — owned by you", input.overdueTasks, "myTasks", openLinkUrl);
   const subject = `⚠ ${count} overdue task${count === 1 ? "" : "s"} — action needed`;
   const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
