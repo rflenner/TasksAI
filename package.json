@@ -21,6 +21,8 @@
     "check": "pnpm lint && pnpm test && pnpm build"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "postgres": "3.4.7",
