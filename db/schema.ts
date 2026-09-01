@@ -40,3 +40,16 @@ export const taskActivity = pgTable("task_activity", {
 export const taskViews = pgTable("task_views", {
   taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }), actorName: text("actor_name").notNull(), viewedAt: timestamp("viewed_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [uniqueIndex("task_views_task_actor_unique").on(table.taskId, table.actorName)]);
+// One row per registered WebAuthn credential (Face ID, Touch ID, Windows
+// Hello, a hardware key) — a user can have several, one per device. counter
+// is the authenticator's signature counter, used to detect a cloned
+// credential (should only ever increase; a same-or-lower value on a login
+// attempt means something's wrong). publicKey/credentialId are stored
+// base64url-encoded, matching what @simplewebauthn hands back — no need to
+// re-decode for verification, it takes the encoded form directly.
+export const passkeys = pgTable("passkeys", {
+  id: serial("id").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  credentialId: text("credential_id").notNull(), publicKey: text("public_key").notNull(), counter: integer("counter").notNull().default(0),
+  transports: jsonb("transports").$type<string[]>().notNull().default([]), deviceLabel: text("device_label"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+}, table => [uniqueIndex("passkeys_credential_id_unique").on(table.credentialId), index("passkeys_user_idx").on(table.userId)]);
