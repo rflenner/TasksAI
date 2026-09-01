@@ -25,6 +25,17 @@ const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, characte
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
 }[character] || character));
 
+// Matches the app's own Role filter wording (see FilterMenu's Role options
+// in TaskApp.js: Owner / Co-Worker / Reporter/Recipient) rather than the
+// bare enum value — "Role: Owner" read like a generic status tag, not "this
+// one's on you". Owner gets its own phrasing since that's the relationship
+// that matters most (you're accountable), not just another role among three.
+const ROLE_EMAIL_LABEL: Record<"Owner" | "Coworker" | "Recipient", string> = {
+  Owner: "Owned by me",
+  Coworker: "Role: Co-worker",
+  Recipient: "Role: Recipient or Reporter",
+};
+
 // Secondary metadata, not a call-out — kept visually quiet next to the due/
 // role/status row above it.
 function tag(label: string, value?: string) {
@@ -60,7 +71,7 @@ function taskCard(task: Omit<DigestTask, "status"> & { status?: DigestTask["stat
         <tr><td class="tai-head" style="padding:10px 18px 0">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
             <td style="white-space:nowrap;font-size:11px;font-weight:700;color:${dueColor}">${esc(dueLabel)}</td>
-            <td style="padding-left:10px;font-size:11px;color:#7a8492">${task.role ? `Role: ${esc(task.role)}` : ""}</td>
+            <td style="padding-left:10px;font-size:11px;color:#7a8492">${task.role ? esc(ROLE_EMAIL_LABEL[task.role]) : ""}</td>
             <td align="right" style="white-space:nowrap"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:${statusBackground};color:${statusColor};font-size:10.5px;font-weight:700">${esc(status)}</span></td>
           </tr></table>
         </td></tr>
@@ -204,7 +215,12 @@ export function renderOverdueNudgeEmail(input: { firstName: string; appUrl: stri
   // opens My tasks pre-filtered to Role=Owner, Status=Overdue — matching
   // this email's content exactly.
   const openLinkUrl = `${input.appUrl}/?view=overdue`;
-  const overdueSection = section("Overdue — owned by you", input.overdueTasks, "myTasks", openLinkUrl);
+  // Every task here is owned by the recipient — overdueOwnedTasks() only
+  // ever returns those — so "Owned by me" on every single card would just
+  // repeat the section title below. State it once, up top, instead of
+  // per-card: strip role off each line before rendering.
+  const overdueTasksForDisplay = input.overdueTasks.map(task => ({ ...task, role: undefined }));
+  const overdueSection = section("Overdue — owned by me only", overdueTasksForDisplay, "myTasks", openLinkUrl);
   const subject = `⚠ ${count} overdue task${count === 1 ? "" : "s"} — action needed`;
   const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
     @media screen and (max-width:480px){
