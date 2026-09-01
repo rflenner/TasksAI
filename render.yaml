@@ -53,6 +53,16 @@ services:
       # the critical path for anything else yet.
       - key: DEEPGRAM_API_KEY
         sync: false
+      # OAuth client from Google Cloud Console → APIs & Services →
+      # Credentials — Web application type, with
+      # https://tasks-ai.onrender.com/api/auth/google/callback registered as
+      # an authorized redirect URI. "Continue with Google" on /login is a
+      # second way in for an *existing* account (same invite-only rule as
+      # the email/code login) — it never creates a new one.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_WEBHOOK_SECRET

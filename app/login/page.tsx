@@ -1,13 +1,10 @@
-"use client";
-import { useState } from "react";
-import "../accept/accept.css";
-export default function LoginPage(){
- const[email,setEmail]=useState(""),[code,setCode]=useState(""),[step,setStep]=useState<"email"|"code">("email"),[state,setState]=useState<"ready"|"working">("ready"),[error,setError]=useState("");
- const requestCode=async()=>{if(!email.includes("@")||state==="working")return;setState("working");setError("");const response=await fetch("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})});setState("ready");if(response.ok)setStep("code");else{const data=await response.json();setError(data.error||"Could not send the sign-in link")}};
- const verifyCode=async()=>{if(!code.trim()||state==="working")return;setState("working");setError("");const response=await fetch("/api/auth/verify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,code})});if(response.ok){window.location.href="/"}else{setState("ready");const data=await response.json();setError(data.error||"That code didn't work")}};
- return <main className="onboard"><section className="onboard-card"><div className="onboard-logo">Task <b>AI</b></div><p>SECURE SIGN-IN</p><h1>Welcome back</h1>
-  {step==="email"
-   ?<><p>Enter the email address connected to your Task AI invitation.</p><div className="onboard-form"><label className="onboard-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event=>setEmail(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void requestCode()}} placeholder="you@company.com"/></label>{error&&<p className="onboard-error">{error}</p>}<button className="onboard-primary" disabled={state==="working"||!email.includes("@")} onClick={requestCode}>{state==="working"?"Sending link…":"Email me a sign-in link"}</button></div></>
-   :<><p>Check <b>{email}</b> and click the sign-in link — fastest on the device where you opened the email. On a different device, enter the 8-character code from that same email instead.</p><div className="onboard-form"><label className="onboard-field"><span>Sign-in code</span><input value={code} onChange={event=>setCode(event.target.value.toUpperCase())} onKeyDown={event=>{if(event.key==="Enter")void verifyCode()}} placeholder="ABCD2345" maxLength={8}/></label>{error&&<p className="onboard-error">{error}</p>}<button className="onboard-primary" disabled={state==="working"||!code.trim()} onClick={verifyCode}>{state==="working"?"Signing in…":"Sign in with code"}</button><button style={{background:"none",border:0,color:"#697181",cursor:"pointer",font:"inherit",padding:0,textAlign:"left"}} type="button" onClick={()=>{setStep("email");setCode("");setError("")}}>← Use a different email</button></div></>}
- </section></main>;
+import LoginClient from "./LoginClient";
+// /api/auth/google/callback redirects back here with ?error=<message> on any
+// failure (cancelled consent, expired state, unrecognized account) — read
+// server-side via searchParams rather than window.location.search client-
+// side, so the message renders in the initial HTML with no extra effect
+// round trip and no hydration mismatch.
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const params = await searchParams;
+  return <LoginClient initialError={params.error || ""} />;
 }
