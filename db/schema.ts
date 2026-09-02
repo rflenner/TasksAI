@@ -35,10 +35,24 @@ export const tasks = pgTable("tasks", {
   // could route around.
   externalSource: text("external_source"),
   externalId: text("external_id"),
+  // The Sales AI company (account) and deal (opportunity) a task relates
+  // to — distinct from Task AI's own `project`, which is an internal
+  // workstream, not necessarily one customer. Both pairs follow the same
+  // shape: a stable Sales AI id (survives a rename on their side) plus a
+  // readable name cached at sync time, refreshed whenever a sync re-
+  // resolves the id. opportunityId/opportunityName are frequently null —
+  // not every action item ties to a specific deal — accountId/accountName
+  // are expected on nearly all of them. All four null is the normal case
+  // for anything not created via the Sales AI sync.
+  accountId: text("account_id"),
+  accountName: text("account_name"),
+  opportunityId: text("opportunity_id"),
+  opportunityName: text("opportunity_name"),
 }, table => [
   index("tasks_owner_idx").on(table.owner),
   index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic),
   uniqueIndex("tasks_external_unique").on(table.externalSource, table.externalId).where(sql`${table.externalSource} is not null and ${table.externalId} is not null`),
+  index("tasks_account_idx").on(table.accountId),
 ]);
 // One row per distinct pasted-minutes submission (keyed by a hash of the
 // raw text, not the resulting tasks) — lets "Paste meeting minutes" warn
