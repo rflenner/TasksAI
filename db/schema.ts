@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
@@ -23,7 +24,38 @@ export const tasks = pgTable("tasks", {
   // of the pending-tasks digest — only tasks closed after this shipped have
   // a real value here, older closures show no close date.
   closedAt: timestamp("closed_at", { withTimezone: true }),
-}, table => [index("tasks_owner_idx").on(table.owner), index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic)]);
+  // Provenance for a task that came from somewhere other than someone
+  // directly typing it in — e.g. externalSource "sales-ai" / externalId the
+  // Sales AI action_item_id, once that sync exists. Both null means "created
+  // directly in Task AI" (manual entry, pasted minutes, dictation) — that's
+  // the normal case and stays untouched. The partial unique index below
+  // guarantees, at the database level, that the same external item can
+  // never be imported twice, no matter how a future sync's own dedup logic
+  // is written — a real constraint, not just an app-level check that a bug
+  // could route around.
+  externalSource: text("external_source"),
+  externalId: text("external_id"),
+}, table => [
+  index("tasks_owner_idx").on(table.owner),
+  index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic),
+  uniqueIndex("tasks_external_unique").on(table.externalSource, table.externalId).where(sql`${table.externalSource} is not null and ${table.externalId} is not null`),
+]);
+// One row per distinct pasted-minutes submission (keyed by a hash of the
+// raw text, not the resulting tasks) — lets "Paste meeting minutes" warn
+// before silently re-creating the same tasks from text that's already been
+// pasted once. Deliberately not applied to dictation (app/dictate), which
+// shares the same /api/extract endpoint: spoken text naturally varies
+// run to run, so an exact-text duplicate there is far more likely to be a
+// genuine repeat than an accidental one, and duplicate detection isn't
+// worth the false-positive risk there. onConflictDoNothing on insert means
+// only the *first* paste of a given text is recorded — a later, deliberate
+// re-paste (force:true) doesn't overwrite "first pasted at" with itself.
+export const pastedMinutes = pgTable("pasted_minutes", {
+  contentHash: text("content_hash").primaryKey(),
+  pastedBy: text("pasted_by"),
+  taskCount: integer("task_count").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 export const dimensionValues = pgTable("dimension_values", { id: serial("id").primaryKey(), type: text("type").notNull(), value: text("value").notNull() }, table => [uniqueIndex("dimension_values_type_value_unique").on(table.type, table.value)]);
 export const sessions = pgTable("sessions", { idHash: text("id_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);
 export const loginTokens = pgTable("login_tokens", { tokenHash: text("token_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), usedAt: timestamp("used_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("login_tokens_user_idx").on(table.userId)]);

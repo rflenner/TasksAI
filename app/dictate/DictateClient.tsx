@@ -199,7 +199,11 @@ export default function DictateClient() {
     if (!editableText.trim()) return;
     setStatus("creating"); setError("");
     try {
-      const extractRes = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: editableText }) });
+      // source:"dictate" exempts this from /api/extract's duplicate-paste
+      // detection — spoken text naturally varies each take, so an exact
+      // match here is far more likely a genuine repeat than an accidental
+      // re-paste (see app/api/extract/route.ts).
+      const extractRes = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: editableText, source: "dictate" }) });
       const extractData = await extractRes.json() as { tasks?: Array<Record<string, unknown>>; error?: string };
       const items = extractRes.ok && extractData.tasks?.length ? extractData.tasks : [{ subject: editableText.slice(0, 140), description: editableText }];
       for (const item of items) {
