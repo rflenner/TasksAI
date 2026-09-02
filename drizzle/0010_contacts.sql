@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS contacts (id serial PRIMARY KEY, name text NOT NULL, email text, sales_ai_contact_id text, sales_ai_account_id text, sales_ai_account_name text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_sales_ai_contact_id_unique ON contacts(sales_ai_contact_id) WHERE sales_ai_contact_id IS NOT NULL;

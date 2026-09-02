@@ -35,10 +35,42 @@ export const tasks = pgTable("tasks", {
   // could route around.
   externalSource: text("external_source"),
   externalId: text("external_id"),
+  // The Sales AI company (account) and deal (opportunity) a task relates
+  // to — distinct from Task AI's own `project`, which is an internal
+  // workstream, not necessarily one customer. Both pairs follow the same
+  // shape: a stable Sales AI id (survives a rename on their side) plus a
+  // readable name cached at sync time, refreshed whenever a sync re-
+  // resolves the id. opportunityId/opportunityName are frequently null —
+  // not every action item ties to a specific deal — accountId/accountName
+  // are expected on nearly all of them. All four null is the normal case
+  // for anything not created via the Sales AI sync.
+  accountId: text("account_id"),
+  accountName: text("account_name"),
+  opportunityId: text("opportunity_id"),
+  opportunityName: text("opportunity_name"),
+  // meeting_id only — no meetingName alongside it, unlike account/
+  // opportunity, because there's currently no Sales AI endpoint that
+  // resolves it to anything readable (confirmed live: no meetings entity,
+  // no include/expand param changes the response — see conversation on
+  // 2026-09-02). Stored anyway so nothing is lost: if a Meetings scope
+  // ever gets added on Sales AI's side, every already-synced task can be
+  // backfilled with a real name by re-resolving the ids already saved
+  // here, rather than needing to re-pull and re-match everything from
+  // scratch.
+  meetingId: text("meeting_id"),
+  // The actual spoken line a synced action item was generated from, and
+  // who said it — Sales AI's own UI shows this behind a small click-to-
+  // reveal icon rather than inline in the description, and the task
+  // drawer does the same (see TaskApp.js). Kept as its own field instead
+  // of folded into `description` specifically so the UI can render it
+  // that way — concatenated text can't be un-concatenated later.
+  citationUser: text("citation_user"),
+  citationQuote: text("citation_quote"),
 }, table => [
   index("tasks_owner_idx").on(table.owner),
   index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic),
   uniqueIndex("tasks_external_unique").on(table.externalSource, table.externalId).where(sql`${table.externalSource} is not null and ${table.externalId} is not null`),
+  index("tasks_account_idx").on(table.accountId),
 ]);
 // One row per distinct pasted-minutes submission (keyed by a hash of the
 // raw text, not the resulting tasks) — lets "Paste meeting minutes" warn
@@ -57,6 +89,26 @@ export const pastedMinutes = pgTable("pasted_minutes", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export const dimensionValues = pgTable("dimension_values", { id: serial("id").primaryKey(), type: text("type").notNull(), value: text("value").notNull() }, table => [uniqueIndex("dimension_values_type_value_unique").on(table.type, table.value)]);
+// A structured People registry, distinct from dimensionValues' plain
+// (type,value) strings — those only ever carry a name, no email or
+// external identity. One row per Sales AI contact encountered while
+// syncing (an owner or recipient on some action item), so Task AI can
+// eventually sync back to Sales AI by contact, not just by name-matching
+// a free-text string. salesAiContactId is the match key for that — unique
+// when set, so re-syncing the same contact updates this row rather than
+// duplicating it. Independent of `users` (actual Task AI logins) and of
+// task owner/collaborators/recipients (still plain name strings there,
+// unchanged) — this is purely a reference table the sync keeps enriched.
+export const contacts = pgTable("contacts", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email"),
+  salesAiContactId: text("sales_ai_contact_id"),
+  salesAiAccountId: text("sales_ai_account_id"),
+  salesAiAccountName: text("sales_ai_account_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex("contacts_sales_ai_contact_id_unique").on(table.salesAiContactId).where(sql`${table.salesAiContactId} is not null`)]);
 export const sessions = pgTable("sessions", { idHash: text("id_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);
 export const loginTokens = pgTable("login_tokens", { tokenHash: text("token_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), usedAt: timestamp("used_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("login_tokens_user_idx").on(table.userId)]);
 // Auto-generated, readable diff lines ("Sarah changed due date from ... to
