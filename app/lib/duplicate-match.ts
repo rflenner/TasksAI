@@ -53,3 +53,15 @@ export function findDuplicateSuggestions(type: RetagType, values: string[]): Dup
   }
   return suggestions;
 }
+
+export type MergeCandidate = { value: string; reason: string };
+// Ranked candidates for merging one specific value into — same matching
+// rules as findDuplicateSuggestions, just narrowed to pairs that include
+// `value`. Backs the "Merge" action on a single row: clicking it should
+// show something useful immediately (an existing value that's probably the
+// same thing), not a blank search box.
+export function candidatesFor(type: RetagType, value: string, others: string[]): MergeCandidate[] {
+  return findDuplicateSuggestions(type, [value, ...others])
+    .filter(pair => pair.a === value || pair.b === value)
+    .map(pair => ({ value: pair.a === value ? pair.b : pair.a, reason: pair.reason }));
+}

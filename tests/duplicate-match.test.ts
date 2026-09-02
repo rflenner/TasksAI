@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findDuplicateSuggestions, levenshtein } from "../app/lib/duplicate-match";
+import { candidatesFor, findDuplicateSuggestions, levenshtein } from "../app/lib/duplicate-match";
 
 test("levenshtein: identical strings are 0, a single substitution/insertion/deletion is 1", () => {
   assert.equal(levenshtein("drew", "drew"), 0);
@@ -45,4 +45,20 @@ test("findDuplicateSuggestions: the first-word rule only applies to person, not 
 
 test("findDuplicateSuggestions: blank/whitespace-only values never match anything", () => {
   assert.deepEqual(findDuplicateSuggestions("person", ["", "Drew Klein"]), []);
+});
+
+test("candidatesFor: returns the other side of every matching pair for the given value, not both sides", () => {
+  const candidates = candidatesFor("person", "Drew", ["Drew Klein", "Ayleen", "Rizan Flenner"]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].value, "Drew Klein");
+  assert.match(candidates[0].reason, /short form/);
+});
+
+test("candidatesFor: no matches returns an empty array, not a crash", () => {
+  assert.deepEqual(candidatesFor("person", "Rizan Flenner", ["Ayleen", "Drew Klein"]), []);
+});
+
+test("candidatesFor: multiple genuine candidates are all returned", () => {
+  const candidates = candidatesFor("person", "Pavneet", ["Pavneet Saluja", "Pavneet Kumar", "Ayleen"]);
+  assert.deepEqual(candidates.map(c => c.value).sort(), ["Pavneet Kumar", "Pavneet Saluja"]);
 });
