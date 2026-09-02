@@ -97,8 +97,19 @@ export default function DictateClient() {
       const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ["token", tokenData.token]);
       wsRef.current = ws;
 
-      ws.onerror = () => { setStatus("error"); setError("Could not connect to the transcription service."); };
-      ws.onclose = () => { if (status === "connecting") { setStatus("error"); setError("Connection to the transcription service closed unexpectedly."); } };
+      // The browser deliberately hides the real reason a WebSocket failed
+      // from onerror (no status code, no message) — that's why this used
+      // to just say "could not connect" with nothing else to go on.
+      // onclose does carry a code and (usually) a reason string from
+      // Deepgram itself, so surface those directly instead of a generic
+      // message — and log the raw event too, since DevTools' own console
+      // line for a failed WS upgrade sometimes has detail neither handler
+      // gets (e.g. the HTTP status of the rejected handshake).
+      ws.onerror = event => { console.error("Deepgram WebSocket error", event); setStatus("error"); setError("Could not connect to the transcription service. Check the browser console for more detail."); };
+      ws.onclose = event => {
+        console.error("Deepgram WebSocket closed", { code: event.code, reason: event.reason, wasClean: event.wasClean });
+        if (status === "connecting") { setStatus("error"); setError(`Connection to the transcription service closed unexpectedly${event.code ? ` (code ${event.code}${event.reason ? `: ${event.reason}` : ""})` : ""}.`); }
+      };
 
       ws.onmessage = event => {
         try {
