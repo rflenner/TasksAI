@@ -3,9 +3,10 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { findDuplicateSuggestions } from "../lib/duplicate-match";
 import "../users/users.css";
+import "./data-hygiene.css";
 
 type DimensionType = "project" | "meeting" | "topic" | "person";
-type DimensionRow = { id: number; type: DimensionType; value: string; usageCount: number; lastActivity: string | null };
+type DimensionRow = { id: number; type: DimensionType; value: string; usageCount: number; firstUsed: string | null; lastActivity: string | null; isRegisteredUser: boolean };
 const TYPE_LABEL: Record<DimensionType, string> = { project: "Projects", meeting: "Recurring meetings", topic: "Topics", person: "People" };
 const TYPE_ORDER: DimensionType[] = ["person", "project", "meeting", "topic"];
 
@@ -16,10 +17,24 @@ function formatActivity(iso: string | null) {
   if (minutes < 60) return `Active ${minutes}m ago`;
   if (minutes < 1440) return `Active ${Math.round(minutes / 60)}h ago`;
   if (minutes < 43200) return `Active ${Math.round(minutes / 1440)}d ago`;
-  return `Last active ${new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+  return `Last active ${formatDate(iso)}`;
 }
 
-const pairKey = (type: DimensionType, a: string, b: string) => `${type}|${a}|${b}`;
+// DD.MM.YYYY — task.created is either a full ISO timestamp or a bare
+// YYYY-MM-DD string depending on how the task was made (see
+// app/lib/data-hygiene.ts's usageStats), so parse defensively: take just
+// the date portion rather than trusting new Date() on every shape.
+function formatDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}.${month}.${year}` : value;
+}
+
+function statsLine(row: DimensionRow, type: DimensionType) {
+  const parts = [`${row.usageCount} task slot${row.usageCount === 1 ? "" : "s"}`];
+  if (row.firstUsed) parts.push(`In use since ${formatDate(row.firstUsed)}`);
+  if (type === "person") parts.push(formatActivity(row.lastActivity));
+  return parts.join(" · ");
+}
 
 // initialDimensions comes from the server (page.tsx) — same reasoning as
 // app/account/AccountClient.tsx's initialPasskeys: no fetch-on-mount effect,
@@ -28,14 +43,19 @@ const pairKey = (type: DimensionType, a: string, b: string) => `${type}|${a}|${b
 export default function DataHygieneClient({ initialDimensions }: { initialDimensions: DimensionRow[] }) {
   const [dimensions, setDimensions] = useState<DimensionRow[]>(initialDimensions);
   const [notice, setNotice] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  // Dismissed suggestions are session-only, not persisted — recomputed from
-  // scratch on every page load. A dismissed pair coming back after a reload
-  // is a reasonable trade for not needing a whole new table just to
-  // remember "not a duplicate" clicks.
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // Rename (edit this value's own text) and Merge (fold it into a
+  // different, existing value) are separate actions with separate UI:
+  // Rename edits the name in place; Merge opens a panel of ranked
+  // candidates plus a search fallback. One pattern, not two — there used
+  // to also be a standalone "possible duplicates" section up top doing a
+  // similar-but-different flow; folding that into a per-row candidate
+  // count on the Merge button itself means there's only one place this
+  // ever happens.
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [mergingId, setMergingId] = useState<number | null>(null);
+  const [mergeSearch, setMergeSearch] = useState("");
 
   const byType = useMemo(() => {
     const groups: Record<DimensionType, DimensionRow[]> = { person: [], project: [], meeting: [], topic: [] };
@@ -44,17 +64,23 @@ export default function DataHygieneClient({ initialDimensions }: { initialDimens
     return groups;
   }, [dimensions]);
 
-  const duplicateSuggestions = useMemo(() =>
-    TYPE_ORDER.flatMap(type => findDuplicateSuggestions(type, byType[type].map(row => row.value)))
-      .filter(suggestion => !dismissed.has(pairKey(suggestion.type, suggestion.a, suggestion.b))),
-    [byType, dismissed]);
+  // One pairwise sweep per type, shared by both the Merge button's
+  // candidate-count badge and the panel it opens — computed once, not
+  // separately for each row (findDuplicateSuggestions is O(n²) per type).
+  const dupPairsByType = useMemo(() =>
+    Object.fromEntries(TYPE_ORDER.map(type => [type, findDuplicateSuggestions(type, byType[type].map(row => row.value))])) as Record<DimensionType, ReturnType<typeof findDuplicateSuggestions>>,
+    [byType]);
 
-  const startEdit = (row: DimensionRow) => { setEditingId(row.id); setDraft(row.value); setNotice(""); };
-  const cancelEdit = () => { setEditingId(null); setDraft(""); };
+  const candidatesFor = (row: DimensionRow) =>
+    dupPairsByType[row.type]
+      .filter(pair => pair.a === row.value || pair.b === row.value)
+      .map(pair => ({ value: pair.a === row.value ? pair.b : pair.a, reason: pair.reason }));
 
-  // Shared by the inline "Merge / rename" field and the one-click duplicate
-  // suggestion buttons below — both just need to say which type, what's
-  // going away, and what survives.
+  // Shared by every action that changes what a value's canonical spelling
+  // is — renaming this row's own text or merging it into an existing one.
+  // Both are the exact same server-side operation (see retagDimensionValue)
+  // — this just wraps the fetch, the resulting state update, and the
+  // notice text.
   const retag = async (type: DimensionType, from: string, to: string) => {
     if (!to || from === to || busy) return;
     setBusy(true);
@@ -69,11 +95,20 @@ export default function DataHygieneClient({ initialDimensions }: { initialDimens
       : `"${from}" ${existedAlready ? "merged into" : "renamed to"} "${to}" — nothing currently used it, so no tasks changed.`);
   };
 
-  const applyRetag = async (row: DimensionRow) => {
-    const to = draft.trim();
-    if (!to || to === row.value) return;
+  const startRename = (row: DimensionRow) => { setMergingId(null); setRenamingId(row.id); setRenameDraft(row.value); setNotice(""); };
+  const cancelRename = () => { setRenamingId(null); setRenameDraft(""); };
+  const saveRename = async (row: DimensionRow) => {
+    const to = renameDraft.trim();
+    if (!to || to === row.value) { cancelRename(); return; }
     await retag(row.type, row.value, to);
-    cancelEdit();
+    cancelRename();
+  };
+
+  const startMerge = (row: DimensionRow) => { setRenamingId(null); setMergingId(row.id); setMergeSearch(""); setNotice(""); };
+  const cancelMerge = () => { setMergingId(null); setMergeSearch(""); };
+  const mergeInto = async (row: DimensionRow, to: string) => {
+    await retag(row.type, row.value, to);
+    cancelMerge();
   };
 
   const removeSuggestion = async (row: DimensionRow) => {
@@ -84,8 +119,6 @@ export default function DataHygieneClient({ initialDimensions }: { initialDimens
     setDimensions(items => items.filter(item => item.id !== row.id));
     setNotice(data.stillUsedByTasks ? `Removed "${row.value}" — but ${data.stillUsedByTasks} task${data.stillUsedByTasks === 1 ? " still uses" : "s still use"} it, so it'll come back unless you rename or merge ${data.stillUsedByTasks === 1 ? "that task" : "those tasks"} too.` : `Removed "${row.value}" from suggestions.`);
   };
-
-  const dismissSuggestion = (type: DimensionType, a: string, b: string) => setDismissed(prev => new Set(prev).add(pairKey(type, a, b)));
 
   return (
     <main className="users-shell">
@@ -104,60 +137,64 @@ export default function DataHygieneClient({ initialDimensions }: { initialDimens
           <div>
             <span className="eyebrow">COMPANY SETTINGS</span>
             <h1>Data Hygiene</h1>
-            <p>Merge or rename duplicate names, projects, meetings, and topics — every task and user scope that references the old value is updated to the new one, so nothing gets lost.</p>
+            <p>Merge or rename duplicate names, projects, meetings, and topics — every task and user scope that references the old value is updated to the new one, so nothing gets lost. A number on Merge means we spotted likely matches for it.</p>
           </div>
         </header>
         {notice && <button className="toast" onClick={() => setNotice("")}>{notice} ×</button>}
-
-        {duplicateSuggestions.length > 0 && (
-          <section>
-            <div className="section-title"><div><span className="eyebrow">POSSIBLE DUPLICATES</span><h2>Worth a look</h2></div><span>{duplicateSuggestions.length}</span></div>
-            <div className="cleanup-panel">
-              <p className="hint">Pick which name should be the survivor — every task and user scope pointing at the other one gets switched over automatically.</p>
-              <div className="user-list">
-                {duplicateSuggestions.map(suggestion => (
-                  <article key={pairKey(suggestion.type, suggestion.a, suggestion.b)} className="user-row active">
-                    <div className="identity">
-                      <b>{suggestion.a} <span style={{ fontWeight: 400, color: "#9299a3" }}>vs</span> {suggestion.b}</b>
-                      <small>{TYPE_LABEL[suggestion.type].slice(0, -1)} · {suggestion.reason}</small>
-                    </div>
-                    <div className="row-actions">
-                      <button className="manage" disabled={busy} onClick={() => void retag(suggestion.type, suggestion.a, suggestion.b)}>Keep &quot;{suggestion.b}&quot;</button>
-                      <button className="manage" disabled={busy} onClick={() => void retag(suggestion.type, suggestion.b, suggestion.a)}>Keep &quot;{suggestion.a}&quot;</button>
-                      <button className="manage" onClick={() => dismissSuggestion(suggestion.type, suggestion.a, suggestion.b)}>Not a duplicate</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
 
         {TYPE_ORDER.map(type => byType[type].length > 0 && (
           <section key={type}>
             <div className="section-title"><div><span className="eyebrow">{TYPE_LABEL[type].toUpperCase()}</span><h2>{TYPE_LABEL[type]}</h2></div><span>{byType[type].length}</span></div>
             <div className="user-list">
-              {byType[type].map(row => (
-                <article key={row.id} className="user-row active">
-                  <div className="identity">
-                    <b>{row.value}</b>
-                    <small>{row.usageCount} task slot{row.usageCount === 1 ? "" : "s"}{type === "person" ? ` · ${formatActivity(row.lastActivity)}` : ""}</small>
+              {byType[type].map(row => {
+                const candidates = candidatesFor(row);
+                return (
+                  <div key={row.id}>
+                    <article className="hygiene-row">
+                      <div className="identity">
+                        {renamingId === row.id ? (
+                          <div className="inline-edit">
+                            <input aria-label={`Rename "${row.value}"`} className="inline-edit-input" value={renameDraft} onChange={e => setRenameDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void saveRename(row); if (e.key === "Escape") cancelRename(); }} />
+                            <button className="manage" disabled={busy || !renameDraft.trim() || renameDraft.trim() === row.value} onClick={() => void saveRename(row)}>Save</button>
+                            <button className="manage" onClick={cancelRename}>Cancel</button>
+                          </div>
+                        ) : (
+                          <b>{row.value}{row.isRegisteredUser && <span className="badge badge-registered">Registered</span>}</b>
+                        )}
+                        <small>{statsLine(row, type)}</small>
+                      </div>
+                      <div className="row-actions">
+                        <button className="manage" onClick={() => startRename(row)}>Rename</button>
+                        <button className="manage" onClick={() => mergingId === row.id ? cancelMerge() : startMerge(row)}>
+                          Merge{candidates.length > 0 && <span className="badge badge-count">{candidates.length}</span>}
+                        </button>
+                        <button className="manage" onClick={() => void removeSuggestion(row)}>Remove</button>
+                      </div>
+                    </article>
+                    {mergingId === row.id && (
+                      <div className="merge-panel">
+                        <div className="hint">Merge &quot;{row.value}&quot; into:</div>
+                        {candidates.length > 0 && (
+                          <div className="merge-candidates">
+                            {candidates.map(candidate => (
+                              <button key={candidate.value} className="manage" disabled={busy} onClick={() => void mergeInto(row, candidate.value)}>
+                                {candidate.value} <small>— {candidate.reason.toLowerCase()}</small>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {candidates.length === 0 && <p className="hint">No close matches found automatically — search below instead.</p>}
+                        <div className="merge-search">
+                          <input aria-label={`Search ${TYPE_LABEL[type].toLowerCase()} to merge into`} list={`merge-search-${type}`} value={mergeSearch} onChange={e => setMergeSearch(e.target.value)} placeholder={`Search all ${TYPE_LABEL[type].toLowerCase()}…`} />
+                          <datalist id={`merge-search-${type}`}>{byType[type].filter(item => item.id !== row.id).map(item => <option key={item.id} value={item.value} />)}</datalist>
+                          <button className="manage" disabled={busy || !mergeSearch.trim() || mergeSearch.trim() === row.value} onClick={() => void mergeInto(row, mergeSearch.trim())}>Merge</button>
+                          <button className="manage" onClick={cancelMerge}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {editingId === row.id ? (
-                    <div className="row-actions" style={{ flex: 1, gap: 8 }}>
-                      <input aria-label={`New name for "${row.value}"`} list={`suggest-${type}`} value={draft} onChange={e => setDraft(e.target.value)} placeholder="New name, or pick an existing one to merge into" style={{ flex: 1, minWidth: 220 }} onKeyDown={e => { if (e.key === "Enter") void applyRetag(row); if (e.key === "Escape") cancelEdit(); }} />
-                      <datalist id={`suggest-${type}`}>{byType[type].filter(item => item.id !== row.id).map(item => <option key={item.id} value={item.value} />)}</datalist>
-                      <button className="manage" disabled={busy || !draft.trim() || draft.trim() === row.value} onClick={() => void applyRetag(row)}>{busy ? "Saving…" : "Save"}</button>
-                      <button className="manage" onClick={cancelEdit}>Cancel</button>
-                    </div>
-                  ) : (
-                    <div className="row-actions">
-                      <button className="manage" onClick={() => startEdit(row)}>Merge / rename</button>
-                      <button className="manage" onClick={() => void removeSuggestion(row)}>Remove</button>
-                    </div>
-                  )}
-                </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         ))}

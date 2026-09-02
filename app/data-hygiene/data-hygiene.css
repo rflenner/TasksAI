@@ -1,0 +1,29 @@
+/* .user-row's grid-template-columns assumes 5 children (avatar, identity,
+   role, scope, actions) matching the Users page's row layout — this page's
+   rows only ever have 2 (identity, actions), which badly misaligns that
+   grid. This is a dedicated layout instead of reusing .user-row's grid. */
+.hygiene-row{display:flex;justify-content:space-between;align-items:center;gap:20px;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px}
+.hygiene-row .identity{min-width:0;padding-right:8px}
+.hygiene-row .identity b{font-size:15px}
+.hygiene-row .row-actions{flex-direction:row;flex:none}
+
+.badge{display:inline-block;margin-left:9px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;vertical-align:2px;white-space:nowrap}
+.badge-registered{background:#e4f4eb;color:#25784b}
+.badge-count{background:#fff1d6;color:#9a5a00;margin-left:6px}
+.row-actions .badge-count{vertical-align:1px}
+
+.inline-edit{display:flex;align-items:center;gap:8px}
+.inline-edit-input{border:1px solid #b8cce4;border-radius:6px;padding:6px 9px;font:inherit;font-size:15px;font-weight:700;color:#173f76;min-width:200px}
+
+.merge-panel{margin-top:8px;background:#f8fafc;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px}
+.merge-candidates{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.merge-candidates button{display:flex;align-items:center;gap:5px}
+.merge-candidates small{color:#8b929d;font-weight:400}
+.merge-search{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.merge-search input{flex:1;min-width:200px;border:1px solid #d5dce5;border-radius:8px;padding:9px 11px;background:#fff}
+
+@media(max-width:620px){
+  .hygiene-row{flex-direction:column;align-items:stretch}
+  .hygiene-row .row-actions{justify-content:flex-end}
+  .inline-edit{flex-wrap:wrap}
+}

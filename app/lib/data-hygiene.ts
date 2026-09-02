@@ -77,25 +77,36 @@ export async function retagDimensionValue(type: RetagType, from: string, toRaw: 
   });
 }
 
-export type DimensionRow = { id: number; type: RetagType; value: string; usageCount: number; lastActivity: string | null };
+export type DimensionRow = { id: number; type: RetagType; value: string; usageCount: number; firstUsed: string | null; lastActivity: string | null; isRegisteredUser: boolean };
 // One row per task field a person can appear in — owner, a coworker slot,
 // or a recipient slot — counted independently, so someone who's both
 // coworker and recipient on the same task contributes 2, not 1. That's a
 // deliberate choice: the count is "how many places does this spelling
 // appear", which is what actually matters when deciding whether a variant
-// is worth cleaning up.
-function usageCounts(allTasks: Array<{ owner: string; collaborators: string[]; recipients: string[]; project: string; recurringMeeting: string; topic: string }>) {
+// is worth cleaning up. firstUsed is the earliest task.created among those
+// same references — "this spelling has been around since X" is useful
+// context on its own, and directly useful side-by-side with another
+// candidate's, when deciding which of two similar values is the
+// longer-standing one.
+function usageStats(allTasks: Array<{ owner: string; collaborators: string[]; recipients: string[]; project: string; recurringMeeting: string; topic: string; created: string }>) {
   const counts = new Map<string, number>();
-  const bump = (type: RetagType, value: string) => { if (!value) return; const key = `${type} ${value}`; counts.set(key, (counts.get(key) || 0) + 1); };
+  const firstUsed = new Map<string, string>();
+  const bump = (type: RetagType, value: string, created: string) => {
+    if (!value) return;
+    const key = `${type} ${value}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+    const seen = firstUsed.get(key);
+    if (!seen || created < seen) firstUsed.set(key, created);
+  };
   for (const task of allTasks) {
-    bump("person", task.owner);
-    for (const name of task.collaborators) bump("person", name);
-    for (const name of task.recipients) bump("person", name);
-    bump("project", task.project);
-    bump("meeting", task.recurringMeeting);
-    bump("topic", task.topic);
+    bump("person", task.owner, task.created);
+    for (const name of task.collaborators) bump("person", name, task.created);
+    for (const name of task.recipients) bump("person", name, task.created);
+    bump("project", task.project, task.created);
+    bump("meeting", task.recurringMeeting, task.created);
+    bump("topic", task.topic, task.created);
   }
-  return counts;
+  return { counts, firstUsed };
 }
 
 // "Last activity" for a person is deliberately broader than login: most
@@ -127,14 +138,17 @@ async function lastActivityByName(): Promise<Map<string, Date>> {
 // four dimensions, how many task-slots use it, and (people only) the most
 // recent activity under that exact name.
 export async function dimensionHygieneSummary(): Promise<DimensionRow[]> {
-  const [dims, allTasks, activity] = await Promise.all([
+  const [dims, allTasks, activity, registeredNames] = await Promise.all([
     getDb().select().from(dimensionValues),
-    getDb().select({ owner: tasks.owner, collaborators: tasks.collaborators, recipients: tasks.recipients, project: tasks.project, recurringMeeting: tasks.recurringMeeting, topic: tasks.topic }).from(tasks),
+    getDb().select({ owner: tasks.owner, collaborators: tasks.collaborators, recipients: tasks.recipients, project: tasks.project, recurringMeeting: tasks.recurringMeeting, topic: tasks.topic, created: tasks.created }).from(tasks),
     lastActivityByName(),
+    getDb().select({ name: users.name }).from(users),
   ]);
-  const counts = usageCounts(allTasks);
+  const { counts, firstUsed } = usageStats(allTasks);
+  const registered = new Set(registeredNames.map(row => row.name));
   return dims.map(row => {
     const type = row.type as RetagType;
-    return { id: row.id, type, value: row.value, usageCount: counts.get(`${type} ${row.value}`) || 0, lastActivity: type === "person" ? activity.get(row.value)?.toISOString() || null : null };
+    const key = `${type} ${row.value}`;
+    return { id: row.id, type, value: row.value, usageCount: counts.get(key) || 0, firstUsed: firstUsed.get(key) || null, lastActivity: type === "person" ? activity.get(row.value)?.toISOString() || null : null, isRegisteredUser: type === "person" && registered.has(row.value) };
   });
 }
