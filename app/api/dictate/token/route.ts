@@ -1,5 +1,6 @@
 import { getDb } from "../../../../db";
 import { dimensionValues } from "../../../../db/schema";
+import { buildGlossary } from "../../../lib/glossary";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
 
@@ -20,7 +21,9 @@ import { currentActor } from "../../../lib/session";
 // credential ever reaches the browser).
 // Also returns the current glossary so the client can build the same
 // Keyterm-Prompting boost list the pre-recorded /api/voice-test-deepgram
-// route uses, tuned for this app's real people/projects.
+// route uses, tuned for this app's real people/projects — see
+// app/lib/glossary.ts for why the raw dimensionValues list gets trimmed
+// before being handed back, not just capped by count.
 const KEYTERM_LIMIT = 100;
 
 export async function POST(request: Request) {
@@ -30,7 +33,7 @@ export async function POST(request: Request) {
   if (!key) return Response.json({ error: "Voice capture isn't configured yet", code: "ai_unavailable" }, { status: 503 });
 
   const glossaryRows = await getDb().select({ value: dimensionValues.value }).from(dimensionValues).limit(KEYTERM_LIMIT);
-  const glossary = glossaryRows.map(row => row.value);
+  const glossary = buildGlossary(glossaryRows.map(row => row.value));
 
   return Response.json({ token: key, glossary, model: process.env.DEEPGRAM_MODEL || "nova-3" });
 }
