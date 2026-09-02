@@ -129,6 +129,33 @@ services:
       - key: RESEND_API_KEY
         sync: false
   - type: cron
+    name: tasks-ai-new-task-nudges
+    runtime: node
+    plan: starter
+    region: frankfurt
+    # Once a day, 06:15 UTC — shortly after the 06:00 Sales AI sync run
+    # (see tasks-ai-sales-ai-sync below), so tasks synced or created
+    # overnight are already in by the time this fires. Separate cadence
+    # from the weekly digest and the every-2-days overdue nudge on
+    # purpose: this is meant to land the same day someone is assigned
+    # something, not batched with everything else.
+    schedule: "15 6 * * *"
+    buildCommand: npm install --global pnpm@11.19.0 && pnpm install --frozen-lockfile
+    startCommand: node --import tsx scripts/send-new-task-assignments.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tasks-ai-db-frankfurt
+          property: connectionString
+      - key: APP_URL
+        value: https://tasks-ai.onrender.com
+      - key: TASK_AI_FROM_EMAIL
+        value: Task AI <notifications@tasks.flenner.at>
+      - key: RESEND_API_KEY
+        sync: false
+  - type: cron
     name: tasks-ai-sales-ai-sync
     runtime: node
     plan: starter

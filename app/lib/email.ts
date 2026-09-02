@@ -145,7 +145,7 @@ export type PendingTaskLine = { subject: string; description?: string; project?:
 // "Send task summary" button sends everything; the daily cron pre-filters
 // and caps); this just enforces a hard display ceiling so no single section
 // can blow out an otherwise-short email, with a "+N more" note when capped.
-const SECTION_CAP: Record<"myTasks" | "delegatedTasks" | "recentlyClosed", number> = { myTasks: 8, delegatedTasks: 8, recentlyClosed: 5 };
+const SECTION_CAP: Record<"myTasks" | "delegatedTasks" | "recentlyClosed" | "newTasks", number> = { myTasks: 8, delegatedTasks: 8, recentlyClosed: 5, newTasks: 10 };
 function section(title: string, tasks: PendingTaskLine[], key: keyof typeof SECTION_CAP, linkUrl: string) {
   if (!tasks.length) return { html: "", text: "" };
   const cap = SECTION_CAP[key];
@@ -217,6 +217,33 @@ export function renderOverdueNudgeEmail(input: { firstName: string; appUrl: stri
     }
   </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– Overdue</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#a84235;font-size:14px;font-weight:700">you own ${count} task${count === 1 ? "" : "s"} past due.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">A quick update or a new due date keeps these off this list.</div>${overdueSection.html}<a href="${esc(openLinkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
   const text = `Hi ${firstName},\n\nyou own ${count} task${count === 1 ? "" : "s"} past due.\nA quick update or a new due date keeps these off this list.\n\n${overdueSection.text}\n\nOpen Task AI: ${openLinkUrl}`;
+  return { subject, html, text };
+}
+
+// Daily nudge for tasks someone was just put on — as owner, coworker, or
+// recipient — separate from both the weekly digest and the overdue nudge:
+// this is about noticing a new assignment while it's fresh, not
+// resurfacing something that's already been sitting on their plate. Reuses
+// section()/taskCard() like every other digest, so a newly assigned task
+// renders with the exact same due/role/status/description/tags — nothing
+// new to learn.
+export function renderNewTasksEmail(input: { firstName: string; appUrl: string; newTasks: PendingTaskLine[] }) {
+  const firstName = input.firstName.split(" ")[0] || "there";
+  const count = input.newTasks.length;
+  const openLinkUrl = `${input.appUrl}/?view=reminder`;
+  const newSection = section("New tasks assigned to you", input.newTasks, "newTasks", openLinkUrl);
+  const subject = `${count} new task${count === 1 ? "" : "s"} assigned to you in Task AI`;
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
+    @media screen and (max-width:480px){
+      .tai-outer{padding:20px 8px !important}
+      .tai-inner{padding:22px 16px !important}
+      .tai-head{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc{padding-left:14px !important;padding-right:14px !important}
+      .tai-desc-full{display:none !important}
+      .tai-desc-short{display:inline !important}
+    }
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span> <span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">– New Assignments</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(firstName)},</div><div style="margin-top:4px;color:#102f59;font-size:14px;font-weight:700">you have been assigned ${count} new task${count === 1 ? "" : "s"} in Task AI.</div><div style="margin-top:4px;color:#5b6577;font-size:13px">Please click on the tasks below to review them.</div>${newSection.html}<a href="${esc(openLinkUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${firstName},\n\nYou have been assigned new tasks in Task AI, please click on the tasks to review them.\n\n${newSection.text}\n\nOpen Task AI: ${openLinkUrl}`;
   return { subject, html, text };
 }
 

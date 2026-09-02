@@ -101,6 +101,37 @@ export async function overdueOwnedTasks(target: TargetUser, today = new Date().t
   return overdue.map(task => taskLineFor(task, target.name, today)).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
 }
 
+type AssignableTask = { owner: string; collaborators: string[]; recipients: string[]; created: string };
+
+// Whether `task` counts as "newly assigned" to `actor` for the daily new-
+// assignment digest — same owner/coworker/recipient relationship rule as
+// classifyForDigest (a readonly actor is recipient-only, even if the data
+// also lists them as owner/coworker), but keyed off `created` instead of
+// status/closedAt: unlike the pending-tasks digest, this doesn't care
+// whether the task is still open — only whether the person was just put
+// on it. `created` is always a proper zero-padded UTC ISO-8601 string
+// (set on every insert, including the Sales AI sync — see db/schema.ts),
+// so plain string comparison against `sinceIso` matches real time order
+// without needing to parse either side.
+export function isNewlyAssigned(task: AssignableTask, actor: { name: string; role: Role }, sinceIso: string): boolean {
+  const isOwnerOrCoworker = actor.role !== "readonly" && (task.owner === actor.name || task.collaborators.includes(actor.name));
+  const isRecipient = task.recipients.includes(actor.name);
+  return (isOwnerOrCoworker || isRecipient) && task.created >= sinceIso;
+}
+
+// Tasks `target` was just added to (as owner, coworker, or recipient),
+// created within the lookback window — backs the daily "new tasks
+// assigned to you" nudge. A >24h window (see scripts/send-new-task-
+// assignments.ts) gives the once-a-day cron some slack against its own
+// schedule drift, same reasoning as overdueOwnedTasks' 2-day cron and
+// personalTaskDigest's closedWithinHours.
+export async function newlyAssignedTasks(target: TargetUser, withinHours = 24, today = new Date().toISOString().slice(0, 10)): Promise<PendingTaskLine[]> {
+  const all = await getDb().select().from(tasks);
+  const sinceIso = new Date(Date.now() - withinHours * 3600000).toISOString();
+  const relevant = all.filter(task => isNewlyAssigned(task, target, sinceIso));
+  return relevant.map(task => taskLineFor(task, target.name, today)).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+}
+
 // End of the current ISO week (the coming Sunday), as an ISO date string.
 export function endOfThisWeek(today = new Date()): string {
   const isoDay = today.getUTCDay() === 0 ? 7 : today.getUTCDay();
