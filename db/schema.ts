@@ -48,6 +48,14 @@ export const tasks = pgTable("tasks", {
   accountName: text("account_name"),
   opportunityId: text("opportunity_id"),
   opportunityName: text("opportunity_name"),
+  // The actual spoken line a synced action item was generated from, and
+  // who said it — Sales AI's own UI shows this behind a small click-to-
+  // reveal icon rather than inline in the description, and the task
+  // drawer does the same (see TaskApp.js). Kept as its own field instead
+  // of folded into `description` specifically so the UI can render it
+  // that way — concatenated text can't be un-concatenated later.
+  citationUser: text("citation_user"),
+  citationQuote: text("citation_quote"),
 }, table => [
   index("tasks_owner_idx").on(table.owner),
   index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic),
