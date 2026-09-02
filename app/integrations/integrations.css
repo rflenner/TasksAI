@@ -5,4 +5,7 @@
 .integration-row .identity{min-width:0;padding-right:8px}
 .integration-result{margin-top:8px;background:#f8fafc;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px;font-size:13px;color:#3a4250;line-height:1.6}
 .integration-result b{color:#173f76}
-@media(max-width:620px){.integration-row{flex-direction:column;align-items:stretch}}
+.integration-range{display:flex;align-items:flex-end;gap:14px;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px;margin-top:8px}
+.integration-range label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;color:#737b87}
+.integration-range input{border:1px solid #d5dce5;border-radius:8px;padding:9px 11px;background:#fff;font:inherit}
+@media(max-width:620px){.integration-row{flex-direction:column;align-items:stretch}.integration-range{flex-wrap:wrap}}
