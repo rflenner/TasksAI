@@ -53,6 +53,15 @@ services:
       # the critical path for anything else yet.
       - key: DEEPGRAM_API_KEY
         sync: false
+      # Set manually in the Render dashboard — the Export App key + its
+      # app-scoped base URL from Sales AI's own "Export Apps" settings
+      # screen (https://magical-ai-api.iseeit.com/api/v1/export/<app-id>/).
+      # Used only by app/lib/sales-ai-sync.ts, triggered manually from
+      # /integrations for now — no cron yet.
+      - key: SALES_AI_API_KEY
+        sync: false
+      - key: SALES_AI_BASE_URL
+        sync: false
       # OAuth client from Google Cloud Console → APIs & Services →
       # Credentials — Web application type, with
       # https://tasks-ai.onrender.com/api/auth/google/callback registered as

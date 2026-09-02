@@ -89,6 +89,26 @@ export const pastedMinutes = pgTable("pasted_minutes", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export const dimensionValues = pgTable("dimension_values", { id: serial("id").primaryKey(), type: text("type").notNull(), value: text("value").notNull() }, table => [uniqueIndex("dimension_values_type_value_unique").on(table.type, table.value)]);
+// A structured People registry, distinct from dimensionValues' plain
+// (type,value) strings — those only ever carry a name, no email or
+// external identity. One row per Sales AI contact encountered while
+// syncing (an owner or recipient on some action item), so Task AI can
+// eventually sync back to Sales AI by contact, not just by name-matching
+// a free-text string. salesAiContactId is the match key for that — unique
+// when set, so re-syncing the same contact updates this row rather than
+// duplicating it. Independent of `users` (actual Task AI logins) and of
+// task owner/collaborators/recipients (still plain name strings there,
+// unchanged) — this is purely a reference table the sync keeps enriched.
+export const contacts = pgTable("contacts", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email"),
+  salesAiContactId: text("sales_ai_contact_id"),
+  salesAiAccountId: text("sales_ai_account_id"),
+  salesAiAccountName: text("sales_ai_account_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex("contacts_sales_ai_contact_id_unique").on(table.salesAiContactId).where(sql`${table.salesAiContactId} is not null`)]);
 export const sessions = pgTable("sessions", { idHash: text("id_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);
 export const loginTokens = pgTable("login_tokens", { tokenHash: text("token_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), usedAt: timestamp("used_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("login_tokens_user_idx").on(table.userId)]);
 // Auto-generated, readable diff lines ("Sarah changed due date from ... to
