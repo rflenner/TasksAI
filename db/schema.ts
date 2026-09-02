@@ -48,6 +48,16 @@ export const tasks = pgTable("tasks", {
   accountName: text("account_name"),
   opportunityId: text("opportunity_id"),
   opportunityName: text("opportunity_name"),
+  // meeting_id only — no meetingName alongside it, unlike account/
+  // opportunity, because there's currently no Sales AI endpoint that
+  // resolves it to anything readable (confirmed live: no meetings entity,
+  // no include/expand param changes the response — see conversation on
+  // 2026-09-02). Stored anyway so nothing is lost: if a Meetings scope
+  // ever gets added on Sales AI's side, every already-synced task can be
+  // backfilled with a real name by re-resolving the ids already saved
+  // here, rather than needing to re-pull and re-match everything from
+  // scratch.
+  meetingId: text("meeting_id"),
   // The actual spoken line a synced action item was generated from, and
   // who said it — Sales AI's own UI shows this behind a small click-to-
   // reveal icon rather than inline in the description, and the task
