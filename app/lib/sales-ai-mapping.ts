@@ -4,6 +4,20 @@
 // orchestration) the same way every other sync piece this session split
 // pure decision logic from I/O (data-hygiene.ts, activity-meter.ts, etc.).
 
+// Sales AI's `end_date` filter is exclusive — confirmed live on
+// 2026-09-02: start_date=end_date=2026-09-02 (meant as "just today")
+// returned 0 total, while omitting end_date (or setting it to the day
+// after) returned the real count. So an *inclusive* end date one whole
+// calendar day higher than what the caller actually means — this
+// converts the caller's natural "through this date" into what the API
+// actually needs, in one place, so nothing calling into this sync has to
+// remember Sales AI's off-by-one on its own.
+export function nextCalendarDay(dateStr: string): string {
+  const date = new Date(`${dateStr}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export type SalesAIRecipient = { contact_id?: string | null; name?: string | null; email?: string | null };
 export type SalesAIActionItem = {
   action_item_id: string;
