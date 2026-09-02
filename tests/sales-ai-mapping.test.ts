@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanName, extractContacts, involvesRegisteredUser, mapActionItemToTask, resolvePersonName, type SalesAIActionItem } from "../app/lib/sales-ai-mapping";
+import { cleanName, extractContacts, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, resolvePersonName, type SalesAIActionItem } from "../app/lib/sales-ai-mapping";
+
+test("nextCalendarDay: the exact bug found live — 2026-09-02 (today) becomes 2026-09-03, not itself", () => {
+  assert.equal(nextCalendarDay("2026-09-02"), "2026-09-03");
+});
+
+test("nextCalendarDay: rolls over a month boundary correctly", () => {
+  assert.equal(nextCalendarDay("2026-08-31"), "2026-09-01");
+});
+
+test("nextCalendarDay: rolls over a year boundary correctly", () => {
+  assert.equal(nextCalendarDay("2026-12-31"), "2027-01-01");
+});
 
 const baseItem = (overrides: Partial<SalesAIActionItem> = {}): SalesAIActionItem => ({
   action_item_id: "8f57ca3f-fe7a-4d7b-900e-81a53c7cf572",

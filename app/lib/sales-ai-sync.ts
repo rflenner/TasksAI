@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../db";
 import { contacts, tasks, users } from "../../db/schema";
 import { fetchAllPages } from "./sales-ai-client";
-import { extractContacts, involvesRegisteredUser, mapActionItemToTask, type SalesAIActionItem } from "./sales-ai-mapping";
+import { extractContacts, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, type SalesAIActionItem } from "./sales-ai-mapping";
 
 type SalesAIAccount = { account_id: string; account_name: string };
 type SalesAIOpportunity = { opportunity_id: string; opportunity_name: string };
@@ -28,7 +28,10 @@ export async function syncSalesAI({ startDate, endDate }: { startDate: string; e
   const baseUrl = process.env.SALES_AI_BASE_URL;
   if (!apiKey || !baseUrl) throw new Error("Sales AI is not configured — SALES_AI_API_KEY/SALES_AI_BASE_URL are missing");
 
-  const dateParams = { start_date: startDate, ...(endDate ? { end_date: endDate } : {}) };
+  // `endDate` here is the caller's *inclusive* end date (e.g. "today"
+  // meaning "through the end of today") — nextCalendarDay converts that
+  // into the exclusive value Sales AI's API actually expects.
+  const dateParams = { start_date: startDate, ...(endDate ? { end_date: nextCalendarDay(endDate) } : {}) };
   const [items, accountRows, opportunityRows, activeUsers] = await Promise.all([
     fetchAllPages<SalesAIActionItem>(baseUrl, apiKey, "action-items", dateParams),
     fetchAllPages<SalesAIAccount>(baseUrl, apiKey, "accounts"),
