@@ -108,7 +108,16 @@ export const contacts = pgTable("contacts", {
   salesAiAccountName: text("sales_ai_account_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, table => [uniqueIndex("contacts_sales_ai_contact_id_unique").on(table.salesAiContactId).where(sql`${table.salesAiContactId} is not null`)]);
+// Plain (non-partial) unique index, not WHERE-filtered like the tasks one
+// above — Postgres already lets any number of NULLs coexist under a
+// regular unique constraint (NULL is never equal to NULL), so the WHERE
+// clause bought nothing here and, worse, broke onConflictDoUpdate's
+// target: a partial index can only satisfy ON CONFLICT if the conflict
+// clause repeats its exact WHERE condition, which sales-ai-sync.ts's
+// plain `target: contacts.salesAiContactId` doesn't — confirmed live via
+// "no unique or exclusion constraint matching the ON CONFLICT
+// specification" the first time this ran for real.
+}, table => [uniqueIndex("contacts_sales_ai_contact_id_unique").on(table.salesAiContactId)]);
 export const sessions = pgTable("sessions", { idHash: text("id_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);
 export const loginTokens = pgTable("login_tokens", { tokenHash: text("token_hash").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), usedAt: timestamp("used_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [index("login_tokens_user_idx").on(table.userId)]);
 // Auto-generated, readable diff lines ("Sarah changed due date from ... to
