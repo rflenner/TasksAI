@@ -128,3 +128,26 @@ services:
         value: Task AI <notifications@tasks.flenner.at>
       - key: RESEND_API_KEY
         sync: false
+  - type: cron
+    name: tasks-ai-sales-ai-sync
+    runtime: node
+    plan: starter
+    region: frankfurt
+    # 6x/day, UTC 00:00/06:00/10:00/14:00/18:00/22:00 — agreed cadence.
+    # Always syncs today's calendar date on every run (see
+    # scripts/sync-sales-ai.ts) — safe to run this often since an
+    # already-imported item is a no-op, not a duplicate.
+    schedule: "0 0,6,10,14,18,22 * * *"
+    buildCommand: npm install --global pnpm@11.19.0 && pnpm install --frozen-lockfile
+    startCommand: node --import tsx scripts/sync-sales-ai.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tasks-ai-db-frankfurt
+          property: connectionString
+      - key: SALES_AI_API_KEY
+        sync: false
+      - key: SALES_AI_BASE_URL
+        sync: false

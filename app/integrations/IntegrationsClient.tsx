@@ -6,20 +6,25 @@ import "./integrations.css";
 
 type SyncResult = { itemsFound: number; qualifying: number; created: number; alreadySynced: number; contactsUpserted: number };
 
-// First real version — manual trigger only, always scoped to today
-// (both start and end date), per the explicit "let's see what we get
-// first" request this was built against. No cron yet, no date-range
-// picker yet — both are natural next steps once a first run's been
-// reviewed, not before.
+const today = () => new Date().toISOString().slice(0, 10);
+
+// A scheduled cron now runs this 6x/day (see render.yaml), always for
+// today's date — this manual trigger is for anything outside that: a
+// specific past range to backfill, or an immediate run without waiting
+// for the next scheduled slot. Both dates default to today, matching
+// what the cron itself does, but either can be changed.
 export default function IntegrationsClient() {
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState("");
 
   const sync = async () => {
-    if (busy) return;
+    if (busy || !startDate || !endDate) return;
+    if (startDate > endDate) { setError("The start date must be on or before the end date."); return; }
     setBusy(true); setError(""); setResult(null);
-    const response = await fetch("/api/integrations/sales-ai/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    const response = await fetch("/api/integrations/sales-ai/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ startDate, endDate }) });
     const data = await response.json();
     setBusy(false);
     if (!response.ok) { setError(data.error || "Sync failed"); return; }
@@ -51,16 +56,24 @@ export default function IntegrationsClient() {
             <article className="integration-row">
               <div className="identity">
                 <b>Sales AI</b>
-                <small>Pulls today&apos;s action items involving a registered Task AI user, creating tasks and enriching the People registry.</small>
-              </div>
-              <div className="row-actions">
-                <button className="manage" disabled={busy} onClick={() => void sync()}>{busy ? "Syncing…" : "Sync today's items"}</button>
+                <small>Syncs automatically 6x a day. Trigger a specific range manually below — for a backfill, or to run outside the schedule.</small>
               </div>
             </article>
+            <div className="integration-range">
+              <label>
+                <span>From</span>
+                <input type="date" value={startDate} max={endDate || undefined} onChange={e => setStartDate(e.target.value)} />
+              </label>
+              <label>
+                <span>To</span>
+                <input type="date" value={endDate} min={startDate || undefined} onChange={e => setEndDate(e.target.value)} />
+              </label>
+              <button className="manage" disabled={busy || !startDate || !endDate} onClick={() => void sync()}>{busy ? "Syncing…" : "Sync now"}</button>
+            </div>
             {error && <div className="integration-result" style={{ color: "#a84235" }}>{error}</div>}
             {result && (
               <div className="integration-result">
-                <b>{result.itemsFound}</b> action item{result.itemsFound === 1 ? "" : "s"} found today · <b>{result.qualifying}</b> involved a registered Task AI user · <b>{result.created}</b> task{result.created === 1 ? "" : "s"} created · {result.alreadySynced} already synced (skipped) · {result.contactsUpserted} contact{result.contactsUpserted === 1 ? "" : "s"} added to the People registry.
+                <b>{result.itemsFound}</b> action item{result.itemsFound === 1 ? "" : "s"} found · <b>{result.qualifying}</b> involved a registered Task AI user · <b>{result.created}</b> task{result.created === 1 ? "" : "s"} created · {result.alreadySynced} already synced (skipped) · {result.contactsUpserted} contact{result.contactsUpserted === 1 ? "" : "s"} added to the People registry.
               </div>
             )}
           </div>
