@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { renderNewTasksEmail, sendWithResend } from "../app/lib/email";
 import { newlyAssignedTasks } from "../app/lib/pending-tasks";
+import { attachUpdateLinks } from "../app/lib/task-update-tokens";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
 
@@ -37,8 +38,10 @@ const dayKey = new Date().toISOString().slice(0, 10);
 
 for (const user of active) {
   try {
-    const newTasks = await newlyAssignedTasks(user, 26);
+    let newTasks = await newlyAssignedTasks(user, 26);
     if (!newTasks.length) { skipped++; continue; }
+    // No sign-in required to use these — see app/update-task/page.tsx.
+    newTasks = await attachUpdateLinks(newTasks, appUrl, user.name, user.email);
     const message = renderNewTasksEmail({ firstName: user.name, appUrl, newTasks });
     const idempotencyKey = testEmail ? `new-tasks-${user.id}-test-${Date.now()}` : `new-tasks-${user.id}-${dayKey}`;
     const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
