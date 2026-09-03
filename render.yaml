@@ -47,10 +47,12 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5-mini
-      # Set manually in the Render dashboard once a Deepgram account exists —
-      # only used by the /voice-test comparison page (app/api/voice-test-
-      # deepgram) to A/B transcription against OpenAI's Whisper-1. Not on
-      # the critical path for anything else yet.
+      # Set manually in the Render dashboard. Powers live voice dictation
+      # (app/dictate, via app/api/dictate/token) — the browser opens a
+      # transcription WebSocket directly to Deepgram using this key (see
+      # that route for why a long-lived key is handed to the client at
+      # all). Also used by the /voice-test comparison page (app/api/voice-
+      # test-deepgram) to A/B against OpenAI's Whisper-1.
       - key: DEEPGRAM_API_KEY
         sync: false
       # Set manually in the Render dashboard — the Export App key + its

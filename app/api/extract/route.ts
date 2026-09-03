@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { pastedMinutes } from "../../../db/schema";
+import { pastedMinutes, users } from "../../../db/schema";
+import { resolveTaskNames } from "../../lib/name-resolution";
 import { hashPastedMinutes } from "../../lib/pasted-minutes";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
@@ -53,15 +54,36 @@ export async function POST(request: Request) {
       model: process.env.OPENAI_MODEL || "gpt-5-mini",
       input: [{ role: "system", content: `Extract every concrete commitment, follow-up, decision requiring work, unanswered request, and implied action from the supplied minutes.
 The source may be incomplete, badly formatted, conversational, multilingual, table-like, or use headings/initials without consistent punctuation. Treat fragments under a heading as part of that section. Preserve one task per distinct action and do not merge unrelated commitments.
-Extraction completeness matters: before returning, re-scan the entire source for missed actions. Never discard an action because metadata is absent. Use null or [] for unknown fields and never invent people, dates, projects, meetings, or recipients. Follow the JSON schema exactly.` }, { role: "user", content: minutes }],
+Extraction completeness matters: before returning, re-scan the entire source for missed actions. Never discard an action because metadata is absent. Use null or [] for unknown fields and never invent people, dates, projects, meetings, or recipients. Follow the JSON schema exactly.
+Every task must be grounded in something actually said in the source — restate or closely paraphrase it, never invent a plausible-sounding generic agenda item ("Review previous action items", "Any other business", "Discuss blockers", "Project updates", and the like) that nobody in the source actually said. If the source is short, unclear, or contains no concrete commitments, follow-ups, decisions, or requests at all, return an empty tasks array — never fill it with a typical meeting-agenda checklist just to have something to return.` }, { role: "user", content: minutes }],
       text: { format: { type: "json_schema", name: "meeting_actions", strict: true, schema } },
     }),
   });
   if (!response.ok) return Response.json({ error: "AI extraction failed", code: "ai_failed" }, { status: 502 });
   const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
   const text = result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "";
-  let parsed: { tasks?: unknown[] };
+  let parsed: { tasks?: Array<{ owner?: string | null; collaborators?: string[]; recipients?: string[]; [key: string]: unknown }> };
   try { parsed = JSON.parse(text); } catch { return Response.json({ error: "AI returned an invalid result", code: "ai_failed" }, { status: 502 }); }
+
+  if (parsed.tasks?.length) {
+    // Cross-checked against every registered user (pending or active —
+    // same list register()/registeredPeople elsewhere treat as "known
+    // people"), not just dimensionValues' free-text person list: a real
+    // account is a much safer thing to silently substitute onto than an
+    // arbitrary string someone once typed.
+    const registeredNames = (await getDb().select({ name: users.name }).from(users)).map(row => row.name);
+    parsed.tasks = parsed.tasks.map(task => {
+      const resolved = resolveTaskNames(task, registeredNames);
+      // Dictation is almost always either a personal reminder or a direct
+      // assignment to someone else — when no owner was said at all
+      // ("create a task: prepare the agenda"), the person dictating is
+      // who it's for, not the generic "Unassigned" a pasted-minutes
+      // record (written about several people, by someone who may not be
+      // any of them) defaults to instead.
+      if (source === "dictate" && !resolved.owner) return { ...resolved, owner: actor.name };
+      return resolved;
+    });
+  }
 
   // onConflictDoNothing: only the *first* successful extraction for a given
   // text gets recorded, so a later force:true re-paste doesn't overwrite
