@@ -9,6 +9,12 @@ export type DigestTask = {
   status?: "Open" | "In progress" | "Completed";
   overdue?: boolean;
   url?: string;
+  // Points at /update-task?token=... (app/lib/task-update-tokens.ts) — lets
+  // someone leave a status update on this one task with no Task AI sign-in
+  // at all. Optional and per-task (not per-email) since it's only ever set
+  // when the caller has already minted a token for this exact recipient +
+  // task; a task with no updateUrl just doesn't get the button.
+  updateUrl?: string;
 };
 
 type DigestInput = {
@@ -51,23 +57,34 @@ function taskCard(task: Omit<DigestTask, "status"> & { status?: DigestTask["stat
     <span class="tai-desc-full">${esc(task.description)}</span><span class="tai-desc-short" style="display:none">${esc(truncated(task.description))}</span>
   </td></tr>` : "";
   const tags = `${tag("Project", task.project)}${tag("Topic", task.topic)}${tag("Meeting", task.meeting)}`;
+  // The update-link button is a sibling of the <a>, not nested inside it —
+  // email clients (and HTML in general) don't tolerate a link inside a
+  // link, and the whole card above stays clickable to open Task AI as
+  // before. The outer <div> (not the <a>) now owns the card's border/
+  // radius/background/clipping, since it has to wrap both.
+  const updateLink = task.updateUrl ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="tai-head" style="padding:0 18px 14px">
+    <a href="${esc(task.updateUrl)}" style="display:inline-block;font-size:12px;font-weight:700;color:#173f76;text-decoration:none;border:1px solid #dfe5ec;border-radius:7px;padding:7px 12px">Add an update →</a>
+  </td></tr></table>` : "";
   return `<tr><td style="padding:0 0 12px">
-    <a href="${esc(task.url || "#")}" aria-label="View ${esc(task.subject)}" style="display:block;overflow:hidden;text-decoration:none;color:inherit;border:1px solid #dfe5ec;border-radius:12px;background:#ffffff">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-        <tr><td class="tai-head" style="padding:14px 18px;background:#eef3fa;border-radius:11px 11px 0 0">
-          <div style="font-size:16px;line-height:1.35;font-weight:700;color:#173f76">${esc(task.subject)}</div>
-        </td></tr>
-        <tr><td class="tai-head" style="padding:10px 18px 0">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
-            <td style="white-space:nowrap;font-size:11px;font-weight:700;color:${dueColor}">${esc(dueLabel)}</td>
-            <td style="padding-left:10px;font-size:11px;color:#7a8492">${task.role ? `Role: ${esc(task.role)}` : ""}</td>
-            <td align="right" style="white-space:nowrap"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:${statusBackground};color:${statusColor};font-size:10.5px;font-weight:700">${esc(status)}</span></td>
-          </tr></table>
-        </td></tr>
-        ${description}
-        <tr><td class="tai-head" style="padding:12px 18px 14px">${tags}</td></tr>
-      </table>
-    </a>
+    <div style="overflow:hidden;border:1px solid #dfe5ec;border-radius:12px;background:#ffffff">
+      <a href="${esc(task.url || "#")}" aria-label="View ${esc(task.subject)}" style="display:block;text-decoration:none;color:inherit">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+          <tr><td class="tai-head" style="padding:14px 18px;background:#eef3fa;border-radius:11px 11px 0 0">
+            <div style="font-size:16px;line-height:1.35;font-weight:700;color:#173f76">${esc(task.subject)}</div>
+          </td></tr>
+          <tr><td class="tai-head" style="padding:10px 18px 0">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+              <td style="white-space:nowrap;font-size:11px;font-weight:700;color:${dueColor}">${esc(dueLabel)}</td>
+              <td style="padding-left:10px;font-size:11px;color:#7a8492">${task.role ? `Role: ${esc(task.role)}` : ""}</td>
+              <td align="right" style="white-space:nowrap"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:${statusBackground};color:${statusColor};font-size:10.5px;font-weight:700">${esc(status)}</span></td>
+            </tr></table>
+          </td></tr>
+          ${description}
+          <tr><td class="tai-head" style="padding:12px 18px ${task.updateUrl ? "10px" : "14px"}">${tags}</td></tr>
+        </table>
+      </a>
+      ${updateLink}
+    </div>
   </td></tr>`;
 }
 
@@ -140,7 +157,7 @@ export function renderInvitationEmail(input: { name?: string; inviteUrl: string;
   return { subject, html, text: `${introPlain}${tasksText}\n\nConfirm your profile and view your tasks: ${input.inviteUrl}` };
 }
 
-export type PendingTaskLine = { subject: string; description?: string; project?: string; topic?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress" | "Closed"; role?: "Owner" | "Coworker" | "Recipient"; closedAt?: string; url?: string };
+export type PendingTaskLine = { subject: string; description?: string; project?: string; topic?: string; meeting?: string; due?: string; overdue?: boolean; status?: "Open" | "In progress" | "Closed"; role?: "Owner" | "Coworker" | "Recipient"; closedAt?: string; url?: string; taskId?: number; updateUrl?: string };
 // Each caller decides how many items to hand in per bucket (the manual
 // "Send task summary" button sends everything; the daily cron pre-filters
 // and caps); this just enforces a hard display ceiling so no single section

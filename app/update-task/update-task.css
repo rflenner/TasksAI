@@ -1,0 +1,6 @@
+/* Small additions to accept.css's onboard-* system (already imported
+   alongside this) — that file only ever needed styled <input>s; this page
+   also needs a <textarea> and a <select>, styled to match exactly. */
+.onboard-field textarea,.onboard-field select{border:1px solid #d5dce5;border-radius:8px;padding:12px;font:inherit;background:#fff}
+.onboard-field textarea{min-height:110px;resize:vertical}
+.task-preview-status{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:#f3f4f6;color:#5b6577}

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { renderPendingTasksEmail, sendWithResend } from "../app/lib/email";
 import { endOfThisWeek, personalTaskDigest } from "../app/lib/pending-tasks";
+import { attachUpdateLinks } from "../app/lib/task-update-tokens";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
 
@@ -40,11 +41,16 @@ const dayKey = new Date().toISOString().slice(0, 10);
 for (const user of active) {
   try {
     const digest = await personalTaskDigest(user);
-    const myTasks = digest.myTasks.filter(task => (task.due || "") <= weekEnd);
-    const delegatedTasks = digest.delegatedTasks.filter(task => (task.due || "") <= weekEnd);
+    let myTasks = digest.myTasks.filter(task => (task.due || "") <= weekEnd);
+    let delegatedTasks = digest.delegatedTasks.filter(task => (task.due || "") <= weekEnd);
     const totalOpen = myTasks.length + delegatedTasks.length;
     if (!totalOpen && !digest.recentlyClosed.length) { skipped++; continue; }
     const overdueCount = [...myTasks, ...delegatedTasks].filter(task => task.overdue).length;
+    // No sign-in required to use these — see app/update-task/page.tsx.
+    [myTasks, delegatedTasks] = await Promise.all([
+      attachUpdateLinks(myTasks, appUrl, user.name, user.email),
+      attachUpdateLinks(delegatedTasks, appUrl, user.name, user.email),
+    ]);
     const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
     const idempotencyKey = testEmail ? `weekly-${user.id}-test-${Date.now()}` : `weekly-${user.id}-${dayKey}`;
     const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
