@@ -15,6 +15,20 @@ export const users = pgTable("users", {
   // complained/delayed) — see app/api/webhooks/resend/route.ts. Reset to
   // null on every new send so a stale bounce doesn't outlive a successful resend.
   lastEmailId: text("last_email_id"), emailStatus: text("email_status"), emailStatusDetail: text("email_status_detail"), emailStatusAt: timestamp("email_status_at", { withTimezone: true }),
+  // Password login — deliberately admin-set only, never self-service (see
+  // app/api/users/set-password/route.ts): a self-service "reset your
+  // password" flow would need to email a reset link, which has the exact
+  // same delivery problem this exists to work around in the first place.
+  // A site admin generates a temporary password from the Users panel and
+  // relays it out of band (WhatsApp, Slack, in person) — never through
+  // Task AI's own email at all. passwordHash is null until a password has
+  // ever been set; passwordFailedAttempts/passwordLockedUntil throttle
+  // guessing, since a password (unlike a random login code) is something
+  // a person chooses to remember, and needs its own brute-force defense.
+  passwordHash: text("password_hash"),
+  passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
+  passwordFailedAttempts: integer("password_failed_attempts").notNull().default(0),
+  passwordLockedUntil: timestamp("password_locked_until", { withTimezone: true }),
 }, table => [uniqueIndex("users_email_unique").on(table.email)]);
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(), subject: text("subject").notNull(), description: text("description").notNull().default(""), owner: text("owner").notNull(), collaborators: jsonb("collaborators").$type<string[]>().notNull().default([]), recipients: jsonb("recipients").$type<string[]>().notNull().default([]),
