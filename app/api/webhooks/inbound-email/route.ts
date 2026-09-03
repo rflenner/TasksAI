@@ -1,7 +1,8 @@
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { dimensionValues, tasks, users } from "../../../../db/schema";
-import { bareEmail, stripHtml } from "../../../lib/inbound-email";
+import { contacts, dimensionValues, tasks, users } from "../../../../db/schema";
+import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../../lib/dictate-intent";
+import { addBusinessDays, bareEmail, extractEmailNameHints, resolveViaEmailHint, stripHtml } from "../../../lib/inbound-email";
 import { canCreateTask, type Actor } from "../../../lib/permissions";
 import { resolveTaskNames } from "../../../lib/name-resolution";
 import { isFreshTimestamp, verifyResendSignature } from "../../../lib/resend-webhook";
@@ -54,13 +55,41 @@ export async function POST(request: Request) {
   if (!apiKey) { console.error("RESEND_API_KEY is not configured; cannot fetch inbound email content"); return Response.json({ ok: true }); }
   const emailRes = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!emailRes.ok) { console.error(`Could not fetch inbound email ${emailId} from Resend: ${emailRes.status}`); return new Response(null, { status: 502 }); } // 502, not 200 — worth a webhook retry, this is Resend's own API being unreachable, not a content problem
-  const email = await emailRes.json() as { text?: string; html?: string; subject?: string };
+  const email = await emailRes.json() as { text?: string; html?: string; subject?: string; created_at?: string };
   const bodyText = email.text?.trim() || (email.html ? stripHtml(email.html) : "");
   if (!bodyText) { console.warn(`Inbound email ${emailId} has no readable body — no task created`); return Response.json({ ok: true }); }
   const subject = email.subject || event.data?.subject || "";
   const combined = subject ? `Subject: ${subject}\n\n${bodyText}` : bodyText;
 
-  const extraction = await callTaskExtractionAI(combined);
+  // The email's own received date — used both as "today" for the model
+  // to resolve relative phrases against ("next week", "ASAP", "before
+  // Friday's call") and as the anchor for the no-due-date fallback below.
+  // Not the forward's original send date (which can be old, stale
+  // context) — this is when the task is actually being created.
+  const referenceDate = (email.created_at || new Date().toISOString()).slice(0, 10);
+  const referenceWeekday = new Date(`${referenceDate}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+
+  // Default to one task per email, same reasoning as dictation's default
+  // in app/api/extract/route.ts: an email listing several sub-points or
+  // sections isn't automatically several separate asks, and splitting
+  // them uninvited was confirmed live as unwanted behavior. Only split
+  // when the email explicitly signals it wants several ("create
+  // multiple tasks", "second task", etc.) — same trigger phrases and
+  // deterministic collapse-backstop dictation already uses, since the
+  // "don't split without being told to" rule is identical either way.
+  //
+  // Also resolves relative due dates: the model has no other way to
+  // know what day it is, so it's given the email's own received date as
+  // "today" and told to convert phrases like "ASAP" or "next week" into
+  // an absolute date against that reference — matching what a person
+  // reading the email at the time would infer. When the email genuinely
+  // gives no timing signal at all, due comes back null and gets a
+  // deterministic 3-business-day-out default below, rather than an
+  // empty due date that used to read as immediately overdue.
+  const extraInstruction = `
+This is a forwarded or received email, not a structured meeting-notes document. By default, extract exactly ONE task covering everything in the email, even if it lists several sub-points, bullets, or sections — combine those into one description rather than one task each. Only extract more than one task if the email explicitly asks for several separate ones, using a clear phrase like "create multiple tasks", "next task", "second task", "another task", or similar — and even then, split only at the boundaries the email actually marked.
+Today's date, for resolving any relative time expression in this email, is ${referenceDate} (a ${referenceWeekday}). Convert every such expression to an absolute YYYY-MM-DD due date using this reference point: "next week" means the Monday of the following calendar week, "ASAP" or "as soon as possible" means the next business day, "tomorrow"/"Friday"/etc. mean that literal calendar day relative to today, and a specific meeting or event the task must be ready for means that event's own date, not today's. If the email genuinely gives no timing signal of any kind, leave due null.`;
+  const extraction = await callTaskExtractionAI(combined, { extraInstruction });
   if (!extraction.ok) {
     // ai_unavailable (OPENAI_API_KEY unset) won't fix itself on a retry;
     // ai_failed (a transient OpenAI error) might, so give Resend's own
@@ -70,21 +99,72 @@ export async function POST(request: Request) {
     return new Response(null, { status: 502 });
   }
   if (!extraction.tasks.length) return Response.json({ ok: true });
+  // Backstop for singleTaskRule above: the model doesn't always follow
+  // instructions perfectly, so an untriggered email that still comes
+  // back as several tasks gets folded into one here, deterministically.
+  const extractedTasks = extraction.tasks.length > 1 && !detectsMultiTaskTrigger(combined) ? [collapseToSingleTask(extraction.tasks)] : extraction.tasks;
 
-  const registeredNames = (await getDb().select({ name: users.name }).from(users)).map(r => r.name);
+  // Cross-checked against every registered user *and* every known Sales
+  // AI contact — a name mentioned in a forwarded email is just as likely
+  // to be an existing contact as a Task AI user, and matching either
+  // avoids minting a stray near-duplicate person.
+  const registeredNames = [...new Set([
+    ...(await getDb().select({ name: users.name }).from(users)).map(r => r.name),
+    ...(await getDb().select({ name: contacts.name }).from(contacts)).map(r => r.name),
+  ])];
+  // Header-name -> canonical name, built from every "Name <email>" pair
+  // found anywhere in the email text (typically the quoted From/To/Cc
+  // lines a forward carries) cross-checked by address against users and
+  // contacts — the fix for the Xenofon Kanarios case: the AI's own
+  // spelling of a name never has to be trusted when the email itself
+  // states the address under a slightly different spelling.
+  const nameHints = extractEmailNameHints(combined);
+  const hintEmails = [...new Set(nameHints.values())];
+  const emailToCanonical = new Map<string, string>();
+  if (hintEmails.length) {
+    for (const row of await getDb().select({ email: contacts.email, name: contacts.name }).from(contacts).where(inArray(contacts.email, hintEmails))) {
+      if (row.email) emailToCanonical.set(row.email.toLowerCase(), row.name);
+    }
+    // Users take priority over contacts when an address matches both —
+    // a real Task AI account is the more authoritative identity.
+    for (const row of await getDb().select({ email: users.email, name: users.name }).from(users).where(inArray(users.email, hintEmails))) {
+      emailToCanonical.set(row.email.toLowerCase(), row.name);
+    }
+  }
+  const nameToCanonical = new Map<string, string>();
+  for (const [headerName, email] of nameHints) {
+    const canonical = emailToCanonical.get(email);
+    if (canonical) nameToCanonical.set(headerName, canonical);
+  }
+
   const now = new Date().toISOString();
   let createdCount = 0;
-  for (const [index, raw] of extraction.tasks.entries()) {
+  for (const [index, raw] of extractedTasks.entries()) {
+    // Email-address cross-check runs first (most reliable — an actual
+    // address beats a spelled name), then the existing registered-name
+    // fuzzy match as a fallback for anyone not named with an address in
+    // the text at all.
+    const hinted = {
+      ...raw,
+      owner: raw.owner ? resolveViaEmailHint(raw.owner, nameToCanonical) ?? raw.owner : raw.owner,
+      collaborators: (raw.collaborators || []).map(name => resolveViaEmailHint(name, nameToCanonical) ?? name),
+      recipients: (raw.recipients || []).map(name => resolveViaEmailHint(name, nameToCanonical) ?? name),
+    };
     // Unlike a pasted-minutes record (written about several people, by
     // someone who may not be any of them), a forwarded email with no
     // owner named at all defaults to whoever forwarded it — same
     // reasoning as dictation's "no owner said" fallback in
     // app/api/extract/route.ts.
-    const resolved = resolveTaskNames(raw, registeredNames, actor.name);
+    const resolved = resolveTaskNames(hinted, registeredNames, actor.name);
+    // A due date the model didn't actually resolve to a real calendar
+    // date (null, or anything not matching YYYY-MM-DD) falls back to 3
+    // business days after the email arrived — never an empty string,
+    // which used to sort as "overdue" the instant the task was created.
+    const due = resolved.due && /^\d{4}-\d{2}-\d{2}$/.test(resolved.due) ? resolved.due : addBusinessDays(referenceDate, 3);
     const task = {
       subject: (resolved.subject || "").slice(0, 140) || "Forwarded email", description: resolved.description || "",
       owner: resolved.owner || actor.name, collaborators: resolved.collaborators || [], recipients: resolved.recipients || [],
-      due: resolved.due || "", source: "Forwarded email", topic: resolved.topic || "", project: resolved.project || "", recurringMeeting: resolved.recurringMeeting || "",
+      due, source: "Forwarded email", topic: resolved.topic || "", project: resolved.project || "", recurringMeeting: resolved.recurringMeeting || "",
       status: "Open", priority: "Low", created: now, createdBy: actor.name, updates: [] as Array<{ text: string; at: string; by?: string }>,
       externalSource: "email", externalId: `${emailId}:${index}`,
     };
