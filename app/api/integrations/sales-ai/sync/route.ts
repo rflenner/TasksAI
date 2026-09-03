@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { startDate?: string; endDate?: string };
   const today = new Date().toISOString().slice(0, 10);
   try {
-    const result = await syncSalesAI({ startDate: body.startDate || today, endDate: body.endDate || today });
+    const result = await syncSalesAI({ startDate: body.startDate || today, endDate: body.endDate || today, initiatedBy: actor.name });
     return Response.json(result);
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Sales AI sync failed" }, { status: 502 });

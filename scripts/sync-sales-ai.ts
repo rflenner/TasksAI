@@ -9,6 +9,6 @@ import { syncSalesAI } from "../app/lib/sales-ai-sync";
 // constraint on tasks — see db/schema.ts), so there's no need for a
 // narrower or offset window.
 const today = new Date().toISOString().slice(0, 10);
-const result = await syncSalesAI({ startDate: today, endDate: today });
+const result = await syncSalesAI({ startDate: today, endDate: today, initiatedBy: "Scheduled sync" });
 console.log(`Sales AI sync done: ${result.itemsFound} found, ${result.qualifying} qualifying, ${result.created} created, ${result.alreadySynced} already synced, ${result.contactsUpserted} contacts upserted`);
 await getSql().end();
