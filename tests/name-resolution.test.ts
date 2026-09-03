@@ -32,3 +32,17 @@ test("resolveTaskNames resolves owner, collaborators, and recipients independent
   assert.equal(resolveTaskNames({ owner: null }, registered).owner, null);
   assert.equal(resolveTaskNames({}, registered).collaborators.length, 0, "a missing collaborators array resolves to an empty array, not undefined or a crash");
 });
+
+test("resolveTaskNames resolves a literal \"me\"/\"myself\"/\"I\" to selfName when given one, case-insensitively — the real bug: dictating \"assign this to me\" extracted owner literally as \"me\"", () => {
+  assert.equal(resolveTaskNames({ owner: "me" }, registered, "Rizan Flenner").owner, "Rizan Flenner");
+  assert.equal(resolveTaskNames({ owner: "Myself" }, registered, "Rizan Flenner").owner, "Rizan Flenner");
+  assert.deepEqual(resolveTaskNames({ collaborators: ["I", "Shankar"] }, registered, "Rizan Flenner").collaborators, ["Rizan Flenner", "Shankar Iyer"], "self-reference resolves first, then the usual registered-name match runs on the rest");
+});
+
+test("resolveTaskNames leaves \"me\" untouched when no selfName is given (pasted-minutes has no one \"speaking\" to resolve it to)", () => {
+  assert.equal(resolveTaskNames({ owner: "me" }, registered).owner, "me");
+});
+
+test("resolveTaskNames doesn't mistake a real name containing a self-reference word as a substring for a self-reference — only an exact, whole-string match counts", () => {
+  assert.equal(resolveTaskNames({ owner: "Meike" }, registered, "Rizan Flenner").owner, "Meike", "\"Meike\" must not match the self-reference \"me\"");
+});
