@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyForDigest, endOfThisWeek, taskLineFor, tasksReferencingName } from "../app/lib/pending-tasks";
+import { classifyForDigest, endOfThisWeek, isNewlyAssigned, taskLineFor, tasksReferencingName } from "../app/lib/pending-tasks";
 
 test("endOfThisWeek resolves to the coming Sunday, inclusive of a Sunday itself", () => {
   assert.equal(endOfThisWeek(new Date("2026-08-18T09:00:00Z")), "2026-08-23"); // Tuesday -> Sunday
@@ -36,6 +36,23 @@ test("classifyForDigest only surfaces a closed task if it's within the lookback 
   assert.equal(classifyForDigest({ ...closedTask, closedAt: new Date("2026-08-10T00:00:00Z") }, collaborator, closedSince), null, "closed well before the cutoff: excluded");
   assert.equal(classifyForDigest({ ...closedTask, closedAt: null }, collaborator, closedSince), null, "closed with no recorded closedAt (pre-feature data): excluded, never shown with a blank date");
   assert.equal(classifyForDigest({ ...closedTask, owner: "Someone Else", closedAt: new Date("2026-08-20T00:00:00Z") }, collaborator, closedSince), null, "closed but no personal relationship: excluded");
+});
+
+const sinceIso = "2026-08-19T00:00:00.000Z";
+const assignBase = { owner: "Someone Else", collaborators: [] as string[], recipients: [] as string[] };
+test("isNewlyAssigned matches classifyForDigest's relationship rule: owner and coworker both count, recipient-only counts too, no relationship doesn't", () => {
+  assert.equal(isNewlyAssigned({ ...assignBase, owner: "Ada", created: "2026-08-20T00:00:00.000Z" }, collaborator, sinceIso), true);
+  assert.equal(isNewlyAssigned({ ...assignBase, collaborators: ["Ada"], created: "2026-08-20T00:00:00.000Z" }, collaborator, sinceIso), true);
+  assert.equal(isNewlyAssigned({ ...assignBase, recipients: ["Ada"], created: "2026-08-20T00:00:00.000Z" }, collaborator, sinceIso), true);
+  assert.equal(isNewlyAssigned({ ...assignBase, created: "2026-08-20T00:00:00.000Z" }, collaborator, sinceIso), false);
+});
+test("isNewlyAssigned restricts a readonly actor to recipient only, same as classifyForDigest", () => {
+  assert.equal(isNewlyAssigned({ ...assignBase, owner: "Ada", created: "2026-08-20T00:00:00.000Z" }, readonly, sinceIso), false);
+  assert.equal(isNewlyAssigned({ ...assignBase, recipients: ["Ada"], created: "2026-08-20T00:00:00.000Z" }, readonly, sinceIso), true);
+});
+test("isNewlyAssigned is keyed off created vs. the lookback cutoff, regardless of status — a task created before the window is excluded even with a live relationship, one right at the cutoff is included", () => {
+  assert.equal(isNewlyAssigned({ ...assignBase, owner: "Ada", created: "2026-08-10T00:00:00.000Z" }, collaborator, sinceIso), false, "created well before the cutoff: excluded");
+  assert.equal(isNewlyAssigned({ ...assignBase, owner: "Ada", created: sinceIso }, collaborator, sinceIso), true, "created exactly at the cutoff: included");
 });
 
 // tasksReferencingName / taskLineFor back the external-invite feature: a
