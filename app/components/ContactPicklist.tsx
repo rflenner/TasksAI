@@ -42,18 +42,20 @@ function highlight(name: string, query: string) {
 // Searchable multi-select with the current selection always pinned to the
 // top of the list, even while filtering — see app/lib/picklist.ts for the
 // exact rule and why. Approved as an interactive prototype on 2026-09-03
-// before this was built (the artifact's "How this behaves" list is this
-// component's actual spec) and rolled out to every real multi-select in
-// the app: task Coworkers/Recipients (app/TaskApp.js) and the Access
-// panel's Project/Meeting/Topic scope pickers (app/users/UsersClient.tsx).
+// before this was built, then fixed twice against real usage:
 //
-// Keyboard/focus follows the standard combobox pattern: DOM focus never
-// leaves the search input — arrow keys move a virtual highlight tracked
-// in `hi` and exposed via aria-activedescendant, rather than moving real
-// focus onto each row. Rows still carry tabIndex={-1} and their own
-// Enter/Space handling so they're not inert if focus ever does land on
-// one directly (e.g. via assistive tech that doesn't honor
-// activedescendant).
+// 1. The search box now lives at the top of the open panel, not squeezed
+//    inline among the chips — reported live (2026-09-03) as confusing
+//    once a couple of people were already picked, since the input shrank
+//    to a sliver next to their chips. It's also just clearer: opening the
+//    field always shows one obvious place to type, sitting directly above
+//    the list it filters.
+// 2. Click-outside-to-close used to watch only the trigger row, not the
+//    open panel below it — since the panel is a sibling, not a DOM
+//    descendant, of the trigger, clicking an option's mousedown bubbled
+//    straight to the document listener and closed the panel *before* the
+//    click that was supposed to select something ever landed, so nothing
+//    could actually be picked. The ref now wraps trigger + panel together.
 export default function ContactPicklist({ label, value, options, onChange, hint, showAvatar = true }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -66,6 +68,7 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
 
   useEffect(() => {
     if (!open) return;
+    inputRef.current?.focus();
     const onDocMouseDown = (event: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) close();
     };
@@ -85,39 +88,49 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
   const rows = [...pinned, ...rest];
 
   return (
-    <div className="picklist">
+    <div className="picklist" ref={wrapRef}>
       <label htmlFor={inputId}>{label}</label>
-      <div ref={wrapRef} className={`pl-trigger${open ? " open" : ""}`}>
+      <div className={`pl-trigger${open ? " open" : ""}`}>
         {value.map(name => (
           <span className="chip" key={name}>
             <span>{name}</span>
             <button type="button" aria-label={`Remove ${name}`} onClick={() => toggle(name)}>×</button>
           </span>
         ))}
-        <input
-          id={inputId}
-          ref={inputRef}
-          className="pl-input"
-          role="combobox"
+        {value.length === 0 && <span className="pl-placeholder">Nobody selected</span>}
+        <button
+          type="button"
+          className="pl-open"
+          aria-label={`Search ${label.toLowerCase()}`}
           aria-expanded={open}
           aria-controls={`${baseId}-panel`}
-          aria-activedescendant={hi >= 0 && rows[hi] ? rowId(rows[hi]) : undefined}
-          autoComplete="off"
-          value={query}
-          placeholder={value.length ? "Add another…" : "Search…"}
-          onFocus={openPanel}
-          onChange={event => { setQuery(event.target.value); setHi(-1); }}
-          onKeyDown={event => {
-            if (event.key === "ArrowDown") { event.preventDefault(); setHi(index => Math.min(index + 1, rows.length - 1)); }
-            else if (event.key === "ArrowUp") { event.preventDefault(); setHi(index => Math.max(index - 1, 0)); }
-            else if (event.key === "Enter") { event.preventDefault(); if (rows[hi]) toggle(rows[hi]); }
-            else if (event.key === "Escape") { (event.target as HTMLInputElement).blur(); close(); }
-            else if (event.key === "Backspace" && !query && value.length) { toggle(value[value.length - 1]); }
-          }}
-        />
+          onClick={() => (open ? close() : openPanel())}
+        >
+          <span className="i i-search" aria-hidden="true" />
+        </button>
       </div>
       {open && (
         <div id={`${baseId}-panel`} className="pl-panel" role="listbox">
+          <input
+            id={inputId}
+            ref={inputRef}
+            className="pl-search"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={`${baseId}-panel`}
+            aria-activedescendant={hi >= 0 && rows[hi] ? rowId(rows[hi]) : undefined}
+            autoComplete="off"
+            value={query}
+            placeholder="Search…"
+            onChange={event => { setQuery(event.target.value); setHi(-1); }}
+            onKeyDown={event => {
+              if (event.key === "ArrowDown") { event.preventDefault(); setHi(index => Math.min(index + 1, rows.length - 1)); }
+              else if (event.key === "ArrowUp") { event.preventDefault(); setHi(index => Math.max(index - 1, 0)); }
+              else if (event.key === "Enter") { event.preventDefault(); if (rows[hi]) toggle(rows[hi]); }
+              else if (event.key === "Escape") { close(); }
+              else if (event.key === "Backspace" && !query && value.length) { toggle(value[value.length - 1]); }
+            }}
+          />
           {rows.length === 0 && <div className="pl-empty">{query ? `No matches for "${query}"` : "No options"}</div>}
           {pinned.length > 0 && <div className="pl-group-label">Selected</div>}
           {pinned.map(name => (
