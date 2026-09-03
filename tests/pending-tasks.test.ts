@@ -53,11 +53,16 @@ test("tasksReferencingName finds a name in any of owner/coworker/recipient, excl
 
 test("taskLineFor reports the matched name's role and marks a task overdue only when open", () => {
   const today = "2026-08-20";
-  const owned = taskLineFor({ subject: "Ship it", description: "", project: "", topic: "", recurringMeeting: "", due: "2026-08-10", status: "Open", owner: "Jane Doe", collaborators: [], recipients: [], closedAt: null }, "Jane Doe", today);
+  const owned = taskLineFor({ id: 101, subject: "Ship it", description: "", project: "", topic: "", recurringMeeting: "", due: "2026-08-10", status: "Open", owner: "Jane Doe", collaborators: [], recipients: [], closedAt: null }, "Jane Doe", today);
   assert.equal(owned.role, "Owner");
   assert.equal(owned.overdue, true);
-  const delegated = taskLineFor({ subject: "Review", description: "", project: "", topic: "", recurringMeeting: "", due: "2026-08-10", status: "Closed", owner: "Someone Else", collaborators: [], recipients: ["Jane Doe"], closedAt: new Date("2026-08-19T00:00:00Z") }, "Jane Doe", today);
+  const delegated = taskLineFor({ id: 102, subject: "Review", description: "", project: "", topic: "", recurringMeeting: "", due: "2026-08-10", status: "Closed", owner: "Someone Else", collaborators: [], recipients: ["Jane Doe"], closedAt: new Date("2026-08-19T00:00:00Z") }, "Jane Doe", today);
   assert.equal(delegated.role, "Recipient");
   assert.equal(delegated.overdue, false, "a closed task is never reported as overdue even if its due date has passed");
   assert.equal(delegated.closedAt, "2026-08-19");
+});
+
+test("taskLineFor carries the task's id through as taskId — needed to mint a per-task email quick-update link (app/lib/task-update-tokens.ts)", () => {
+  const line = taskLineFor({ id: 101, subject: "Ship it", description: "", project: "", topic: "", recurringMeeting: "", due: "", status: "Open", owner: "Jane Doe", collaborators: [], recipients: [], closedAt: null }, "Jane Doe");
+  assert.equal(line.taskId, 101);
 });

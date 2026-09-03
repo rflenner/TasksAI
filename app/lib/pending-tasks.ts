@@ -36,7 +36,7 @@ export function classifyForDigest(task: ClassifiableTask, actor: { name: string;
   return null;
 }
 
-type RawTask = { subject: string; description: string; project: string; topic: string; recurringMeeting: string; due: string; status: string; owner: string; collaborators: string[]; recipients: string[]; closedAt: Date | null };
+type RawTask = { id: number; subject: string; description: string; project: string; topic: string; recurringMeeting: string; due: string; status: string; owner: string; collaborators: string[]; recipients: string[]; closedAt: Date | null };
 
 // Maps a raw task row to the shape the pending-tasks/invitation email
 // templates render, from the perspective of `name` (owner/coworker/
@@ -46,6 +46,7 @@ type RawTask = { subject: string; description: string; project: string; topic: s
 export function taskLineFor(task: RawTask, name: string, today = new Date().toISOString().slice(0, 10)): PendingTaskLine {
   const role = (task.owner === name ? "Owner" : task.collaborators.includes(name) ? "Coworker" : task.recipients.includes(name) ? "Recipient" : undefined) as "Owner" | "Coworker" | "Recipient" | undefined;
   return {
+    taskId: task.id,
     subject: task.subject,
     description: task.description || undefined,
     project: task.project || undefined,

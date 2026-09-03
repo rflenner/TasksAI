@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { renderOverdueNudgeEmail, sendWithResend } from "../app/lib/email";
 import { overdueOwnedTasks } from "../app/lib/pending-tasks";
+import { attachUpdateLinks } from "../app/lib/task-update-tokens";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
 
@@ -40,8 +41,10 @@ const dayKey = new Date().toISOString().slice(0, 10);
 
 for (const user of active) {
   try {
-    const overdueTasks = await overdueOwnedTasks(user);
+    let overdueTasks = await overdueOwnedTasks(user);
     if (!overdueTasks.length) { skipped++; continue; }
+    // No sign-in required to use these — see app/update-task/page.tsx.
+    overdueTasks = await attachUpdateLinks(overdueTasks, appUrl, user.name, user.email);
     const message = renderOverdueNudgeEmail({ firstName: user.name, appUrl, overdueTasks });
     const idempotencyKey = testEmail ? `overdue-${user.id}-test-${Date.now()}` : `overdue-${user.id}-${dayKey}`;
     const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });

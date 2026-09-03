@@ -167,3 +167,23 @@ export const salesAiSyncRuns = pgTable("sales_ai_sync_runs", {
   contactsUpserted: integer("contacts_upserted").notNull(),
   createdTasks: jsonb("created_tasks").$type<Array<{ taskId: number; subject: string; owner: string; recipients: string[]; created: string }>>().notNull().default([]),
 }, table => [index("sales_ai_sync_runs_run_at_idx").on(table.runAt)]);
+// Lets someone add a status update to one task straight from a digest
+// email, no Task AI login at all — see app/lib/task-update-tokens.ts. Only
+// the hash is ever stored, same as users.inviteTokenHash, so a leaked DB
+// row can't be replayed as the raw link. Deliberately reusable up to
+// expiresAt rather than single-use: the whole point is someone who never
+// logs in checking back in on the same task more than once (e.g. a weekly
+// digest keeps landing a fresh token anyway, but the one in an email they
+// already opened should keep working until it expires, not die on first
+// use). recipientName/recipientEmail are who it was generated for, purely
+// for attributing the update ("Ada Lovelace (via email)") since there's no
+// signed-in actor to credit.
+export const taskUpdateTokens = pgTable("task_update_tokens", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  recipientName: text("recipient_name").notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [uniqueIndex("task_update_tokens_hash_unique").on(table.tokenHash), index("task_update_tokens_task_idx").on(table.taskId)]);
