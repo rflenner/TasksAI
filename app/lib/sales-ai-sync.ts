@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../db";
-import { contacts, tasks, users } from "../../db/schema";
+import { contacts, salesAiSyncRuns, tasks, users } from "../../db/schema";
 import { fetchAllPages } from "./sales-ai-client";
 import { extractContacts, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, type SalesAIActionItem } from "./sales-ai-mapping";
 
@@ -13,6 +13,7 @@ export type SalesAISyncResult = {
   created: number;
   alreadySynced: number;
   contactsUpserted: number;
+  createdTasks: Array<{ taskId: number; subject: string; owner: string; recipients: string[]; created: string }>;
 };
 
 // First real run of this sync, deliberately cautious: a manual trigger
@@ -23,7 +24,15 @@ export type SalesAISyncResult = {
 // left for a later pass once there's been a chance to see what a first
 // sync actually produces, per the explicit "let's see what we get first"
 // request this was built against.
-export async function syncSalesAI({ startDate, endDate }: { startDate: string; endDate?: string }): Promise<SalesAISyncResult> {
+//
+// `initiatedBy` names who/what asked for this run — the clicking admin's
+// name for a manual trigger, "Scheduled sync" for the cron (see
+// scripts/sync-sales-ai.ts) — and is stored, along with a full result
+// summary and a snapshot of every task actually created, as one row in
+// salesAiSyncRuns. Both callers share this one function, so this is the
+// single place that needs to log a run for the audit trail on
+// /integrations to cover manual *and* scheduled runs alike.
+export async function syncSalesAI({ startDate, endDate, initiatedBy }: { startDate: string; endDate?: string; initiatedBy: string }): Promise<SalesAISyncResult> {
   const apiKey = process.env.SALES_AI_API_KEY;
   const baseUrl = process.env.SALES_AI_BASE_URL;
   if (!apiKey || !baseUrl) throw new Error("Sales AI is not configured — SALES_AI_API_KEY/SALES_AI_BASE_URL are missing");
@@ -47,13 +56,19 @@ export async function syncSalesAI({ startDate, endDate }: { startDate: string; e
   const qualifying = items.filter(item => involvesRegisteredUser(item, registeredEmails));
 
   let created = 0, alreadySynced = 0, contactsUpserted = 0;
+  const createdTasks: SalesAISyncResult["createdTasks"] = [];
   for (const item of qualifying) {
     const [existing] = await getDb().select({ id: tasks.id }).from(tasks).where(and(eq(tasks.externalSource, "sales-ai"), eq(tasks.externalId, item.action_item_id))).limit(1);
     if (existing) { alreadySynced++; continue; }
 
     const mapped = mapActionItemToTask(item, { registeredNameByEmail, accountNameById, opportunityNameById });
-    await getDb().insert(tasks).values({ ...mapped, topic: "", project: "", recurringMeeting: "", updates: [], closedAt: mapped.status === "Closed" ? new Date() : null }).onConflictDoNothing();
-    created++;
+    // .returning() comes back empty (not an error) on the rare race where
+    // another run's ON CONFLICT DO NOTHING beat this one to the same
+    // externalId between the check above and this insert — only count it
+    // as created, and only log it, when a row actually landed.
+    const [task] = await getDb().insert(tasks).values({ ...mapped, topic: "", project: "", recurringMeeting: "", updates: [], closedAt: mapped.status === "Closed" ? new Date() : null })
+      .onConflictDoNothing().returning({ taskId: tasks.id, subject: tasks.subject, owner: tasks.owner, recipients: tasks.recipients, created: tasks.created });
+    if (task) { created++; createdTasks.push(task); } else { alreadySynced++; continue; }
 
     for (const candidate of extractContacts(item, accountNameById)) {
       await getDb().insert(contacts).values({ ...candidate, updatedAt: new Date() })
@@ -62,5 +77,7 @@ export async function syncSalesAI({ startDate, endDate }: { startDate: string; e
     }
   }
 
-  return { itemsFound: items.length, qualifying: qualifying.length, created, alreadySynced, contactsUpserted };
+  const result = { itemsFound: items.length, qualifying: qualifying.length, created, alreadySynced, contactsUpserted, createdTasks };
+  await getDb().insert(salesAiSyncRuns).values({ initiatedBy, startDate, endDate: endDate || startDate, ...result });
+  return result;
 }

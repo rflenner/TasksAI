@@ -146,3 +146,24 @@ export const passkeys = pgTable("passkeys", {
   transports: jsonb("transports").$type<string[]>().notNull().default([]), deviceLabel: text("device_label"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
 }, table => [uniqueIndex("passkeys_credential_id_unique").on(table.credentialId), index("passkeys_user_idx").on(table.userId)]);
+// One row per Sales AI sync run — manual (from /integrations, initiatedBy
+// the clicking admin's name) or the 6x/day cron (initiatedBy "Scheduled
+// sync"), both going through the same syncSalesAI() call, so this table
+// is the shared audit trail for both. createdTasks is a denormalized
+// snapshot (subject/owner/recipients/created) of exactly what this run
+// imported, taken at the moment it ran — kept here rather than joined
+// live off `tasks` so the log still shows what a run actually did even
+// if someone later edits or deletes one of the tasks it created.
+export const salesAiSyncRuns = pgTable("sales_ai_sync_runs", {
+  id: serial("id").primaryKey(),
+  runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+  initiatedBy: text("initiated_by").notNull(),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  itemsFound: integer("items_found").notNull(),
+  qualifying: integer("qualifying").notNull(),
+  created: integer("created").notNull(),
+  alreadySynced: integer("already_synced").notNull(),
+  contactsUpserted: integer("contacts_upserted").notNull(),
+  createdTasks: jsonb("created_tasks").$type<Array<{ taskId: number; subject: string; owner: string; recipients: string[]; created: string }>>().notNull().default([]),
+}, table => [index("sales_ai_sync_runs_run_at_idx").on(table.runAt)]);

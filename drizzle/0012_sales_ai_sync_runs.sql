@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS sales_ai_sync_runs (id serial PRIMARY KEY, run_at timestamptz NOT NULL DEFAULT now(), initiated_by text NOT NULL, start_date text NOT NULL, end_date text NOT NULL, items_found integer NOT NULL, qualifying integer NOT NULL, created integer NOT NULL, already_synced integer NOT NULL, contacts_upserted integer NOT NULL, created_tasks jsonb NOT NULL DEFAULT '[]');
+CREATE INDEX IF NOT EXISTS sales_ai_sync_runs_run_at_idx ON sales_ai_sync_runs(run_at);
