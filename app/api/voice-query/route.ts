@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { sessions, tasks, users } from "../../../db/schema";
 import { canSeeTask } from "../../lib/permissions";
@@ -56,6 +56,20 @@ type Filters = {
   createdWithin: "today" | null; closedWithin: "today" | null; status: string | null;
 };
 
+// Same "how long ago" reasoning as the Users & access page's own
+// lastActive() formatter, phrased for speech rather than a UI label —
+// "about 3 hours ago" reads naturally out loud, "Active 3h ago" doesn't.
+function describeLastActive(lastSeenAt: Date | null): string {
+  if (!lastSeenAt) return "never signed in";
+  const minutes = Math.round((Date.now() - lastSeenAt.getTime()) / 60000);
+  if (minutes < 1) return "active just now";
+  if (minutes < 60) return `about ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  if (minutes < 1440) { const hours = Math.round(minutes / 60); return `about ${hours} hour${hours === 1 ? "" : "s"} ago`; }
+  const days = Math.round(minutes / 1440);
+  if (days < 14) return `about ${days} day${days === 1 ? "" : "s"} ago`;
+  return `on ${lastSeenAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
+}
+
 export async function POST(request: Request) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
   const actor = await currentActor();
@@ -69,9 +83,14 @@ export async function POST(request: Request) {
   // Never the whole tasks table — the same canSeeTask scoping every
   // other read path enforces, so the assistant can't answer a question
   // (or report a count) about anything the asking user couldn't already
-  // see in the UI. Capped at 200 for prompt size; a real per-query
-  // retrieval step would be the next improvement if that cap ever bites.
-  const all = await getDb().select().from(tasks);
+  // see in the UI. Capped at 200 for prompt size, but newest-first
+  // (orderBy desc(id), same as GET /api/tasks) — confirmed live
+  // 2026-09-04: without an explicit order, "which tasks were created
+  // today" answered "none" while 12 genuinely existed, because the
+  // unordered query happened to return an older 200 rows and today's
+  // tasks fell outside the cap. A real per-query retrieval step would
+  // be the next improvement if newest-200 ever isn't enough on its own.
+  const all = await getDb().select().from(tasks).orderBy(desc(tasks.id));
   const visible = all.filter(task => canSeeTask(task, actor));
   const summary = visible.slice(0, 200).map(t => ({
     id: t.id, subject: t.subject, owner: t.owner, collaborators: t.collaborators, recipients: t.recipients,
@@ -98,13 +117,17 @@ export async function POST(request: Request) {
   // already see that for in the real UI. An empty list here (not an
   // error) is how a Collaborator's assistant honestly has nothing to
   // answer that kind of question with.
-  let people: Array<{ name: string; role: string; lastActive: string | null }> = [];
+  let people: Array<{ name: string; role: string; lastActive: string }> = [];
   if (actor.canInvite) {
     const userRows = await getDb().select({ id: users.id, name: users.name, role: users.role, status: users.status }).from(users).where(eq(users.status, "active"));
     const sessionRows = await getDb().select({ userId: sessions.userId, lastSeenAt: sessions.lastSeenAt }).from(sessions);
     const lastActiveByUser = new Map<number, Date>();
     for (const s of sessionRows) { const existing = lastActiveByUser.get(s.userId); if (!existing || s.lastSeenAt > existing) lastActiveByUser.set(s.userId, s.lastSeenAt); }
-    people = userRows.map(u => ({ name: u.name, role: u.role, lastActive: lastActiveByUser.get(u.id)?.toISOString() ?? null }));
+    // A relative phrase computed here, not left to the model — confirmed
+    // live 2026-09-04: without this, "when was Drew last online" got
+    // read back as the raw ISO timestamp verbatim, which reads (and
+    // sounds, once spoken) completely broken.
+    people = userRows.map(u => ({ name: u.name, role: u.role, lastActive: describeLastActive(lastActiveByUser.get(u.id) ?? null) }));
   }
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -114,7 +137,7 @@ export async function POST(request: Request) {
       model: process.env.OPENAI_MODEL || "gpt-5-mini",
       input: [{
         role: "system", content: `You are Task AI's voice assistant, answering a spoken question from ${actor.name} (role: ${actor.role}). Today's date is ${today}.
-You are given the JSON list of every task ${actor.name} can currently see in Task AI — already permission-filtered, so never claim knowledge of a task outside it. You are also given, when available, a list of people with their role and last-active timestamp (null means never signed in, or truly unknown) — if that list is empty, you have no presence data at all and must say so rather than guessing.
+You are given the JSON list of every task ${actor.name} can currently see in Task AI — already permission-filtered, so never claim knowledge of a task outside it. You are also given, when available, a list of people with their role and a ready-to-speak lastActive phrase (e.g. "about 3 hours ago", "never signed in") — use that phrase exactly as given, never reformat or reinterpret it. If that list is empty, you have no presence data at all and must say so rather than guessing.
 Known exact project names: ${JSON.stringify(knownProjects)}. Known exact recurring meeting names: ${JSON.stringify(knownMeetings)}. Known exact topic names: ${JSON.stringify(knownTopics)}. When the user refers to one of these by a close, partial, or differently-worded phrase, use the EXACT string from these lists in the matching filter field — never your own paraphrase of it.
 Decide exactly one of:
 - "filter": the user wants the on-screen task list narrowed down ("show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "open tasks for the Architecture calls meeting", "what got created today", "what closed today"). Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.

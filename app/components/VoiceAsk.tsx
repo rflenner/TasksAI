@@ -57,6 +57,16 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
   const stoppingRef = useRef(false);
   const finalTextRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Confirmed live 2026-09-04: the continuous-listening restart (start()
+  // called again from afterAnswer(), or racing against a manual mic
+  // click) could leave the *previous* WebSocket/MediaRecorder still
+  // delivering transcript events while a new one was already recording —
+  // both writing into the same finalTextRef, producing one question
+  // triplicated verbatim in a single turn. Every async step below checks
+  // sessionIdRef against the generation it captured at start(), so a
+  // stale session's leftover callbacks become no-ops instead of
+  // corrupting the current one's transcript.
+  const sessionIdRef = useRef(0);
   // True once the mic has been used at least once this panel-open — while
   // true, finishing an answer re-opens the mic automatically instead of
   // waiting for another click. A typed question never sets this, so
@@ -65,12 +75,22 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
   const openRef = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
 
+  // Tears down whatever the *previous* generation left behind — a live
+  // WebSocket, an active MediaRecorder/mic stream — before a new one
+  // (if any) takes over. Bumps sessionIdRef itself, so any in-flight
+  // async step from the old generation (an awaited fetch, a lingering
+  // onmessage) can compare against it and bail out.
+  function teardown() {
+    sessionIdRef.current++;
+    stoppingRef.current = true;
+    recorderRef.current?.stop(); recorderRef.current = null;
+    streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
+    wsRef.current?.close(); wsRef.current = null;
+  }
+
   function closePanel() {
     voiceSessionRef.current = false;
-    stoppingRef.current = true; // suppresses any in-flight stop() from re-asking after we've already torn things down
-    recorderRef.current?.stop();
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    wsRef.current?.close();
+    teardown();
     audioRef.current?.pause();
     setOpen(false); setStatus("idle"); setLiveText(""); setError("");
   }
@@ -121,12 +141,18 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
   }
 
   async function start() {
+    teardown(); // guarantees no previous session's WebSocket/recorder is still live before this one begins
+    const mySession = sessionIdRef.current;
+    const isCurrent = () => sessionIdRef.current === mySession;
+
     voiceSessionRef.current = true;
     setError(""); setLiveText(""); finalTextRef.current = ""; stoppingRef.current = false;
     setStatus("connecting");
     try {
       const tokenRes = await fetch("/api/dictate/token", { method: "POST" });
+      if (!isCurrent()) return; // a newer session started while this fetch was in flight
       const tokenData = await tokenRes.json() as { token?: string; glossary?: string[]; model?: string; error?: string };
+      if (!isCurrent()) return;
       if (!tokenRes.ok || !tokenData.token) { setStatus("error"); setError(tokenData.error || "Could not start voice capture"); voiceSessionRef.current = false; return; }
 
       const params = new URLSearchParams({
@@ -137,13 +163,14 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
       const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ["token", tokenData.token]);
       wsRef.current = ws;
 
-      ws.onerror = () => { setStatus("error"); setError("Could not connect to the transcription service."); voiceSessionRef.current = false; };
+      ws.onerror = () => { if (!isCurrent()) return; setStatus("error"); setError("Could not connect to the transcription service."); voiceSessionRef.current = false; };
       ws.onclose = () => {}; // stop() already settles state on a clean close; a mid-recording drop just leaves status as-is rather than guessing
 
       ws.onmessage = event => {
+        if (!isCurrent()) return; // this session's own WebSocket, but a newer generation has since taken over — a delivery still in flight when teardown() closed it
         try {
           const msg = JSON.parse(event.data as string) as { type?: string; is_final?: boolean; speech_final?: boolean; channel?: { alternatives?: Array<{ transcript?: string }> } };
-          if (msg.type === "UtteranceEnd") { void stop(); return; }
+          if (msg.type === "UtteranceEnd") { void stop(mySession); return; }
           if (msg.type !== "Results") return;
           const transcript = msg.channel?.alternatives?.[0]?.transcript || "";
           if (msg.is_final) {
@@ -152,35 +179,44 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
           } else {
             setLiveText(transcript);
           }
-          if (msg.speech_final) void stop();
+          if (msg.speech_final) void stop(mySession);
         } catch { /* ignore malformed/non-JSON control frames */ }
       };
 
       ws.onopen = async () => {
+        if (!isCurrent()) return;
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          if (!isCurrent()) { stream.getTracks().forEach(t => t.stop()); return; } // superseded while waiting on mic permission — don't leave this stream capturing
           streamRef.current = stream;
           const mimeType = pickMimeType();
           const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-          recorder.ondataavailable = e => { if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data); };
+          recorder.ondataavailable = e => { if (isCurrent() && e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data); };
           recorder.start(250);
           recorderRef.current = recorder;
           setStatus("recording");
         } catch (err) {
+          if (!isCurrent()) return;
           setStatus("error"); setError(describeMicError(err));
           voiceSessionRef.current = false;
           ws.close();
         }
       };
     } catch {
+      if (!isCurrent()) return;
       setStatus("error"); setError("Could not start voice capture — check your connection.");
       voiceSessionRef.current = false;
     }
   }
 
-  async function stop() {
+  // sessionGuard, when passed, must still match the current generation —
+  // stop() otherwise only ever runs against whatever's live right now
+  // (the manual ■ button has no earlier generation to be stale against).
+  async function stop(sessionGuard?: number) {
+    if (sessionGuard !== undefined && sessionGuard !== sessionIdRef.current) return;
     if (stoppingRef.current) return;
     stoppingRef.current = true;
+    const mySession = sessionIdRef.current;
     recorderRef.current?.stop();
     streamRef.current?.getTracks().forEach(t => t.stop());
     const ws = wsRef.current;
@@ -189,8 +225,9 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
       setTimeout(() => ws.close(), 300);
     }
     const heard = finalTextRef.current.trim();
+    finalTextRef.current = ""; // consumed — a straggling message from this closing socket must not get appended to the *next* session's transcript
     if (heard) void ask(heard);
-    else if (voiceSessionRef.current && openRef.current) void start(); // heard nothing this round — stay listening rather than dropping out of the loop silently
+    else if (voiceSessionRef.current && openRef.current && sessionIdRef.current === mySession) void start(); // heard nothing this round — stay listening rather than dropping out of the loop silently
     else { setStatus("idle"); setError("Didn't catch that — try again."); }
   }
 
@@ -244,7 +281,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
               onChange={e => setTyped(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && typed.trim()) { void ask(typed); setTyped(""); } }}
               placeholder="…or type your question"
-              disabled={status === "processing"}
+              disabled={status === "processing" || status === "speaking"}
               className="flex-1 h-10 px-3 rounded-lg border border-[#d9dee5] text-sm outline-none focus:border-[#7898be]"
             />
           </div>
