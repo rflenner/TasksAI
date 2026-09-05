@@ -24,6 +24,11 @@ export type VoiceFilters = {
   createdWithin: "today" | null; closedWithin: "today" | null; status: string | null;
 };
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
+// What an "act" response hands back — every field any voice-driven
+// change could have touched (due, status+closedAt together, priority,
+// or updates), so the caller can merge this straight into its task
+// state without a full refetch.
+export type VoiceTaskUpdate = { id: number; due: string; status: string; priority: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }> };
 type Turn = { role: "user" | "assistant"; text: string };
 type Status = "idle" | "connecting" | "recording" | "processing" | "speaking" | "error";
 
@@ -43,7 +48,20 @@ function describeMicError(err: unknown) {
   return name ? `Microphone error (${name}): ${hint}` : "Microphone access failed.";
 }
 
-export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilters: (filters: VoiceFilters) => void; onNavigate: (target: VoiceNavigateTarget) => void }) {
+export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, currentTaskId }: {
+  onApplyFilters: (filters: VoiceFilters) => void;
+  onNavigate: (target: VoiceNavigateTarget) => void;
+  // "act" mode's write landed on currentTaskId — merge it in, no refetch needed.
+  onTaskUpdated: (task: VoiceTaskUpdate) => void;
+  // "next" mode resolved another task from the working list — open it,
+  // the same way clicking its card would.
+  onOpenTask: (taskId: number) => void;
+  // Whichever task is currently open on screen (the drawer), owned by
+  // the parent — not local state here, so a manual card click and a
+  // voice-driven "next" both keep exactly one source of truth for what
+  // "this task" refers to.
+  currentTaskId: number | null;
+}) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
@@ -74,6 +92,16 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
   const voiceSessionRef = useRef(false);
   const openRef = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
+  // The ordered id list the last "filter" response produced — what
+  // "next task" walks through. A ref, not state: it's only ever read
+  // when posting a question and written when a filter answer arrives,
+  // never something the render needs to react to.
+  const workingListRef = useRef<number[]>([]);
+  // currentTaskId is a prop, but ask() runs inside callbacks (mic
+  // handlers, speak()) that close over stale values — a ref mirrors it
+  // so every POST sends whatever's actually on screen right now.
+  const currentTaskIdRef = useRef(currentTaskId);
+  useEffect(() => { currentTaskIdRef.current = currentTaskId; }, [currentTaskId]);
 
   // Tears down whatever the *previous* generation left behind — a live
   // WebSocket, an active MediaRecorder/mic stream — before a new one
@@ -101,13 +129,28 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
     setLog(prev => [...prev, { role: "user", text: trimmed }]);
     setStatus("processing"); setError("");
     try {
-      const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ transcript: trimmed }) });
-      const data = await res.json() as { mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null; spokenAnswer?: string; error?: string };
+      const res = await fetch("/api/voice-query", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current }),
+      });
+      const data = await res.json() as {
+        mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
+        workingListIds?: number[]; task?: VoiceTaskUpdate | null; nextTaskId?: number | null;
+        spokenAnswer?: string; error?: string;
+      };
       if (!res.ok) { setStatus("error"); setError(data.error || "Could not process that"); return; }
       const answer = data.spokenAnswer || "";
       setLog(prev => [...prev, { role: "assistant", text: answer }]);
-      if (data.mode === "filter" && data.filters) onApplyFilters(data.filters);
+      if (data.mode === "filter") {
+        if (data.filters) onApplyFilters(data.filters);
+        // Seeds (or replaces) what "next task" will walk through —
+        // every filter/query response carries a fresh ordered list, so
+        // asking a new question always restarts the walk from its results.
+        if (data.workingListIds) workingListRef.current = data.workingListIds;
+      }
       if (data.mode === "navigate" && data.navigateTarget) { onNavigate(data.navigateTarget); await speak(answer); closePanel(); return; }
+      if (data.mode === "act" && data.task) onTaskUpdated(data.task);
+      if (data.mode === "next" && data.nextTaskId != null) onOpenTask(data.nextTaskId);
       await speak(answer);
     } catch {
       setStatus("error"); setError("Could not reach Task AI — check your connection.");
@@ -259,7 +302,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate }: { onApplyFilter
           </div>
 
           <div className="flex-1 overflow-y-auto mb-3 flex flex-col gap-2 min-h-[80px]">
-            {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "What are my tasks for the week?", "What closed today?", or "Open dictate task."`}</p>}
+            {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "What are my tasks for the week?", "Push this to next Friday," "Add an update," or "Next task."`}</p>}
             {log.map((turn, i) => (
               <div key={i} className={`text-sm rounded-lg px-3 py-2 max-w-[85%] ${turn.role === "user" ? "self-end bg-[#173f76] text-white" : "self-start bg-[#f1f3f7] text-[#202735]"}`}>
                 {turn.text}
