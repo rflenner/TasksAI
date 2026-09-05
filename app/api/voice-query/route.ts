@@ -70,6 +70,29 @@ function describeLastActive(lastSeenAt: Date | null): string {
   return `on ${lastSeenAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
 }
 
+// Every raw date (due/created/closedAt) in the summary handed to the
+// model comes with one of these alongside it — confirmed live
+// 2026-09-04: asked about a due date, the model just echoed the raw
+// "2026-09-07" back in its spoken answer, which Deepgram's TTS reads
+// as something close to digit-by-digit rather than a real date. Same
+// fix family as describeLastActive above: compute the natural phrase
+// deterministically, then tell the model (below) to speak *this*, never
+// the raw field — reasoning/sorting can still use the raw ISO date,
+// only speech needs the human phrasing.
+function speakableDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const iso = dateStr.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
+  const month = d.toLocaleDateString("en-US", { month: "long" });
+  const day = d.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
+  const yearSuffix = d.getFullYear() !== new Date().getFullYear() ? `, ${d.getFullYear()}` : "";
+  return `${weekday}, ${month} ${day}${suffix}${yearSuffix}`;
+}
+
 export async function POST(request: Request) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
   const actor = await currentActor();
@@ -94,8 +117,9 @@ export async function POST(request: Request) {
   const visible = all.filter(task => canSeeTask(task, actor));
   const summary = visible.slice(0, 200).map(t => ({
     id: t.id, subject: t.subject, owner: t.owner, collaborators: t.collaborators, recipients: t.recipients,
-    due: t.due, status: t.status, priority: t.priority, project: t.project, topic: t.topic, recurringMeeting: t.recurringMeeting,
-    source: t.source, created: t.created, closedAt: t.closedAt ? t.closedAt.toISOString() : null,
+    due: t.due, dueSpeakable: speakableDate(t.due), status: t.status, priority: t.priority, project: t.project, topic: t.topic, recurringMeeting: t.recurringMeeting,
+    source: t.source, created: t.created, createdSpeakable: speakableDate(t.created),
+    closedAt: t.closedAt ? t.closedAt.toISOString() : null, closedSpeakable: t.closedAt ? speakableDate(t.closedAt.toISOString()) : null,
     updateCount: t.updates.length, lastUpdate: t.updates.length ? t.updates[t.updates.length - 1].text : null,
   }));
   const today = new Date().toISOString().slice(0, 10);
@@ -138,6 +162,7 @@ export async function POST(request: Request) {
       input: [{
         role: "system", content: `You are Task AI's voice assistant, answering a spoken question from ${actor.name} (role: ${actor.role}). Today's date is ${today}.
 You are given the JSON list of every task ${actor.name} can currently see in Task AI — already permission-filtered, so never claim knowledge of a task outside it. You are also given, when available, a list of people with their role and a ready-to-speak lastActive phrase (e.g. "about 3 hours ago", "never signed in") — use that phrase exactly as given, never reformat or reinterpret it. If that list is empty, you have no presence data at all and must say so rather than guessing.
+Every task's due/created/closedAt is a raw YYYY-MM-DD or ISO timestamp — fine for your own reasoning (sorting, comparing, deciding what's soonest or most recent) but NEVER speak one of those raw strings directly, it reads like nonsense out loud. Each one has a matching dueSpeakable/createdSpeakable/closedSpeakable field (e.g. "Monday, September 7th") right next to it — whenever your spoken answer mentions a date, use that speakable phrase verbatim instead, never the raw field. If the speakable field is null, that date genuinely isn't set — say so, don't invent one.
 Known exact project names: ${JSON.stringify(knownProjects)}. Known exact recurring meeting names: ${JSON.stringify(knownMeetings)}. Known exact topic names: ${JSON.stringify(knownTopics)}. When the user refers to one of these by a close, partial, or differently-worded phrase, use the EXACT string from these lists in the matching filter field — never your own paraphrase of it.
 Decide exactly one of:
 - "filter": the user wants the on-screen task list narrowed down ("show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "open tasks for the Architecture calls meeting", "what got created today", "what closed today"). Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.
