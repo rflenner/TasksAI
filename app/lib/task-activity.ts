@@ -41,6 +41,21 @@ export function describeChanges(before: StoredTask, after: StoredTask): string[]
   return lines;
 }
 
+// A posted status update is a signal someone's actively working the
+// task — bump Open -> In progress automatically, whether the note came
+// from the drawer's "Post update" button (PATCH /api/tasks) or a voice
+// "act" command (confirmed live 2026-09-07, applied consistently to
+// both so the same action doesn't behave differently by how it was
+// triggered). An explicit status choice in the same edit always wins
+// over this inference, and an already-Closed or already-In-progress
+// task is left alone — a note shouldn't silently reopen finished work,
+// and there's nothing to bump if it's already moving.
+export function autoAdvanceStatus(currentStatus: string, updatesGrew: boolean, explicitNewStatus: string | null): string {
+  if (explicitNewStatus) return explicitNewStatus;
+  if (updatesGrew && currentStatus === "Open") return "In progress";
+  return currentStatus;
+}
+
 export async function recordActivity(taskId: number, actorName: string | null, details: string[]) {
   if (!details.length) return;
   await getDb().insert(taskActivity).values(details.map(detail => ({ taskId, actorName, detail })));
