@@ -93,6 +93,33 @@ test("mapActionItemToTask: full mapping against the real confirmed shape", () =>
   assert.match(task.citationQuote!, /let's get together/);
   assert.equal(task.source, "Sales AI");
   assert.equal(task.createdBy, "Sales AI sync");
+  assert.equal(task.ownerContactId, "003Qs00000IyC5ZIAV");
+  assert.deepEqual(task.recipientContactIds, { "Pavneet Kaur": "003Qs00000T7fQlIAJ" });
+});
+
+test("mapActionItemToTask: recipientContactIds is keyed by the resolved name, not Sales AI's own spelling", () => {
+  // Same contact_id as baseItem's recipient, but registered under a
+  // different Task AI name — resolvePersonName prefers the registered
+  // name, so the key here must match that, not the raw "Pavneetkaur
+  // Saluja" Sales AI sent, or a lookup by recipient name would miss it.
+  const task = mapActionItemToTask(baseItem({ recipients: [{ contact_id: "003Qs00000T7fQlIAJ", name: "Pavneetkaur Saluja", email: "pavneetkaur.saluja@habilelabs.io" }] }), {
+    registeredNameByEmail: new Map([["pavneetkaur.saluja@habilelabs.io", "Payneet Kaur"]]),
+    accountNameById: new Map(), opportunityNameById: new Map(),
+  });
+  assert.deepEqual(task.recipients, ["Payneet Kaur"]);
+  assert.deepEqual(task.recipientContactIds, { "Payneet Kaur": "003Qs00000T7fQlIAJ" });
+});
+
+test("mapActionItemToTask: a recipient with no contact_id is excluded from recipientContactIds, same as extractContacts already skips them", () => {
+  const task = mapActionItemToTask(baseItem({ recipients: [{ name: "No Id Here", email: "noid@example.com" }] }), {
+    registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(),
+  });
+  assert.deepEqual(task.recipientContactIds, {});
+});
+
+test("mapActionItemToTask: no owner_id leaves ownerContactId null", () => {
+  const task = mapActionItemToTask(baseItem({ owner_id: null }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map() });
+  assert.equal(task.ownerContactId, null);
 });
 
 test("mapActionItemToTask: status completed maps to Closed, open/overdue both map to Open", () => {
