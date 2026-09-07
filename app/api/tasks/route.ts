@@ -17,13 +17,23 @@ function entries(task:Input):Array<[DimensionType,string]>{return [["project",ta
 async function register(task:Input){for(const[type,value]of entries(task))await getDb().insert(dimensionValues).values({type,value}).onConflictDoNothing()}
 async function dimensions(){const rows=await getDb().select().from(dimensionValues).orderBy(dimensionValues.value);return{project:rows.filter(x=>x.type==="project").map(x=>x.value),meeting:rows.filter(x=>x.type==="meeting").map(x=>x.value),topic:rows.filter(x=>x.type==="topic").map(x=>x.value),person:rows.filter(x=>x.type==="person").map(x=>x.value)}}
 export async function GET(){const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const all=await getDb().select().from(tasks).orderBy(desc(tasks.id));const visible=all.filter(task=>canSeeTask(task,actor));const scoped={project:[...new Set(visible.map(x=>x.project))],meeting:[...new Set(visible.map(x=>x.recurringMeeting))],topic:[...new Set(visible.map(x=>x.topic))],person:[...new Set(visible.flatMap(x=>[x.owner,...x.collaborators,...x.recipients]))]};
+ // Account/opportunity have no manual-entry use case — they're read-only,
+ // Sales-AI-sync-only fields, never typed in by hand the way project/
+ // meeting/topic/person are — so unlike those four, which site admins get
+ // a persistent, renameable dimensionValues registry for, these are always
+ // derived live from whichever tasks this actor can currently see, the
+ // same way non-site-admins already see project/meeting/topic/person via
+ // `scoped` above. Filters out the common no-account/no-opportunity case
+ // (most manually-created tasks) rather than surfacing a blank entry.
+ const account=[...new Set(visible.map(x=>x.accountName).filter(Boolean))];
+ const opportunity=[...new Set(visible.map(x=>x.opportunityName).filter(Boolean))];
  // Every name that already has a users row (pending or active — a second
  // invite for someone mid-invitation should go through Resend invitation,
  // not this flow) — lets the client flag a task's owner/coworker/recipient
  // as "not yet on Task AI" and offer to invite them, without a whole
  // separate endpoint just for that.
  const registeredPeople=(await getDb().select({name:users.name}).from(users)).map(row=>row.name);
- return Response.json({tasks:visible,dimensions:actor.role==="site_admin"?await dimensions():scoped,registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
+ return Response.json({tasks:visible,dimensions:{...(actor.role==="site_admin"?await dimensions():scoped),account,opportunity},registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
 export async function POST(request:Request){
  const invalid=requireSameOrigin(request);if(invalid)return invalid;
  const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});
