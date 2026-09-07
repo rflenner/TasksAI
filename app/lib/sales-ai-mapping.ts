@@ -72,6 +72,7 @@ export type MappedTask = {
   accountId: string | null; accountName: string | null;
   opportunityId: string | null; opportunityName: string | null;
   meetingId: string | null; citationUser: string | null; citationQuote: string | null;
+  ownerContactId: string | null; recipientContactIds: Record<string, string>;
 };
 
 export type NameResolution = {
@@ -87,6 +88,18 @@ export function mapActionItemToTask(item: SalesAIActionItem, lookup: NameResolut
   const recipients = (item.recipients || [])
     .map(recipient => resolvePersonName(recipient.email, recipient.name, lookup.registeredNameByEmail))
     .filter(Boolean);
+  // Keyed by the SAME resolved name recipients[] uses, not the raw
+  // Sales AI name — so a lookup by "who's recipient X" and "what's
+  // their contact id" always agree, even when resolvePersonName
+  // preferred the registered Task AI name over Sales AI's own spelling.
+  // Requested 2026-09-08, so a task can always be traced back to the
+  // exact Sales AI contact record, not just matched by name.
+  const recipientContactIds: Record<string, string> = {};
+  for (const recipient of item.recipients || []) {
+    if (!recipient.contact_id) continue;
+    const name = resolvePersonName(recipient.email, recipient.name, lookup.registeredNameByEmail);
+    if (name) recipientContactIds[name] = recipient.contact_id;
+  }
   return {
     subject: item.description.slice(0, 140),
     description: item.notes || item.description,
@@ -107,6 +120,8 @@ export function mapActionItemToTask(item: SalesAIActionItem, lookup: NameResolut
     meetingId: item.meeting_id || null, // stored raw — no name resolvable, confirmed live (no meetings scope)
     citationUser: item.citation?.user || null,
     citationQuote: item.citation?.quote || null,
+    ownerContactId: item.owner_id || null,
+    recipientContactIds,
   };
 }
 

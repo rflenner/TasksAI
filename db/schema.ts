@@ -80,6 +80,20 @@ export const tasks = pgTable("tasks", {
   // that way — concatenated text can't be un-concatenated later.
   citationUser: text("citation_user"),
   citationQuote: text("citation_quote"),
+  // The Sales AI contact id behind `owner`/each name in `recipients` —
+  // requested 2026-09-08 so a task can always be traced back to the
+  // exact Sales AI contact record, not just matched by name (which the
+  // rest of the app still uses everywhere else — collaborators,
+  // matchesMine, the owner field itself — this is purely an additional
+  // reference, nothing about the name-based model changes). Sales AI
+  // has no collaborator concept, so there's no collaboratorContactIds —
+  // see sales-ai-mapping.ts. recipientContactIds is a name->contactId
+  // map rather than a same-order array parallel to `recipients`,
+  // deliberately: recipients can be reordered or edited by hand after
+  // sync (ContactPicklist), and a positional array would silently point
+  // at the wrong person the moment that happens.
+  ownerContactId: text("owner_contact_id"),
+  recipientContactIds: jsonb("recipient_contact_ids").$type<Record<string, string>>().notNull().default({}),
 }, table => [
   index("tasks_owner_idx").on(table.owner),
   index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic),
