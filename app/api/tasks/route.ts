@@ -16,7 +16,13 @@ function values(input:Input){return{subject:String(input.subject||"").trim(),des
 function entries(task:Input):Array<[DimensionType,string]>{return [["project",task.project],["meeting",task.recurringMeeting],["topic",task.topic],["person",task.owner],...cleanList(task.collaborators).map(x=>["person",x]),...cleanList(task.recipients).map(x=>["person",x])].map(([t,v])=>[t as DimensionType,String(v||"").trim()]).filter((x):x is [DimensionType,string]=>Boolean(x[1]))}
 async function register(task:Input){for(const[type,value]of entries(task))await getDb().insert(dimensionValues).values({type,value}).onConflictDoNothing()}
 async function dimensions(){const rows=await getDb().select().from(dimensionValues).orderBy(dimensionValues.value);return{project:rows.filter(x=>x.type==="project").map(x=>x.value),meeting:rows.filter(x=>x.type==="meeting").map(x=>x.value),topic:rows.filter(x=>x.type==="topic").map(x=>x.value),person:rows.filter(x=>x.type==="person").map(x=>x.value)}}
-export async function GET(){const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const all=await getDb().select().from(tasks).orderBy(desc(tasks.id));const visible=all.filter(task=>canSeeTask(task,actor));const scoped={project:[...new Set(visible.map(x=>x.project))],meeting:[...new Set(visible.map(x=>x.recurringMeeting))],topic:[...new Set(visible.map(x=>x.topic))],person:[...new Set(visible.flatMap(x=>[x.owner,...x.collaborators,...x.recipients]))]};
+export async function GET(){const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const all=await getDb().select().from(tasks).orderBy(desc(tasks.id));
+ // A merged-away (secondary) task is never shown here — requested
+ // 2026-09-08, fully hidden rather than left visible-but-tagged, so a
+ // resolved duplicate doesn't clutter the list. The row itself is never
+ // deleted (see app/lib/task-merge.ts), so it's still reachable — just
+ // through the Data Hygiene merge history, not the normal task list.
+ const visible=all.filter(task=>canSeeTask(task,actor)&&!task.mergedIntoTaskId);const scoped={project:[...new Set(visible.map(x=>x.project))],meeting:[...new Set(visible.map(x=>x.recurringMeeting))],topic:[...new Set(visible.map(x=>x.topic))],person:[...new Set(visible.flatMap(x=>[x.owner,...x.collaborators,...x.recipients]))]};
  // Account/opportunity have no manual-entry use case — they're read-only,
  // Sales-AI-sync-only fields, never typed in by hand the way project/
  // meeting/topic/person are — so unlike those four, which site admins get

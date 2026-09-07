@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
 export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
@@ -94,6 +94,19 @@ export const tasks = pgTable("tasks", {
   // at the wrong person the moment that happens.
   ownerContactId: text("owner_contact_id"),
   recipientContactIds: jsonb("recipient_contact_ids").$type<Record<string, string>>().notNull().default({}),
+  // Set on the SECONDARY task once it's merged into another ("primary")
+  // one — requested 2026-09-08 for real duplicate cleanup, not just
+  // dimension-value renaming (see app/lib/data-hygiene.ts, a different,
+  // older kind of "merge"). Null on every normal task, including a
+  // primary that has absorbed others. Deliberately never deletes the
+  // secondary row: both tasks' own internal id and externalId (Sales AI
+  // action_item_id) need to survive the merge so a later cleanup pass on
+  // the Sales AI side can use them — see app/lib/task-merge.ts. A
+  // secondary is fully hidden from the normal task list (GET /api/tasks
+  // filters mergedIntoTaskId is not null) — only visible via the Data
+  // Hygiene merge history.
+  mergedIntoTaskId: integer("merged_into_task_id").references((): AnyPgColumn => tasks.id),
+  mergedAt: timestamp("merged_at", { withTimezone: true }),
 }, table => [
   index("tasks_owner_idx").on(table.owner),
   index("tasks_scope_idx").on(table.project, table.recurringMeeting, table.topic),
