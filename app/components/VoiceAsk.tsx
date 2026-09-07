@@ -281,7 +281,17 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(o => !o)} className="h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]">
+      {/* relative z-30: confirmed live 2026-09-07 — a task's drawer
+          renders a full-viewport dimmed backdrop at z-index:20 (see
+          .overlay in app/globals.css) with no z-index of its own on the
+          header underneath, so without this the backdrop paints over
+          this button and a real click never reaches it, even though it
+          looks clickable. z-30 lifts it above that backdrop (still well
+          under the panel's own z-50 below) without moving it out of the
+          header's normal layout flow — the whole point of "this task"
+          context is being able to open the assistant while a task is
+          already open. */}
+      <button type="button" onClick={() => setOpen(o => !o)} className="relative z-30 h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]">
         🗣️ Ask Task AI
       </button>
       {open && (
