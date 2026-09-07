@@ -130,6 +130,11 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   async function ask(question: string) {
     const trimmed = question.trim();
     if (!trimmed) return;
+    // A new question is the clearest possible "I'm done listening to
+    // that" signal, whether it arrived by typing over a still-playing
+    // answer or by tapping skip — stop it immediately rather than
+    // letting two answers overlap.
+    audioRef.current?.pause(); audioRef.current = null;
     setLog(prev => [...prev, { role: "user", text: trimmed }]);
     setStatus("processing"); setError("");
     try {
@@ -194,6 +199,18 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     if (voiceSessionRef.current && openRef.current) void start();
   }
 
+  // Confirmed live 2026-09-07: during a "walk" session the text answer
+  // is already visible the instant it arrives (setLog happens before
+  // speak() is even called) — the full narration is only useful if
+  // you're not already looking at the screen. Tapping the mic mid-
+  // answer cuts the audio and starts listening right away instead of
+  // making every turn wait through a full read-out first.
+  function skipSpeaking() {
+    audioRef.current?.pause(); audioRef.current = null;
+    setStatus("idle");
+    void start();
+  }
+
   async function start() {
     teardown(); // guarantees no previous session's WebSocket/recorder is still live before this one begins
     const mySession = sessionIdRef.current;
@@ -211,7 +228,16 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
 
       const params = new URLSearchParams({
         model: tokenData.model || "nova-3", smart_format: "true", punctuate: "true", interim_results: "true",
-        endpointing: "3000", utterance_end_ms: "3000",
+        // Confirmed live 2026-09-07: "the lag is quite long" — this is
+        // the single biggest fixed contributor and the easiest one to
+        // just tune. Both were 3000ms, meaning Deepgram waited a full 3
+        // silent seconds after every command before even considering it
+        // finished, before any classify/act/speak step could start. A
+        // short voice command doesn't need that much grace; 900/1200
+        // still tolerates a brief mid-command pause without feeling
+        // like it's still waiting on you. Raise these back toward 3000
+        // if real use shows commands getting cut off mid-sentence.
+        endpointing: "900", utterance_end_ms: "1200",
       });
       for (const term of tokenData.glossary || []) params.append("keyterm", term);
       const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ["token", tokenData.token]);
@@ -348,15 +374,17 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
           <div className="flex items-center gap-2">
             {status === "recording" ? (
               <button type="button" onClick={stopListening} className="h-10 w-10 shrink-0 rounded-full bg-[#c96539] text-white animate-pulse" aria-label="Stop listening">■</button>
+            ) : status === "speaking" ? (
+              <button type="button" onClick={skipSpeaking} className="h-10 w-10 shrink-0 rounded-full bg-[#173f76] text-white" aria-label="Skip and listen">⏭</button>
             ) : (
-              <button type="button" onClick={() => void start()} disabled={status === "connecting" || status === "processing" || status === "speaking"} className="h-10 w-10 shrink-0 rounded-full bg-[#173f76] text-white disabled:opacity-50" aria-label="Ask by voice">🎤</button>
+              <button type="button" onClick={() => void start()} disabled={status === "connecting" || status === "processing"} className="h-10 w-10 shrink-0 rounded-full bg-[#173f76] text-white disabled:opacity-50" aria-label="Ask by voice">🎤</button>
             )}
             <input
               value={typed}
               onChange={e => setTyped(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && typed.trim()) { void ask(typed); setTyped(""); } }}
               placeholder="…or type your question"
-              disabled={status === "processing" || status === "speaking"}
+              disabled={status === "processing"}
               className="flex-1 h-10 px-3 rounded-lg border border-[#d9dee5] text-sm outline-none focus:border-[#7898be]"
             />
           </div>
@@ -364,7 +392,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
             {status === "connecting" && "Connecting…"}
             {status === "recording" && "● Listening — pauses automatically, or tap ■ to stop for good"}
             {status === "processing" && "Thinking…"}
-            {status === "speaking" && "🔊 Speaking…"}
+            {status === "speaking" && "🔊 Speaking — tap ⏭ to skip and keep going"}
           </div>
         </div>
       )}
