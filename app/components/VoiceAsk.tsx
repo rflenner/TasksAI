@@ -411,7 +411,20 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- onKeyDown is Escape-to-close, the keyboard-accessible equivalent of the × button right below
         <div
           role="dialog" aria-label="Ask Task AI"
-          className="fixed bottom-6 right-6 z-50 w-[calc(100%-3rem)] max-w-sm bg-white rounded-2xl shadow-[0_8px_30px_rgba(16,47,89,0.2)] border border-[#e3e8ee] flex flex-col p-5 max-h-[70vh]"
+          // Confirmed live 2026-09-08: docked at bottom-right, this sat
+          // directly on top of a task's drawer — which also docks
+          // right (see .overlay/.drawer in app/globals.css) — so
+          // having both open at once (the exact point of "next"/"walk"
+          // voice navigation) meant one covered the other. Moved to
+          // the left: below ~620px the sidebar collapses off-canvas
+          // (matching app/globals.css's own mobile breakpoint) so
+          // left-6 sits where the sidebar would be; above it, left-
+          // [270px] clears the sidebar's own 246px width instead. Not
+          // airtight at every in-between width — the drawer can itself
+          // reach as far left as roughly the sidebar's edge on a
+          // narrow-but-still-desktop window — but resolves the
+          // overlap for the realistic common case.
+          className="fixed bottom-6 left-6 min-[621px]:left-[270px] z-50 w-[calc(100%-3rem)] max-w-sm bg-white rounded-2xl shadow-[0_8px_30px_rgba(16,47,89,0.2)] border border-[#e3e8ee] flex flex-col p-5 max-h-[70vh]"
           onKeyDown={e => { if (e.key === "Escape") closePanel(); }}
         >
           <div className="flex items-center justify-between mb-3">
