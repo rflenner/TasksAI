@@ -159,7 +159,17 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         // "walk" additionally opens and reads the first match itself.
         if (data.mode === "walk" && data.openTaskId != null) onOpenTask(data.openTaskId);
       }
-      if (data.mode === "navigate" && data.navigateTarget) { onNavigate(data.navigateTarget); await speak(answer); closePanel(); return; }
+      if (data.mode === "navigate" && data.navigateTarget) {
+        onNavigate(data.navigateTarget);
+        await speak(answer);
+        // Only a real full-page navigation (dictate, via location.href)
+        // needs this — confirmed live 2026-09-08: "the Ask Session
+        // disrupt[ed]" itself whenever a command merely opened the new-
+        // task/paste-minutes overlay, closing the whole panel over an
+        // in-page form that isn't actually leaving the screen at all.
+        if (data.navigateTarget === "dictate") closePanel();
+        return;
+      }
       if (data.mode === "act") {
         if (data.task) onTaskUpdated(data.task);
         // A chained "...and go to the next task" resolved as part of
