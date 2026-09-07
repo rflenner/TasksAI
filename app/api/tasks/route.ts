@@ -4,7 +4,7 @@ import { dimensionValues, tasks, users } from "../../../db/schema";
 import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
-import { describeChanges, recordActivity } from "../../lib/task-activity";
+import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
 type StoredTask=typeof tasks.$inferSelect; type Input=Partial<StoredTask>&{recurring_meeting?:string}; type DimensionType="project"|"meeting"|"topic"|"person";
 const cleanList=(value:unknown)=>Array.isArray(value)?value.map(String).map(x=>x.trim()).filter(Boolean):[];
 // externalSource/externalId only ever come through when a caller explicitly
@@ -48,7 +48,27 @@ export async function POST(request:Request){
 // newly closed gets a fresh timestamp, already-closed keeps its original one
 // (editing another field on a closed task shouldn't bump its close date),
 // reopening clears it. Powers the digest's "Recently closed" section.
-export async function PATCH(request:Request){const invalid=requireSameOrigin(request);if(invalid)return invalid;const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const body=await request.json() as Input;if(!body.id)return Response.json({error:"Task id is required"},{status:400});const[existing]=await getDb().select().from(tasks).where(eq(tasks.id,body.id)).limit(1);const next={...values(body),id:body.id};if(!existing||!canWriteTask(existing,actor)||!canWriteTask(next,actor))return Response.json({error:"You cannot change this task"},{status:403});const closedAt=next.status!=="Closed"?null:existing.status==="Closed"?existing.closedAt:new Date();const[task]=await getDb().update(tasks).set({...values(body),closedAt}).where(eq(tasks.id,body.id)).returning();await register(task);await recordActivity(task.id,actor.name,describeChanges(existing,task));return Response.json({task,dimensions:await dimensions()})}
+export async function PATCH(request:Request){const invalid=requireSameOrigin(request);if(invalid)return invalid;const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});const body=await request.json() as Input;if(!body.id)return Response.json({error:"Task id is required"},{status:400});const[existing]=await getDb().select().from(tasks).where(eq(tasks.id,body.id)).limit(1);if(!existing)return Response.json({error:"You cannot change this task"},{status:403});
+ // The "Post update" button always resends the full current task with
+ // just its updates array grown by one — that's the only reliable
+ // signal available for "this request is posting a note" (a genuine
+ // status change is never combined with growing updates from this UI),
+ // so when it fires, body.status is treated as stale rather than a
+ // deliberate choice, and the auto-advance rule alone decides the
+ // result — from existing.status, read fresh moments ago in THIS
+ // request. Confirmed live 2026-09-07: diffing body.status against
+ // existing.status to guess "was this explicit" instead broke under a
+ // real double-submit (two near-simultaneous PATCH calls for one
+ // click — a pre-existing quirk of V()'s setTasks updater also driving
+ // a side effect, not something new here) — the second call's stale
+ // body.status looked exactly like a deliberate revert of the first
+ // call's own auto-advance. Reading fresh existing.status inside each
+ // request instead makes both calls converge on the same correct
+ // answer regardless of order.
+ const rebuilt=values(body);
+ const updatesGrew=rebuilt.updates.length>existing.updates.length;
+ const finalStatus=updatesGrew?autoAdvanceStatus(existing.status,true,null):rebuilt.status;
+ const next={...rebuilt,status:finalStatus,id:body.id};if(!canWriteTask(existing,actor)||!canWriteTask(next,actor))return Response.json({error:"You cannot change this task"},{status:403});const closedAt=finalStatus!=="Closed"?null:existing.status==="Closed"?existing.closedAt:new Date();const[task]=await getDb().update(tasks).set({...rebuilt,status:finalStatus,closedAt}).where(eq(tasks.id,body.id)).returning();await register(task);await recordActivity(task.id,actor.name,describeChanges(existing,task));return Response.json({task,dimensions:await dimensions()})}
 // Site Admin only, deliberately stricter than canWriteTask (which an area
 // admin also passes) — closing a bad task is reversible and available to
 // whoever could already edit it, deleting it outright isn't, so it stays
