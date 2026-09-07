@@ -147,6 +147,15 @@ export const contacts = pgTable("contacts", {
   salesAiContactId: text("sales_ai_contact_id"),
   salesAiAccountId: text("sales_ai_account_id"),
   salesAiAccountName: text("sales_ai_account_name"),
+  // Last-write-wins, same as the account fields above: whichever
+  // opportunity this contact was most recently seen on, not a history of
+  // every opportunity they've ever come up in. Added 2026-09-08 alongside
+  // the canonical-name dedup fix (see sales-ai-mapping.ts's
+  // buildCanonicalNames) — both requested together, so a first-name-only
+  // mention in one meeting never spawns a second, duplicate person just
+  // because Task AI couldn't tell it was the same Sales AI contact.
+  salesAiOpportunityId: text("sales_ai_opportunity_id"),
+  salesAiOpportunityName: text("sales_ai_opportunity_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 // Plain (non-partial) unique index, not WHERE-filtered like the tasks one

@@ -45,13 +45,54 @@ export function cleanName(name?: string | null): string {
 
 // Registered Task AI users take priority over Sales AI's own name (keeps
 // synced tasks consistent with how that person's name already appears
-// everywhere else in Task AI); falls back to Sales AI's name, cleaned,
-// when there's no registered match — the same free-text-person model
-// every other part of this app already uses.
-export function resolvePersonName(email: string | null | undefined, rawName: string | null | undefined, registeredNameByEmail: Map<string, string>): string {
+// everywhere else in Task AI); then a canonical name already on file for
+// this same Sales AI contact id, if we have one — requested 2026-09-08:
+// some meetings only give Sales AI a first name, and without this a
+// contact who's "Pavneet Saluja" everywhere else would spawn a second,
+// duplicate "Pavneet" in the People list just because of which meeting
+// happened to mention them. Falls back to Sales AI's own name, cleaned,
+// only when neither of those is known.
+export function resolvePersonName(email: string | null | undefined, rawName: string | null | undefined, registeredNameByEmail: Map<string, string>, contactId?: string | null, canonicalNameByContactId?: Map<string, string>): string {
   const cleaned = cleanName(rawName);
-  const matched = email ? registeredNameByEmail.get(email.trim().toLowerCase()) : undefined;
-  return matched || cleaned;
+  const matchedUser = email ? registeredNameByEmail.get(email.trim().toLowerCase()) : undefined;
+  if (matchedUser) return matchedUser;
+  const canonical = contactId ? canonicalNameByContactId?.get(contactId) : undefined;
+  return canonical || cleaned;
+}
+
+// Picks whichever of two spellings for the same Sales AI contact is more
+// complete — more name parts wins ("Pavneet Saluja" over "Pavneet"); a tie
+// on part count prefers the longer string; a further tie keeps `a` (the
+// name already treated as canonical) so the display name doesn't churn
+// between two equally-complete spellings for no reason.
+export function fullerName(a: string, b: string): string {
+  if (!a) return b;
+  if (!b) return a;
+  const partsA = a.trim().split(/\s+/).length, partsB = b.trim().split(/\s+/).length;
+  if (partsA !== partsB) return partsA > partsB ? a : b;
+  return b.length > a.length ? b : a;
+}
+
+// Builds contact_id -> fullest known name across one sync run's own items,
+// seeded with whatever the contacts registry already has on file from
+// earlier runs. Computed once for the whole batch (not per item) so a
+// first-name-only mention resolves correctly regardless of which item in
+// the run happens to carry the fuller spelling, and so it's stable even on
+// a contact's very first sync (which meeting order shouldn't matter for).
+export function buildCanonicalNames(items: SalesAIActionItem[], existingNames: Map<string, string>): Map<string, string> {
+  const canonical = new Map(existingNames);
+  const consider = (contactId: string | null | undefined, rawName: string | null | undefined) => {
+    if (!contactId) return;
+    const cleaned = cleanName(rawName);
+    if (!cleaned) return;
+    const current = canonical.get(contactId);
+    canonical.set(contactId, current ? fullerName(current, cleaned) : cleaned);
+  };
+  for (const item of items) {
+    consider(item.owner_id, item.owner_name);
+    for (const recipient of item.recipients || []) consider(recipient.contact_id, recipient.name);
+  }
+  return canonical;
 }
 
 // Whether this action item should be synced at all — true if the owner or
@@ -79,14 +120,15 @@ export type NameResolution = {
   registeredNameByEmail: Map<string, string>;
   accountNameById: Map<string, string>;
   opportunityNameById: Map<string, string>;
+  canonicalNameByContactId: Map<string, string>;
 };
 
 // The full field mapping confirmed against real data — see conversation
 // on 2026-09-02 for how each of these was checked before being included.
 export function mapActionItemToTask(item: SalesAIActionItem, lookup: NameResolution): MappedTask {
-  const owner = resolvePersonName(item.owner_email, item.owner_name, lookup.registeredNameByEmail) || "Unassigned";
+  const owner = resolvePersonName(item.owner_email, item.owner_name, lookup.registeredNameByEmail, item.owner_id, lookup.canonicalNameByContactId) || "Unassigned";
   const recipients = (item.recipients || [])
-    .map(recipient => resolvePersonName(recipient.email, recipient.name, lookup.registeredNameByEmail))
+    .map(recipient => resolvePersonName(recipient.email, recipient.name, lookup.registeredNameByEmail, recipient.contact_id, lookup.canonicalNameByContactId))
     .filter(Boolean);
   // Keyed by the SAME resolved name recipients[] uses, not the raw
   // Sales AI name — so a lookup by "who's recipient X" and "what's
@@ -97,7 +139,7 @@ export function mapActionItemToTask(item: SalesAIActionItem, lookup: NameResolut
   const recipientContactIds: Record<string, string> = {};
   for (const recipient of item.recipients || []) {
     if (!recipient.contact_id) continue;
-    const name = resolvePersonName(recipient.email, recipient.name, lookup.registeredNameByEmail);
+    const name = resolvePersonName(recipient.email, recipient.name, lookup.registeredNameByEmail, recipient.contact_id, lookup.canonicalNameByContactId);
     if (name) recipientContactIds[name] = recipient.contact_id;
   }
   return {
@@ -125,20 +167,33 @@ export function mapActionItemToTask(item: SalesAIActionItem, lookup: NameResolut
   };
 }
 
-export type ContactCandidate = { name: string; email: string | null; salesAiContactId: string; salesAiAccountId: string | null; salesAiAccountName: string | null };
+export type ContactCandidate = {
+  name: string; email: string | null; salesAiContactId: string;
+  salesAiAccountId: string | null; salesAiAccountName: string | null;
+  salesAiOpportunityId: string | null; salesAiOpportunityName: string | null;
+};
 
 // Every distinct person (owner + each recipient) worth upserting into the
 // contacts registry — anyone with a Sales AI contact id, which is the
 // match key contacts are keyed on. owner_id turned out to be the same
 // Salesforce-contact-id shape as recipients[].contact_id (both start with
 // the same object-key prefix), so it's treated the same way here.
-export function extractContacts(item: SalesAIActionItem, accountNameById: Map<string, string>): ContactCandidate[] {
+// Opportunity, like account, is last-write-wins: whichever action item this
+// contact was most recently seen on, same as the existing account fields —
+// not a history of every opportunity they've ever come up in.
+// `name` prefers canonicalNameByContactId over this item's own spelling —
+// requested 2026-09-08 alongside resolvePersonName's same fallback, so the
+// registry itself keeps the fullest name on file rather than getting
+// overwritten by a later sync's first-name-only mention.
+export function extractContacts(item: SalesAIActionItem, accountNameById: Map<string, string>, opportunityNameById: Map<string, string>, canonicalNameByContactId: Map<string, string>): ContactCandidate[] {
   const accountName = item.account_id ? accountNameById.get(item.account_id) || null : null;
+  const opportunityName = item.opportunity_id ? opportunityNameById.get(item.opportunity_id) || null : null;
+  const nameFor = (contactId: string, rawName: string | null | undefined) => canonicalNameByContactId.get(contactId) || cleanName(rawName);
   const candidates: ContactCandidate[] = [];
-  if (item.owner_id) candidates.push({ name: cleanName(item.owner_name), email: item.owner_email || null, salesAiContactId: item.owner_id, salesAiAccountId: item.account_id || null, salesAiAccountName: accountName });
+  if (item.owner_id) candidates.push({ name: nameFor(item.owner_id, item.owner_name), email: item.owner_email || null, salesAiContactId: item.owner_id, salesAiAccountId: item.account_id || null, salesAiAccountName: accountName, salesAiOpportunityId: item.opportunity_id || null, salesAiOpportunityName: opportunityName });
   for (const recipient of item.recipients || []) {
     if (!recipient.contact_id) continue;
-    candidates.push({ name: cleanName(recipient.name), email: recipient.email || null, salesAiContactId: recipient.contact_id, salesAiAccountId: item.account_id || null, salesAiAccountName: accountName });
+    candidates.push({ name: nameFor(recipient.contact_id, recipient.name), email: recipient.email || null, salesAiContactId: recipient.contact_id, salesAiAccountId: item.account_id || null, salesAiAccountName: accountName, salesAiOpportunityId: item.opportunity_id || null, salesAiOpportunityName: opportunityName });
   }
   return candidates;
 }

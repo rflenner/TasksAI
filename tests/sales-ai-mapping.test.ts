@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanName, extractContacts, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, resolvePersonName, type SalesAIActionItem } from "../app/lib/sales-ai-mapping";
+import { buildCanonicalNames, cleanName, extractContacts, fullerName, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, resolvePersonName, type SalesAIActionItem } from "../app/lib/sales-ai-mapping";
 
 test("nextCalendarDay: the exact bug found live — 2026-09-02 (today) becomes 2026-09-03, not itself", () => {
   assert.equal(nextCalendarDay("2026-09-02"), "2026-09-03");
@@ -74,6 +74,7 @@ test("mapActionItemToTask: full mapping against the real confirmed shape", () =>
     registeredNameByEmail: new Map([["rizan@iseeit.com", "Rizan Flenner"]]),
     accountNameById: new Map([["00106000023md40AAA", "Habilelabs"]]),
     opportunityNameById: new Map(),
+    canonicalNameByContactId: new Map(),
   });
   assert.equal(task.subject, "Review and discuss playbooks with Pavneetkaur Saluja and Sudhanshu Kumawat before implementation.");
   assert.match(task.description, /Rizan Flenner to coordinate/);
@@ -104,7 +105,7 @@ test("mapActionItemToTask: recipientContactIds is keyed by the resolved name, no
   // Saluja" Sales AI sent, or a lookup by recipient name would miss it.
   const task = mapActionItemToTask(baseItem({ recipients: [{ contact_id: "003Qs00000T7fQlIAJ", name: "Pavneetkaur Saluja", email: "pavneetkaur.saluja@habilelabs.io" }] }), {
     registeredNameByEmail: new Map([["pavneetkaur.saluja@habilelabs.io", "Payneet Kaur"]]),
-    accountNameById: new Map(), opportunityNameById: new Map(),
+    accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map(),
   });
   assert.deepEqual(task.recipients, ["Payneet Kaur"]);
   assert.deepEqual(task.recipientContactIds, { "Payneet Kaur": "003Qs00000T7fQlIAJ" });
@@ -112,53 +113,112 @@ test("mapActionItemToTask: recipientContactIds is keyed by the resolved name, no
 
 test("mapActionItemToTask: a recipient with no contact_id is excluded from recipientContactIds, same as extractContacts already skips them", () => {
   const task = mapActionItemToTask(baseItem({ recipients: [{ name: "No Id Here", email: "noid@example.com" }] }), {
-    registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(),
+    registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map(),
   });
   assert.deepEqual(task.recipientContactIds, {});
 });
 
 test("mapActionItemToTask: no owner_id leaves ownerContactId null", () => {
-  const task = mapActionItemToTask(baseItem({ owner_id: null }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map() });
+  const task = mapActionItemToTask(baseItem({ owner_id: null }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map() });
   assert.equal(task.ownerContactId, null);
 });
 
 test("mapActionItemToTask: status completed maps to Closed, open/overdue both map to Open", () => {
-  const lookup = { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map() };
+  const lookup = { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map() };
   assert.equal(mapActionItemToTask(baseItem({ status: "completed" }), lookup).status, "Closed");
   assert.equal(mapActionItemToTask(baseItem({ status: "open" }), lookup).status, "Open");
   assert.equal(mapActionItemToTask(baseItem({ status: "overdue" }), lookup).status, "Open");
 });
 
 test("mapActionItemToTask: a missing due_date leaves due blank rather than crashing", () => {
-  const lookup = { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map() };
+  const lookup = { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map() };
   assert.equal(mapActionItemToTask(baseItem({ due_date: null }), lookup).due, "");
 });
 
 test("mapActionItemToTask: unresolvable account/opportunity ids still get stored, just with a null name", () => {
-  const task = mapActionItemToTask(baseItem({ account_id: "unknown-id" }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map() });
+  const task = mapActionItemToTask(baseItem({ account_id: "unknown-id" }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map() });
   assert.equal(task.accountId, "unknown-id");
   assert.equal(task.accountName, null);
 });
 
 test("mapActionItemToTask: an owner with no registered match and no name falls back to Unassigned, never blank", () => {
-  const task = mapActionItemToTask(baseItem({ owner_email: null, owner_name: null }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map() });
+  const task = mapActionItemToTask(baseItem({ owner_email: null, owner_name: null }), { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map() });
   assert.equal(task.owner, "Unassigned");
 });
 
 test("extractContacts: owner and recipient(s) both produce a candidate when they have a Sales AI id", () => {
-  const candidates = extractContacts(baseItem(), new Map([["00106000023md40AAA", "Habilelabs"]]));
+  const candidates = extractContacts(baseItem(), new Map([["00106000023md40AAA", "Habilelabs"]]), new Map(), new Map());
   assert.equal(candidates.length, 2);
-  assert.deepEqual(candidates[0], { name: "Rizan Flenner", email: "rizan@iseeit.com", salesAiContactId: "003Qs00000IyC5ZIAV", salesAiAccountId: "00106000023md40AAA", salesAiAccountName: "Habilelabs" });
-  assert.deepEqual(candidates[1], { name: "Pavneet Kaur", email: "pavneetkaur.saluja@habilelabs.io", salesAiContactId: "003Qs00000T7fQlIAJ", salesAiAccountId: "00106000023md40AAA", salesAiAccountName: "Habilelabs" });
+  assert.deepEqual(candidates[0], { name: "Rizan Flenner", email: "rizan@iseeit.com", salesAiContactId: "003Qs00000IyC5ZIAV", salesAiAccountId: "00106000023md40AAA", salesAiAccountName: "Habilelabs", salesAiOpportunityId: null, salesAiOpportunityName: null });
+  assert.deepEqual(candidates[1], { name: "Pavneet Kaur", email: "pavneetkaur.saluja@habilelabs.io", salesAiContactId: "003Qs00000T7fQlIAJ", salesAiAccountId: "00106000023md40AAA", salesAiAccountName: "Habilelabs", salesAiOpportunityId: null, salesAiOpportunityName: null });
 });
 
 test("extractContacts: a recipient with no contact_id is skipped, not included with a null key", () => {
   const item = baseItem({ owner_id: null, recipients: [{ contact_id: null, name: "No Id Person", email: "x@example.com" }] });
-  assert.deepEqual(extractContacts(item, new Map()), []);
+  assert.deepEqual(extractContacts(item, new Map(), new Map(), new Map()), []);
 });
 
 test("extractContacts: cleans names the same way cleanName does", () => {
   const item = baseItem({ owner_id: null, recipients: [{ contact_id: "c1", name: "'Avni  Bardiya'", email: null }] });
-  const candidates = extractContacts(item, new Map());
+  const candidates = extractContacts(item, new Map(), new Map(), new Map());
   assert.equal(candidates[0].name, "Avni Bardiya");
+});
+
+test("extractContacts: carries the opportunity id/name the same way account already does", () => {
+  const item = baseItem({ opportunity_id: "opp-1" });
+  const candidates = extractContacts(item, new Map(), new Map([["opp-1", "Q4 Renewal"]]), new Map());
+  assert.equal(candidates[0].salesAiOpportunityId, "opp-1");
+  assert.equal(candidates[0].salesAiOpportunityName, "Q4 Renewal");
+});
+
+test("extractContacts: prefers the canonical (fuller) name on file over this item's own raw spelling", () => {
+  const item = baseItem({ owner_name: "Rizan" });
+  const candidates = extractContacts(item, new Map(), new Map(), new Map([["003Qs00000IyC5ZIAV", "Rizan Flenner"]]));
+  assert.equal(candidates[0].name, "Rizan Flenner");
+});
+
+test("fullerName: more name parts wins, regardless of which side it's on", () => {
+  assert.equal(fullerName("Pavneet", "Pavneet Saluja"), "Pavneet Saluja");
+  assert.equal(fullerName("Pavneet Saluja", "Pavneet"), "Pavneet Saluja");
+});
+
+test("fullerName: a tie on part count prefers the longer string", () => {
+  assert.equal(fullerName("Bob Lee", "Robert Lee"), "Robert Lee");
+});
+
+test("fullerName: an empty side always loses to the other, non-empty side", () => {
+  assert.equal(fullerName("", "Pavneet"), "Pavneet");
+  assert.equal(fullerName("Pavneet", ""), "Pavneet");
+});
+
+test("buildCanonicalNames: a first-name-only mention resolves to the fuller name already on file", () => {
+  const items = [baseItem({ owner_id: "c1", owner_name: "Pavneet" })];
+  const canonical = buildCanonicalNames(items, new Map([["c1", "Pavneet Saluja"]]));
+  assert.equal(canonical.get("c1"), "Pavneet Saluja");
+});
+
+test("buildCanonicalNames: the fullest name anywhere in the batch wins, regardless of item order", () => {
+  const items = [
+    baseItem({ action_item_id: "a", owner_id: "c1", owner_name: "Pavneet", recipients: [] }),
+    baseItem({ action_item_id: "b", owner_id: "c1", owner_name: "Pavneet Saluja", recipients: [] }),
+  ];
+  const canonical = buildCanonicalNames(items, new Map());
+  assert.equal(canonical.get("c1"), "Pavneet Saluja");
+});
+
+test("buildCanonicalNames: a contact with no name anywhere is left out, not stored as an empty string", () => {
+  const items = [baseItem({ owner_id: "c1", owner_name: null })];
+  const canonical = buildCanonicalNames(items, new Map());
+  assert.equal(canonical.has("c1"), false);
+});
+
+test("resolvePersonName: a canonical name on file for this contact id wins over the item's own shorter spelling", () => {
+  const canonical = new Map([["c1", "Pavneet Saluja"]]);
+  assert.equal(resolvePersonName(null, "Pavneet", new Map(), "c1", canonical), "Pavneet Saluja");
+});
+
+test("resolvePersonName: a registered user's email still wins over a canonical contact-id name", () => {
+  const registered = new Map([["rizan@iseeit.com", "Rizan Flenner"]]);
+  const canonical = new Map([["c1", "Riz F."]]);
+  assert.equal(resolvePersonName("rizan@iseeit.com", "Riz", registered, "c1", canonical), "Rizan Flenner");
 });
