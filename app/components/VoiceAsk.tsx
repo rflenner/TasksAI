@@ -26,9 +26,9 @@ export type VoiceFilters = {
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
 // change could have touched (due, status+closedAt together, priority,
-// or updates), so the caller can merge this straight into its task
-// state without a full refetch.
-export type VoiceTaskUpdate = { id: number; due: string; status: string; priority: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }> };
+// owner, or updates), so the caller can merge this straight into its
+// task state without a full refetch.
+export type VoiceTaskUpdate = { id: number; due: string; status: string; priority: string; owner: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }> };
 type Turn = { role: "user" | "assistant"; text: string };
 type Status = "idle" | "connecting" | "recording" | "processing" | "speaking" | "error";
 
@@ -48,19 +48,23 @@ function describeMicError(err: unknown) {
   return name ? `Microphone error (${name}): ${hint}` : "Microphone access failed.";
 }
 
-export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, currentTaskId }: {
+export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, currentTaskId, currentTaskLabel }: {
   onApplyFilters: (filters: VoiceFilters) => void;
   onNavigate: (target: VoiceNavigateTarget) => void;
   // "act" mode's write landed on currentTaskId — merge it in, no refetch needed.
   onTaskUpdated: (task: VoiceTaskUpdate) => void;
-  // "next" mode resolved another task from the working list — open it,
-  // the same way clicking its card would.
+  // "next"/"walk" resolved another task (or a chained goto_next inside
+  // "act" did) — open it, the same way clicking its card would.
   onOpenTask: (taskId: number) => void;
   // Whichever task is currently open on screen (the drawer), owned by
   // the parent — not local state here, so a manual card click and a
   // voice-driven "next" both keep exactly one source of truth for what
   // "this task" refers to.
   currentTaskId: number | null;
+  // Its subject, purely for display — confirmed live 2026-09-07 that
+  // it wasn't obvious which task voice commands would act on. null
+  // renders no banner at all, same as no task being in focus.
+  currentTaskLabel: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
@@ -135,21 +139,28 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
-        workingListIds?: number[]; task?: VoiceTaskUpdate | null; nextTaskId?: number | null;
+        workingListIds?: number[]; task?: VoiceTaskUpdate | null; nextTaskId?: number | null; openTaskId?: number | null;
         spokenAnswer?: string; error?: string;
       };
       if (!res.ok) { setStatus("error"); setError(data.error || "Could not process that"); return; }
       const answer = data.spokenAnswer || "";
       setLog(prev => [...prev, { role: "assistant", text: answer }]);
-      if (data.mode === "filter") {
+      if (data.mode === "filter" || data.mode === "walk") {
         if (data.filters) onApplyFilters(data.filters);
         // Seeds (or replaces) what "next task" will walk through —
-        // every filter/query response carries a fresh ordered list, so
+        // every filter/walk response carries a fresh ordered list, so
         // asking a new question always restarts the walk from its results.
         if (data.workingListIds) workingListRef.current = data.workingListIds;
+        // "walk" additionally opens and reads the first match itself.
+        if (data.mode === "walk" && data.openTaskId != null) onOpenTask(data.openTaskId);
       }
       if (data.mode === "navigate" && data.navigateTarget) { onNavigate(data.navigateTarget); await speak(answer); closePanel(); return; }
-      if (data.mode === "act" && data.task) onTaskUpdated(data.task);
+      if (data.mode === "act") {
+        if (data.task) onTaskUpdated(data.task);
+        // A chained "...and go to the next task" resolved as part of
+        // the same turn — open it right after applying the write.
+        if (data.nextTaskId != null) onOpenTask(data.nextTaskId);
+      }
       if (data.mode === "next" && data.nextTaskId != null) onOpenTask(data.nextTaskId);
       await speak(answer);
     } catch {
@@ -311,8 +322,19 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
             <button type="button" onClick={closePanel} className="text-[#697181] text-xl leading-none">×</button>
           </div>
 
+          {/* Confirmed live 2026-09-07: "it's not clear which task we're
+              talking about" — this makes "this task" unambiguous the
+              whole time a task is in focus, through a "walk" session or
+              otherwise, instead of only being knowable by remembering
+              which card you last clicked. */}
+          {currentTaskLabel && (
+            <div className="text-xs font-semibold text-[#173f76] bg-[#eef3fa] rounded-lg px-3 py-2 mb-3 truncate" title={currentTaskLabel}>
+              🗂️ Talking about: {currentTaskLabel}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto mb-3 flex flex-col gap-2 min-h-[80px]">
-            {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "What are my tasks for the week?", "Push this to next Friday," "Add an update," or "Next task."`}</p>}
+            {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "Walk me through my overdue tasks," "Push this to Friday and assign it to Maya," or "Next task."`}</p>}
             {log.map((turn, i) => (
               <div key={i} className={`text-sm rounded-lg px-3 py-2 max-w-[85%] ${turn.role === "user" ? "self-end bg-[#173f76] text-white" : "self-start bg-[#f1f3f7] text-[#202735]"}`}>
                 {turn.text}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeChanges } from "../app/lib/task-activity";
+import { autoAdvanceStatus, describeChanges } from "../app/lib/task-activity";
 
 const base = {
   id: 1, subject: "Ship it", description: "", owner: "Ada Lovelace", collaborators: [] as string[], recipients: [] as string[],
@@ -33,4 +33,22 @@ test("describeChanges collapses a description edit to one generic line, never le
 test("describeChanges never reports on the updates field — that's the separate Status Updates log", () => {
   const lines = describeChanges(base, { ...base, updates: [{ text: "progress note", at: "2026-08-19T00:00:00Z", by: "Ada" }] });
   assert.equal(lines.length, 0);
+});
+
+test("autoAdvanceStatus bumps an Open task to In progress when a note was posted with no explicit status change", () => {
+  assert.equal(autoAdvanceStatus("Open", true, null), "In progress");
+});
+
+test("autoAdvanceStatus leaves status alone when no note was posted", () => {
+  assert.equal(autoAdvanceStatus("Open", false, null), "Open");
+});
+
+test("autoAdvanceStatus never bumps an already-Closed or already-In-progress task — a note shouldn't silently reopen finished work", () => {
+  assert.equal(autoAdvanceStatus("Closed", true, null), "Closed");
+  assert.equal(autoAdvanceStatus("In progress", true, null), "In progress");
+});
+
+test("autoAdvanceStatus lets an explicit status choice in the same edit win over the auto-advance", () => {
+  assert.equal(autoAdvanceStatus("Open", true, "Closed"), "Closed");
+  assert.equal(autoAdvanceStatus("Open", true, "Open"), "Open");
 });
