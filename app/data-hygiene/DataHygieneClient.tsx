@@ -10,6 +10,15 @@ type DimensionRow = { id: number; type: DimensionType; value: string; usageCount
 const TYPE_LABEL: Record<DimensionType, string> = { project: "Projects", meeting: "Recurring meetings", topic: "Topics", person: "People" };
 const TYPE_ORDER: DimensionType[] = ["person", "project", "meeting", "topic"];
 
+// Distinct from the dimension-value duplicate matching above this file
+// already does (findDuplicateSuggestions, for name/project/meeting/topic
+// spellings) — this is about duplicate TASK RECORDS, requested 2026-09-08
+// after real redundant Sales AI-synced tasks were found live. See
+// app/lib/task-merge.ts for the actual detection/merge logic.
+type TaskSummary = { id: number; subject: string; description: string; owner: string; due: string; created: string; status: string; accountName: string | null; opportunityName: string | null; externalId: string | null };
+type DuplicateCandidate = { olderId: number; newerId: number; score: number; reasons: string[]; relationship: "duplicate" | "possible-update"; older: TaskSummary; newer: TaskSummary };
+type MergeHistoryEntry = { secondary: TaskSummary; primary: TaskSummary; mergedAt: string | null };
+
 function formatActivity(iso: string | null) {
   if (!iso) return "No known activity";
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -40,8 +49,15 @@ function statsLine(row: DimensionRow, type: DimensionType) {
 // app/account/AccountClient.tsx's initialPasskeys: no fetch-on-mount effect,
 // no loading flash, no hydration mismatch. This component only fetches
 // again in response to an actual action (retag, remove).
-export default function DataHygieneClient({ initialDimensions }: { initialDimensions: DimensionRow[] }) {
+export default function DataHygieneClient({ initialDimensions, initialDuplicates, initialMergeHistory }: { initialDimensions: DimensionRow[]; initialDuplicates: DuplicateCandidate[]; initialMergeHistory: MergeHistoryEntry[] }) {
   const [dimensions, setDimensions] = useState<DimensionRow[]>(initialDimensions);
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>(initialDuplicates);
+  const [mergeHistory, setMergeHistory] = useState<MergeHistoryEntry[]>(initialMergeHistory);
+  // Per-pair override of which side survives — keyed by "olderId-newerId",
+  // defaulting to true (keep the older one) per "the later task could
+  // serve as update to the earlier one." A reviewer can swap it before
+  // confirming without that changing any other pair's default.
+  const [keepOlder, setKeepOlder] = useState<Record<string, boolean>>({});
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   // Rename (edit this value's own text) and Merge (fold it into a
@@ -111,6 +127,27 @@ export default function DataHygieneClient({ initialDimensions }: { initialDimens
     cancelMerge();
   };
 
+  // Same shared-fetch/state-update/notice shape as retag() above, for the
+  // same reason: one place that knows how a merge response updates the
+  // page, whichever candidate row triggered it.
+  const mergeCandidate = async (candidate: DuplicateCandidate) => {
+    if (busy) return;
+    const key = `${candidate.olderId}-${candidate.newerId}`;
+    const keepOld = keepOlder[key] ?? true;
+    const primary = keepOld ? candidate.older : candidate.newer;
+    const secondary = keepOld ? candidate.newer : candidate.older;
+    if (!window.confirm(`Merge task #${secondary.id} into #${primary.id}?\n\n#${secondary.id} will be closed and hidden from the task list. Its subject and description are added as a status update on #${primary.id}. Both tasks' internal and Sales AI IDs are kept, so this can still be reconciled on the Sales AI side later.`)) return;
+    setBusy(true);
+    const response = await fetch("/api/data-hygiene/merge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ primaryId: primary.id, secondaryId: secondary.id }) });
+    const data = await response.json();
+    setBusy(false);
+    if (!response.ok) { setNotice(data.error); return; }
+    setDimensions(data.dimensions);
+    setDuplicates(data.duplicates);
+    setMergeHistory(data.mergeHistory);
+    setNotice(`Merged task #${secondary.id} into #${primary.id} — it's now hidden from the task list, with its content folded in as a status update.`);
+  };
+
   const removeSuggestion = async (row: DimensionRow) => {
     if (!window.confirm(`Remove "${row.value}" from the ${TYPE_LABEL[row.type].toLowerCase()} suggestion list? This only stops it being suggested — it won't change any task that already uses it.`)) return;
     const response = await fetch("/api/dimensions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: row.id }) });
@@ -141,6 +178,64 @@ export default function DataHygieneClient({ initialDimensions }: { initialDimens
           </div>
         </header>
         {notice && <button className="toast" onClick={() => setNotice("")}>{notice} ×</button>}
+
+        {duplicates.length > 0 && (
+          <section>
+            <div className="section-title"><div><span className="eyebrow">POSSIBLE DUPLICATES</span><h2>Possible duplicate tasks</h2></div><span>{duplicates.length}</span></div>
+            <p className="hint">Task pairs that look like the same action item, based on a shared Sales AI meeting/account/opportunity, similar wording, or overlapping people. Merging closes and hides the one you fold in, but keeps both its internal ID and Sales AI ID for a later cleanup pass there — nothing is deleted.</p>
+            <div className="user-list">
+              {duplicates.map(candidate => {
+                const key = `${candidate.olderId}-${candidate.newerId}`;
+                const keepOld = keepOlder[key] ?? true;
+                const primary = keepOld ? candidate.older : candidate.newer;
+                const secondary = keepOld ? candidate.newer : candidate.older;
+                return (
+                  <div key={key}>
+                    <article className="hygiene-row">
+                      <div className="identity">
+                        <b>{primary.subject}</b>
+                        {candidate.relationship === "possible-update" && <span className="badge badge-count">Possible update</span>}
+                        <small>Keep #{primary.id} · {primary.owner} · created {formatDate(primary.created)}{primary.externalId ? ` · Sales AI ${primary.externalId}` : ""}</small>
+                      </div>
+                      <div className="row-actions">
+                        <button className="manage" disabled={busy} onClick={() => void mergeCandidate(candidate)}>Merge</button>
+                      </div>
+                    </article>
+                    <div className="merge-panel">
+                      <div className="hint">
+                        Matches <b>{secondary.subject}</b> <small>— #{secondary.id} · {secondary.owner} · created {formatDate(secondary.created)}{secondary.externalId ? ` · Sales AI ${secondary.externalId}` : ""}</small>
+                      </div>
+                      <p className="hint">{candidate.reasons.join(" · ")} — {Math.round(candidate.score * 100)}% match</p>
+                      <div className="merge-search">
+                        <span className="hint">Will close #{secondary.id} and fold it into #{primary.id}.</span>
+                        <button className="manage" onClick={() => setKeepOlder(prev => ({ ...prev, [key]: !keepOld }))}>Swap which one to keep</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {mergeHistory.length > 0 && (
+          <section>
+            <div className="section-title"><div><span className="eyebrow">MERGE HISTORY</span><h2>Merged tasks</h2></div><span>{mergeHistory.length}</span></div>
+            <div className="user-list">
+              {mergeHistory.map(entry => (
+                <article className="hygiene-row" key={entry.secondary.id}>
+                  <div className="identity">
+                    <b>#{entry.secondary.id} → #{entry.primary.id}</b>
+                    <small>
+                      &quot;{entry.secondary.subject}&quot;{entry.secondary.externalId ? ` (Sales AI ${entry.secondary.externalId})` : ""} merged into &quot;{entry.primary.subject}&quot;{entry.primary.externalId ? ` (Sales AI ${entry.primary.externalId})` : ""}
+                      {entry.mergedAt ? ` · ${formatDate(entry.mergedAt)}` : ""}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
 
         {TYPE_ORDER.map(type => byType[type].length > 0 && (
           <section key={type}>
