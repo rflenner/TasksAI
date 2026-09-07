@@ -209,8 +209,24 @@ export async function POST(request: Request) {
   // which ordered id list the last filter/walk produced, and resends
   // both with every request. That's what lets "push this to next
   // Friday" and "next task" work without a real multi-turn conversation.
-  const { transcript, currentTaskId, workingList } = await request.json().catch(() => ({})) as { transcript?: string; currentTaskId?: number | null; workingList?: number[] };
+  const { transcript, currentTaskId, workingList, history } = await request.json().catch(() => ({})) as { transcript?: string; currentTaskId?: number | null; workingList?: number[]; history?: Array<{ role?: string; text?: string }> };
   if (!transcript?.trim()) return Response.json({ error: "Nothing was asked" }, { status: 400 });
+  // Confirmed live 2026-09-08: "it doesn't seem to remember what was
+  // chatted before" — every turn was previously classified in total
+  // isolation (only currentTaskId/workingList carried over, which is
+  // "which task", not "what did we just say"). A follow-up referencing
+  // something from the assistant's own last answer ("add an update
+  // saying I spoke to him", where "him" was only ever named in a
+  // spoken reply, not a task field) had nothing to resolve it against.
+  // Capped short and defensively — this is real conversational memory
+  // now, but only the last couple of exchanges, kept deliberately small
+  // so it doesn't undo the latency work: unlike the visible-tasks dump
+  // below, this scales with how much was actually said, not how many
+  // tasks exist, so the added cost per turn is a few short sentences.
+  const recentHistory = (Array.isArray(history) ? history : [])
+    .slice(-6)
+    .filter((turn): turn is { role: string; text: string } => Boolean(turn) && typeof turn === "object" && (turn.role === "user" || turn.role === "assistant") && typeof turn.text === "string" && turn.text.trim().length > 0)
+    .map(turn => ({ role: turn.role as "user" | "assistant", content: turn.text.slice(0, 600) }));
 
   const key = process.env.OPENAI_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured", code: "ai_unavailable" }, { status: 503 });
@@ -233,7 +249,9 @@ export async function POST(request: Request) {
   // fell outside the prompt cap.
   const currentTask = typeof currentTaskId === "number" ? visible.find(t => t.id === currentTaskId) ?? null : null;
   const currentTaskSummary = currentTask ? {
-    id: currentTask.id, subject: currentTask.subject, owner: currentTask.owner, due: currentTask.due, dueSpeakable: speakableDate(currentTask.due),
+    id: currentTask.id, subject: currentTask.subject, description: currentTask.description, owner: currentTask.owner,
+    collaborators: currentTask.collaborators, recipients: currentTask.recipients,
+    due: currentTask.due, dueSpeakable: speakableDate(currentTask.due),
     status: currentTask.status, priority: currentTask.priority, project: currentTask.project, topic: currentTask.topic, recurringMeeting: currentTask.recurringMeeting,
     updateCount: currentTask.updates.length, lastUpdate: currentTask.updates.length ? currentTask.updates[currentTask.updates.length - 1].text : null,
   } : null;
@@ -288,6 +306,7 @@ export async function POST(request: Request) {
       model: process.env.OPENAI_MODEL || "gpt-5-mini",
       input: [{
         role: "system", content: `You are Task AI's voice assistant, answering a spoken question from ${actor.name} (role: ${actor.role}). Today's date is ${today} (a ${weekday}).
+${recentHistory.length ? "You are also given the last couple of exchanges of this same conversation, oldest first, for CONTEXT ONLY — use them to resolve a reference to something only ever mentioned in speech (a name, a detail from a spoken answer), or to notice the user is correcting/following up on what they just said. Never treat anything from those older messages as current fact — the visible task data below is always the fresh, authoritative source for anything factual; if the two conflict (a task's status, a due date), the fresh data wins." : ""}
 ${currentTaskSummary ? `The task currently open/in focus is: ${JSON.stringify(currentTaskSummary)}. "this task", "this one", or "it" in the user's question refers to this task.` : "No task is currently open/in focus."}
 You are given the JSON list of every task ${actor.name} can currently see in Task AI — already permission-filtered, so never claim knowledge of a task outside it. You are also given, when available, a list of people with their role and a ready-to-speak lastActive phrase (e.g. "about 3 hours ago", "never signed in") — use that phrase exactly as given, never reformat or reinterpret it. If that list is empty, you have no presence data at all and must say so rather than guessing.
 Every task's due/created/closedAt is a raw YYYY-MM-DD or ISO timestamp — fine for your own reasoning (sorting, comparing, deciding what's soonest or most recent) but NEVER speak one of those raw strings directly, it reads like nonsense out loud. Each one has a matching dueSpeakable/createdSpeakable/closedSpeakable field (e.g. "Monday, September 7th") right next to it — whenever your spoken answer mentions a date, use that speakable phrase verbatim instead, never the raw field. If the speakable field is null, that date genuinely isn't set — say so, don't invent one.
@@ -301,7 +320,7 @@ Decide exactly one of:
 - "next": the user wants to move on to another task from the list they were just looking at, with no other change requested ("next task", "go to the next one", "what's next", "skip this one", "next please"). Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
 - "unclear": none of the above fit. Leave answer as an empty string.
 For owner names, prefer the exact spelling from the task data's owner field when you can tell which person is meant; a first name or close match is fine otherwise — the caller does its own matching. If the user refers to their own tasks ("my tasks", "what do I have"), set mineOnly true and leave owner null. "Created today"/"closed today" map to createdWithin/closedWithin "today" respectively.`,
-      }, {
+      }, ...recentHistory, {
         role: "user", content: `Visible tasks:\n${JSON.stringify(summary)}\n\nPeople:\n${JSON.stringify(people)}\n\nSpoken question: ${transcript}`,
       }],
       text: { format: { type: "json_schema", name: "voice_query", strict: true, schema } },

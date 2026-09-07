@@ -74,6 +74,14 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   const [liveText, setLiveText] = useState("");
   const [typed, setTyped] = useState("");
   const [log, setLog] = useState<Turn[]>([]);
+  // Mirrors log for ask() to read synchronously — confirmed live
+  // 2026-09-08: "it doesn't seem to remember what was chatted before."
+  // Every turn was classified in total isolation; sending the last
+  // couple of exchanges back with each request gives the model actual
+  // short-term memory (see app/api/voice-query/route.ts) instead of
+  // only knowing which task is in focus.
+  const logRef = useRef<Turn[]>([]);
+  useEffect(() => { logRef.current = log; }, [log]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -165,12 +173,17 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     // answer or by tapping skip — stop it immediately rather than
     // letting two answers overlap.
     interruptSpeech();
+    // Read before appending this turn — exactly what was said before
+    // this question, oldest first, capped short so the added cost per
+    // turn is a few sentences, not another driver of the latency this
+    // was just tuned for.
+    const recentHistory = logRef.current.slice(-6);
     setLog(prev => [...prev, { role: "user", text: trimmed }]);
     setStatus("processing"); setError("");
     try {
       const res = await fetch("/api/voice-query", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current }),
+        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, history: recentHistory }),
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
