@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../db";
 import { contacts, salesAiSyncRuns, tasks, users } from "../../db/schema";
 import { fetchAllPages } from "./sales-ai-client";
-import { extractContacts, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, type SalesAIActionItem } from "./sales-ai-mapping";
+import { buildCanonicalNames, extractContacts, involvesRegisteredUser, mapActionItemToTask, nextCalendarDay, type SalesAIActionItem } from "./sales-ai-mapping";
 
 type SalesAIAccount = { account_id: string; account_name: string };
 type SalesAIOpportunity = { opportunity_id: string; opportunity_name: string };
@@ -41,19 +41,28 @@ export async function syncSalesAI({ startDate, endDate, initiatedBy }: { startDa
   // meaning "through the end of today") — nextCalendarDay converts that
   // into the exclusive value Sales AI's API actually expects.
   const dateParams = { start_date: startDate, ...(endDate ? { end_date: nextCalendarDay(endDate) } : {}) };
-  const [items, accountRows, opportunityRows, activeUsers] = await Promise.all([
+  const [items, accountRows, opportunityRows, activeUsers, existingContacts] = await Promise.all([
     fetchAllPages<SalesAIActionItem>(baseUrl, apiKey, "action-items", dateParams),
     fetchAllPages<SalesAIAccount>(baseUrl, apiKey, "accounts"),
     fetchAllPages<SalesAIOpportunity>(baseUrl, apiKey, "opportunities"),
     getDb().select({ name: users.name, email: users.email }).from(users).where(eq(users.status, "active")),
+    getDb().select({ id: contacts.salesAiContactId, name: contacts.name }).from(contacts),
   ]);
 
   const accountNameById = new Map(accountRows.map(row => [row.account_id, row.account_name]));
   const opportunityNameById = new Map(opportunityRows.map(row => [row.opportunity_id, row.opportunity_name]));
   const registeredNameByEmail = new Map(activeUsers.map(user => [user.email.trim().toLowerCase(), user.name]));
   const registeredEmails = new Set(registeredNameByEmail.keys());
+  // What the registry already knows per Sales AI contact, going into this
+  // run — buildCanonicalNames below only ever widens this with fuller
+  // names actually seen in `qualifying`, never overwrites it with less.
+  const existingContactNames = new Map(existingContacts.filter((row): row is { id: string; name: string } => Boolean(row.id)).map(row => [row.id, row.name]));
 
   const qualifying = items.filter(item => involvesRegisteredUser(item, registeredEmails));
+  // Computed once for the whole batch, before any task is created — so a
+  // contact whose fullest name only shows up on item #40 still resolves
+  // correctly for item #3 earlier in this same run. See sales-ai-mapping.ts.
+  const canonicalNameByContactId = buildCanonicalNames(qualifying, existingContactNames);
 
   let created = 0, alreadySynced = 0, contactsUpserted = 0;
   const createdTasks: SalesAISyncResult["createdTasks"] = [];
@@ -61,7 +70,7 @@ export async function syncSalesAI({ startDate, endDate, initiatedBy }: { startDa
     const [existing] = await getDb().select({ id: tasks.id }).from(tasks).where(and(eq(tasks.externalSource, "sales-ai"), eq(tasks.externalId, item.action_item_id))).limit(1);
     if (existing) { alreadySynced++; continue; }
 
-    const mapped = mapActionItemToTask(item, { registeredNameByEmail, accountNameById, opportunityNameById });
+    const mapped = mapActionItemToTask(item, { registeredNameByEmail, accountNameById, opportunityNameById, canonicalNameByContactId });
     // .returning() comes back empty (not an error) on the rare race where
     // another run's ON CONFLICT DO NOTHING beat this one to the same
     // externalId between the check above and this insert — only count it
@@ -70,9 +79,9 @@ export async function syncSalesAI({ startDate, endDate, initiatedBy }: { startDa
       .onConflictDoNothing().returning({ taskId: tasks.id, subject: tasks.subject, owner: tasks.owner, recipients: tasks.recipients, created: tasks.created });
     if (task) { created++; createdTasks.push(task); } else { alreadySynced++; continue; }
 
-    for (const candidate of extractContacts(item, accountNameById)) {
+    for (const candidate of extractContacts(item, accountNameById, opportunityNameById, canonicalNameByContactId)) {
       await getDb().insert(contacts).values({ ...candidate, updatedAt: new Date() })
-        .onConflictDoUpdate({ target: contacts.salesAiContactId, set: { name: candidate.name, email: candidate.email, salesAiAccountId: candidate.salesAiAccountId, salesAiAccountName: candidate.salesAiAccountName, updatedAt: new Date() } });
+        .onConflictDoUpdate({ target: contacts.salesAiContactId, set: { name: candidate.name, email: candidate.email, salesAiAccountId: candidate.salesAiAccountId, salesAiAccountName: candidate.salesAiAccountName, salesAiOpportunityId: candidate.salesAiOpportunityId, salesAiOpportunityName: candidate.salesAiOpportunityName, updatedAt: new Date() } });
       contactsUpserted++;
     }
   }
