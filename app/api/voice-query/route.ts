@@ -160,7 +160,14 @@ function resolveNext(currentTaskId: number | null, list: number[], visible: Stor
 // also open and read the first one aloud).
 function computeMatches(f: Filters, visible: StoredTask[], actorName: string, today: string, weekAhead: string): StoredTask[] {
   return visible.filter(t => {
-    if (f.mineOnly && !(t.owner === actorName || t.collaborators.includes(actorName) || t.recipients.includes(actorName))) return false;
+    // Owner only — matches the My tasks page's own default (myRoles
+    // starts as just ["owner"] there; Co-Worker/Reporter are opt-in
+    // toggles a person has to turn on). Confirmed live 2026-09-08:
+    // "my overdue tasks" said 41 while "overdue tasks where I am the
+    // owner" said 3 — the old, broader owner-OR-collaborator-OR-
+    // recipient match was a real, confusing mismatch against what the
+    // same words mean on screen.
+    if (f.mineOnly && t.owner !== actorName) return false;
     if (f.owner && t.owner.toLowerCase() !== f.owner.toLowerCase() && !t.owner.toLowerCase().includes(f.owner.toLowerCase())) return false;
     if (f.project && t.project !== f.project) return false;
     if (f.topic && t.topic !== f.topic) return false;
@@ -176,7 +183,10 @@ function computeMatches(f: Filters, visible: StoredTask[], actorName: string, to
 }
 function describeFilterPhrase(f: Filters): string {
   const parts: string[] = [];
-  if (f.mineOnly) parts.push("your tasks"); else if (f.owner) parts.push(`tasks for ${f.owner}`); else parts.push("tasks");
+  // Spells out "tasks you own" rather than the vaguer "your tasks" —
+  // states the scope plainly in the answer itself, rather than leaving
+  // "mine" to be silently reinterpreted differently turn to turn.
+  if (f.mineOnly) parts.push("tasks you own"); else if (f.owner) parts.push(`tasks for ${f.owner}`); else parts.push("tasks");
   if (f.project) parts.push(`in ${f.project}`);
   if (f.topic) parts.push(`on ${f.topic}`);
   if (f.recurringMeeting) parts.push(`for ${f.recurringMeeting}`);
