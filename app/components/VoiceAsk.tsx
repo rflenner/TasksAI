@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { splitIntoSpeechChunks } from "../lib/speech-chunks";
 
 // The lightweight alternative to a full conversational voice agent — see
 // app/api/voice-query/route.ts for the reasoning. Reuses the exact mic/
@@ -47,6 +48,7 @@ function describeMicError(err: unknown) {
     "an unexpected error occurred.";
   return name ? `Microphone error (${name}): ${hint}` : "Microphone access failed.";
 }
+
 
 export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, currentTaskId, currentTaskLabel }: {
   onApplyFilters: (filters: VoiceFilters) => void;
@@ -106,6 +108,22 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // so every POST sends whatever's actually on screen right now.
   const currentTaskIdRef = useRef(currentTaskId);
   useEffect(() => { currentTaskIdRef.current = currentTaskId; }, [currentTaskId]);
+  // Same generation-guard pattern as sessionIdRef/mySession above, for
+  // the pipelined chunk-by-chunk speak() loop: interruptSpeech() bumps
+  // this, so a synthesis fetch still in flight (or a chunk mid-
+  // playback) for the answer being cut off becomes a no-op instead of
+  // continuing to speak once a newer answer/interrupt has taken over.
+  const speechIdRef = useRef(0);
+  // Resolves the Promise speak()'s loop is currently awaiting on a
+  // playing chunk — pausing audio fires neither onended nor onerror,
+  // so without this, interrupting mid-chunk would leave that await
+  // hanging forever instead of letting the loop notice speechIdRef
+  // changed and stop.
+  const resolveCurrentChunkRef = useRef<(() => void) | null>(null);
+  // Aborts any chunk syntheses still in flight when interrupted — a
+  // skip partway through a 4-sentence answer would otherwise still pay
+  // for (and wait on) synthesizing the sentences it'll never play.
+  const chunkAbortControllersRef = useRef<AbortController[]>([]);
 
   // Tears down whatever the *previous* generation left behind — a live
   // WebSocket, an active MediaRecorder/mic stream — before a new one
@@ -120,10 +138,22 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     wsRef.current?.close(); wsRef.current = null;
   }
 
+  // Stops whatever speak() is doing right now — the currently-playing
+  // chunk, any not-yet-finished synthesis fetches for the chunks after
+  // it, and unblocks speak()'s loop so it notices and returns instead
+  // of moving on to the next chunk anyway.
+  function interruptSpeech() {
+    speechIdRef.current++;
+    chunkAbortControllersRef.current.forEach(c => c.abort());
+    chunkAbortControllersRef.current = [];
+    audioRef.current?.pause(); audioRef.current = null;
+    resolveCurrentChunkRef.current?.(); resolveCurrentChunkRef.current = null;
+  }
+
   function closePanel() {
     voiceSessionRef.current = false;
     teardown();
-    audioRef.current?.pause();
+    interruptSpeech();
     setOpen(false); setStatus("idle"); setLiveText(""); setError("");
   }
 
@@ -134,7 +164,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     // that" signal, whether it arrived by typing over a still-playing
     // answer or by tapping skip — stop it immediately rather than
     // letting two answers overlap.
-    audioRef.current?.pause(); audioRef.current = null;
+    interruptSpeech();
     setLog(prev => [...prev, { role: "user", text: trimmed }]);
     setStatus("processing"); setError("");
     try {
@@ -183,22 +213,53 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     }
   }
 
-  async function speak(text: string) {
-    if (!text.trim()) { afterAnswer(); return; }
-    setStatus("speaking");
+  // Synthesizes one chunk, silently returning null on failure or
+  // interruption — a single sentence failing to speak shouldn't abort
+  // the rest of the answer any more than the whole thing failing
+  // already did (the text is already in the log either way).
+  async function synthesizeChunk(text: string, controller: AbortController): Promise<Blob | null> {
     try {
-      const res = await fetch("/api/dictate/speak", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
-      if (!res.ok) { afterAnswer(); return; } // silent — the text answer is already in the log either way
-      const blob = await res.blob();
+      const res = await fetch("/api/dictate/speak", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }), signal: controller.signal });
+      if (!res.ok) return null;
+      return await res.blob();
+    } catch {
+      return null;
+    }
+  }
+
+  async function speak(text: string) {
+    const chunks = splitIntoSpeechChunks(text);
+    if (!chunks.length) { afterAnswer(); return; }
+    const mySpeech = ++speechIdRef.current;
+    const isCurrentSpeech = () => speechIdRef.current === mySpeech;
+
+    // Every chunk's synthesis kicks off up front, pipelined — chunk 2
+    // is already downloading while chunk 1 is still playing, instead
+    // of only starting once chunk 1 finishes and leaving a gap.
+    const controllers = chunks.map(() => new AbortController());
+    chunkAbortControllersRef.current = controllers;
+    const pending = chunks.map((chunk, i) => synthesizeChunk(chunk, controllers[i]));
+
+    setStatus("speaking");
+    for (let i = 0; i < pending.length; i++) {
+      if (!isCurrentSpeech()) return; // interrupted while an earlier chunk was still playing
+      const blob = await pending[i];
+      if (!isCurrentSpeech()) return; // interrupted while this chunk's synthesis was in flight
+      if (!blob) continue; // this one sentence failed to synthesize — skip it, not the whole answer
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audioRef.current = audio;
-      audio.onended = () => { URL.revokeObjectURL(url); afterAnswer(); };
-      audio.onerror = () => { URL.revokeObjectURL(url); afterAnswer(); };
-      await audio.play();
-    } catch {
-      afterAnswer();
+      await new Promise<void>(resolve => {
+        resolveCurrentChunkRef.current = resolve;
+        audio.onended = () => resolve();
+        audio.onerror = () => resolve();
+        audio.play().catch(() => resolve());
+      });
+      resolveCurrentChunkRef.current = null;
+      URL.revokeObjectURL(url);
+      if (!isCurrentSpeech()) return; // interrupted while this chunk was playing
     }
+    afterAnswer();
   }
 
   // Runs once an answer has finished being spoken (or there was nothing
@@ -216,7 +277,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // answer cuts the audio and starts listening right away instead of
   // making every turn wait through a full read-out first.
   function skipSpeaking() {
-    audioRef.current?.pause(); audioRef.current = null;
+    interruptSpeech();
     setStatus("idle");
     void start();
   }
