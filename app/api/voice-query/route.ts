@@ -231,11 +231,28 @@ export async function POST(request: Request) {
     people = userRows.map(u => ({ name: u.name, role: u.role, lastActive: describeLastActive(lastActiveByUser.get(u.id) ?? null) }));
   }
 
+  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+  // Confirmed live 2026-09-08: after this route's schema/prompt grew a
+  // lot (account/opportunity/source, briefing, create_task, six new act
+  // step types), turnaround got dramatically — not just a little —
+  // slower. GPT-5 models size their own internal "thinking" budget to
+  // how complex a task LOOKS, and a much bigger branching schema with
+  // more near-duplicate-sounding choices to disambiguate (mineOnly vs.
+  // myRole, walk vs. briefing, thirteen action types) reads as a harder
+  // task than "pick one of a few slots and fill it in" actually is.
+  // reasoning.effort/text.verbosity pin both down explicitly instead of
+  // leaving them to whatever the model infers — this is a fast
+  // classify-and-fill-a-schema step, not something that benefits from
+  // deliberation. Gated to gpt-5* specifically: OPENAI_MODEL is
+  // swappable via env var, and a non-reasoning model would likely
+  // reject these fields outright rather than just ignoring them.
+  const isGpt5 = model.startsWith("gpt-5");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5-mini",
+      model,
+      ...(isGpt5 ? { reasoning: { effort: "minimal" } } : {}),
       input: [{
         role: "system", content: `You are Task AI's voice assistant, answering a spoken question from ${actor.name} (role: ${actor.role}). Today's date is ${today} (a ${weekday}).
 ${recentHistory.length ? "You are also given the last couple of exchanges of this same conversation, oldest first, for CONTEXT ONLY — use them to resolve a reference to something only ever mentioned in speech (a name, a detail from a spoken answer), or to notice the user is correcting/following up on what they just said. Never treat anything from those older messages as current fact — the visible task data below is always the fresh, authoritative source for anything factual; if the two conflict (a task's status, a due date), the fresh data wins." : ""}
@@ -250,14 +267,23 @@ Decide exactly one of:
 - "create_task": the user is describing a brand-new task to create RIGHT NOW, not asking to open a form — "create a task to send the invoice by Friday", "add a task: follow up with legal about the NDA, assign it to Maya", "new action item: schedule the kickoff call". Leave every filters field null/false, actions empty, navigateTarget null, answer empty — the caller re-reads the original spoken request itself to extract the task's actual content, so you don't need to restate it anywhere.
 - "answer": a factual question the task or people data can answer ("is anyone overdue on the pilot", "what's the latest update on the CRM task", "how many tasks does Shankar have", "when was Drew last online"). Put the answer in answer, grounded ONLY in the provided data — never invent a task, person, date, or detail not present in it. Leave every filters field null/false and navigateTarget null.
 - "navigate": the user wants to open a specific screen or form, not ask about data — "open dictate task"/"let's dictate a task" -> "dictate"; "start a new action item"/"create a task" with genuinely no content spoken to extract (just the bare request, nothing describing what the task actually is) -> "new_task"; "paste meeting minutes"/"open the minutes paster" -> "paste_minutes". Put the target in navigateTarget, leave answer empty and every filters field null/false.
-- "act": the user wants to change the task currently in focus (see above) — possibly several things in ONE utterance ("push this to Friday, assign it to Maya, add an update saying the redlines are in, and go to the next task"). Fill in actions with one entry per distinct change, in the order requested: set_due (dueDate — "push this to next Friday", "set the deadline/close date to September 20th", "clear the due date"; "close date"/"completion date"/"deadline" all mean the same due date field), set_status (status — "mark this done"/"close this out" -> Closed, "reopen this" -> Open, "put this in progress" -> In progress), set_priority (priority), set_owner (owner — "assign this to Maya", "reassign it to Shankar" — use the exact name from the known people list above when it matches who's meant), set_subject (subjectText — "change the subject to...", "rename this to..."), set_description (descriptionText — "update the description to say...", "change the description to..."), add_collaborator/remove_collaborator (personName — "add Maya as a coworker", "take Drew off as a coworker"), add_recipient/remove_recipient (personName — "add Shankar as a recipient", "remove Maya as a reporter" — reporter and recipient are the same field), add_update (updateText — "add an update saying...", "note that..."), delete_task (no field needed — "delete this task", "remove this one entirely" — this ONLY ever asks for confirmation, it never deletes immediately, so include it even though you can't know yet whether it'll actually happen). Each entry needs exactly one type plus its one matching field; leave every other field in that entry null. If they also say to move on afterward ("...and go to the next task", "...then next one"), add one further entry with type goto_next and every other field null — put it last (never combine goto_next with delete_task in the same command). Leave every filters field null/false, navigateTarget null, answer empty. If no task is currently in focus, use "unclear" instead. For set_due, resolve any relative date phrase into an absolute YYYY-MM-DD using today's date as the reference point: "next week" means the Monday of the following calendar week, "tomorrow" means the literal next calendar day, a bare weekday name means the next upcoming occurrence of that weekday, "ASAP"/"as soon as possible" means the next business day. If they ask to clear or remove the due date entirely, set dueDate to null — that is a valid instruction, not a missing value.
+- "act": change the task currently in focus (see above). One utterance can chain several changes ("push this to Friday, assign it to Maya, add an update saying the redlines are in, and go to the next task") — one actions[] entry per change, in the order requested, each with exactly one type plus its one matching field (every other field in that entry stays null). If no task is currently in focus, use "unclear" instead. Leave every filters field null/false, navigateTarget null, answer empty.
+  set_due(dueDate): "push to Friday"/"set the deadline to Sept 20"/"clear the due date" — deadline/close date/completion date all mean this field. Resolve any relative phrase to YYYY-MM-DD against today: "next week"=Monday of the following week, "tomorrow"=the next calendar day, a bare weekday=its next upcoming occurrence, "ASAP"=next business day. dueDate:null clears it — a valid instruction, not a missing value.
+  set_status(status): "mark done"/"close this out"->Closed, "reopen"->Open, "put in progress"->In progress.
+  set_priority(priority). set_owner(owner): "assign to Maya" — use the exact known-people spelling when it matches who's meant.
+  set_subject(subjectText): "change/rename the subject to...". set_description(descriptionText): "update the description to say...".
+  add_collaborator/remove_collaborator(personName): coworkers — "add/take off Maya as a coworker".
+  add_recipient/remove_recipient(personName): "reporter" and "recipient" are the same field.
+  add_update(updateText): "add an update saying..."/"note that...".
+  delete_task: no field — "delete this task". ONLY ever asks for confirmation, never deletes immediately; include it even though you don't yet know whether it'll actually happen.
+  goto_next: only when they also say to move on ("...then next one") — one further entry, every field null, put last, never combined with delete_task.
 - "next": the user wants to move on to another task from the list they were just looking at, with no other change requested ("next task", "go to the next one", "what's next", "skip this one", "next please"). Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
 - "unclear": none of the above fit. Leave answer as an empty string.
 For owner/coworker/recipient names, prefer the exact spelling from the known people list above when you can tell which person is meant; a first name or close match is fine otherwise — the caller does its own matching. If the user refers to their own tasks ("my tasks", "what do I have"), set mineOnly true and leave owner null. If they ask about tasks where THEY are specifically a coworker or a recipient/reporter (not owner) — "what am I a recipient on", "tasks where I'm a reporter" — set myRole to "collaborator" or "recipient" respectively instead of mineOnly. "Created today"/"closed today" map to createdWithin/closedWithin "today" respectively.`,
       }, ...recentHistory, {
         role: "user", content: `Visible tasks:\n${JSON.stringify(summary)}\n\nPeople:\n${JSON.stringify(people)}\n\nSpoken question: ${transcript}`,
       }],
-      text: { format: { type: "json_schema", name: "voice_query", strict: true, schema } },
+      text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "voice_query", strict: true, schema } },
     }),
   });
   if (!response.ok) return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 });
