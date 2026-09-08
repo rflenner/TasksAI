@@ -20,16 +20,27 @@ import { splitIntoSpeechChunks } from "../lib/speech-chunks";
 // question was the actual friction, not the lack of multi-turn memory.
 
 export type VoiceFilters = {
-  owner: string | null; mineOnly: boolean; project: string | null; topic: string | null; recurringMeeting: string | null;
+  owner: string | null; mineOnly: boolean; myRole: "collaborator" | "recipient" | null;
+  project: string | null; topic: string | null; recurringMeeting: string | null;
+  account: string | null; opportunity: string | null; source: string | null;
   priority: "Low" | "Medium" | "High" | null; dueWithin: "week" | "overdue" | null;
   createdWithin: "today" | null; closedWithin: "today" | null; status: string | null;
 };
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
-// change could have touched (due, status+closedAt together, priority,
-// owner, or updates), so the caller can merge this straight into its
-// task state without a full refetch.
-export type VoiceTaskUpdate = { id: number; due: string; status: string; priority: string; owner: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }> };
+// change could have touched (subject, description, coworkers/
+// recipients, due, status+closedAt together, priority, owner, or
+// updates), so the caller can merge this straight into its task state
+// without a full refetch.
+export type VoiceTaskUpdate = {
+  id: number; subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
+  due: string; status: string; priority: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }>;
+};
+// A brand-new task voice created directly from a spoken description
+// (mode "create_task") — the full row, same shape GET /api/tasks
+// returns, so the caller can just prepend it to its task list.
+export type VoiceCreatedTask = Record<string, unknown> & { id: number; subject: string };
+export type VoiceDimensions = { project: string[]; meeting: string[]; topic: string[]; person: string[] };
 type Turn = { role: "user" | "assistant"; text: string };
 type Status = "idle" | "connecting" | "recording" | "processing" | "speaking" | "error";
 
@@ -50,7 +61,7 @@ function describeMicError(err: unknown) {
 }
 
 
-export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, currentTaskId, currentTaskLabel }: {
+export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, currentTaskId, currentTaskLabel }: {
   onApplyFilters: (filters: VoiceFilters) => void;
   onNavigate: (target: VoiceNavigateTarget) => void;
   // "act" mode's write landed on currentTaskId — merge it in, no refetch needed.
@@ -58,6 +69,12 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // "next"/"walk" resolved another task (or a chained goto_next inside
   // "act" did) — open it, the same way clicking its card would.
   onOpenTask: (taskId: number) => void;
+  // "create_task" landed a brand-new row server-side already — prepend
+  // it and open it, the same way a manual "New action item" save does.
+  onTaskCreated: (task: VoiceCreatedTask, dimensions: VoiceDimensions) => void;
+  // A confirmed delete completed server-side — remove it locally and
+  // close the drawer if it was open.
+  onTaskDeleted: (taskId: number) => void;
   // Whichever task is currently open on screen (the drawer), owned by
   // the parent — not local state here, so a manual card click and a
   // voice-driven "next" both keep exactly one source of truth for what
@@ -132,6 +149,14 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // skip partway through a 4-sentence answer would otherwise still pay
   // for (and wait on) synthesizing the sentences it'll never play.
   const chunkAbortControllersRef = useRef<AbortController[]>([]);
+  // Set only after a "delete this task" request comes back asking for
+  // confirmation — the NEXT utterance is checked against this, by a
+  // plain keyword match, BEFORE it ever reaches the classify endpoint.
+  // Deliberately never inferred by the AI itself: a destructive,
+  // irreversible action needs a harder gate than "the model thinks this
+  // sounds like a yes." A ref, not state — read/cleared synchronously
+  // at the top of ask(), never something a render needs to react to.
+  const pendingDeleteRef = useRef<{ id: number; subject: string } | null>(null);
 
   // Tears down whatever the *previous* generation left behind — a live
   // WebSocket, an active MediaRecorder/mic stream — before a new one
@@ -165,6 +190,13 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     setOpen(false); setStatus("idle"); setLiveText(""); setError("");
   }
 
+  // Plain keyword check, not a model call — see pendingDeleteRef above
+  // for why this stays deterministic. Ambiguous input (neither a clear
+  // yes nor no) errs toward NOT deleting, same safety bias as the
+  // existing browser confirm() dialog on the Delete button.
+  function isAffirmative(text: string) { return /^\s*(yes|yeah|yep|yup|confirm(ed)?|do it|go ahead|correct|sure|please do)\b/i.test(text); }
+  function isNegative(text: string) { return /^\s*(no|nope|never\s?mind|cancel|stop|don'?t)\b/i.test(text); }
+
   async function ask(question: string) {
     const trimmed = question.trim();
     if (!trimmed) return;
@@ -173,6 +205,41 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     // answer or by tapping skip — stop it immediately rather than
     // letting two answers overlap.
     interruptSpeech();
+
+    // A delete confirmation is pending from the previous turn — resolve
+    // it here, deterministically, before this utterance ever reaches
+    // the classify endpoint. Whatever this utterance actually says only
+    // matters as far as yes/no; it's never treated as a new question.
+    if (pendingDeleteRef.current) {
+      const pending = pendingDeleteRef.current;
+      pendingDeleteRef.current = null;
+      setLog(prev => [...prev, { role: "user", text: trimmed }]);
+      if (isAffirmative(trimmed)) {
+        setStatus("processing"); setError("");
+        try {
+          const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmDeleteTaskId: pending.id }) });
+          const data = await res.json() as { mode?: string; deletedTaskId?: number; spokenAnswer?: string; error?: string };
+          if (!res.ok) { setStatus("error"); setError(data.error || "Could not delete that"); return; }
+          const answer = data.spokenAnswer || "";
+          setLog(prev => [...prev, { role: "assistant", text: answer }]);
+          if (data.mode === "deleted" && data.deletedTaskId != null) onTaskDeleted(data.deletedTaskId);
+          await speak(answer);
+        } catch {
+          setStatus("error"); setError("Could not reach Task AI — check your connection.");
+        }
+        return;
+      }
+      // A clear "no", or anything else that isn't a clear "yes" — both
+      // just cancel. An ambiguous reply not being treated as the
+      // original question again is deliberate: safer to make the user
+      // re-ask than to risk half-parsing a stray word as a new command
+      // while a delete was still technically on the table.
+      const answer = isNegative(trimmed) ? "Okay, keeping it." : "I didn't catch a yes or no, so I'll leave it as is.";
+      setLog(prev => [...prev, { role: "assistant", text: answer }]);
+      await speak(answer);
+      return;
+    }
+
     // Read before appending this turn — exactly what was said before
     // this question, oldest first, capped short so the added cost per
     // turn is a few sentences, not another driver of the latency this
@@ -187,7 +254,8 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
-        workingListIds?: number[]; task?: VoiceTaskUpdate | null; nextTaskId?: number | null; openTaskId?: number | null;
+        workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; nextTaskId?: number | null; openTaskId?: number | null;
+        dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null;
         spokenAnswer?: string; error?: string;
       };
       if (!res.ok) { setStatus("error"); setError(data.error || "Could not process that"); return; }
@@ -196,12 +264,18 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       if (data.mode === "filter" || data.mode === "walk") {
         if (data.filters) onApplyFilters(data.filters);
         // Seeds (or replaces) what "next task" will walk through —
-        // every filter/walk response carries a fresh ordered list, so
-        // asking a new question always restarts the walk from its results.
+        // every filter/walk/briefing response carries a fresh ordered
+        // list, so asking a new question always restarts from its
+        // results.
         if (data.workingListIds) workingListRef.current = data.workingListIds;
         // "walk" additionally opens and reads the first match itself.
         if (data.mode === "walk" && data.openTaskId != null) onOpenTask(data.openTaskId);
       }
+      // "briefing" is a spoken summary only — it doesn't touch the
+      // on-screen filter (there's no single Filters shape for "overdue
+      // OR due today OR due today as recipient"), but "next task"
+      // afterward pages through exactly what got flagged.
+      if (data.mode === "briefing" && data.workingListIds) workingListRef.current = data.workingListIds;
       if (data.mode === "navigate" && data.navigateTarget) {
         onNavigate(data.navigateTarget);
         await speak(answer);
@@ -214,11 +288,15 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         return;
       }
       if (data.mode === "act") {
-        if (data.task) onTaskUpdated(data.task);
+        if (data.task) onTaskUpdated(data.task as VoiceTaskUpdate);
         // A chained "...and go to the next task" resolved as part of
         // the same turn — open it right after applying the write.
         if (data.nextTaskId != null) onOpenTask(data.nextTaskId);
       }
+      if (data.mode === "confirm_delete" && data.pendingDeleteTaskId != null) {
+        pendingDeleteRef.current = { id: data.pendingDeleteTaskId, subject: currentTaskLabel || "this task" };
+      }
+      if (data.mode === "created" && data.task && data.dimensions) onTaskCreated(data.task as VoiceCreatedTask, data.dimensions);
       if (data.mode === "next" && data.nextTaskId != null) onOpenTask(data.nextTaskId);
       await speak(answer);
     } catch {
@@ -457,7 +535,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
           )}
 
           <div className="flex-1 overflow-y-auto mb-3 flex flex-col gap-2 min-h-[80px]">
-            {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "Walk me through my overdue tasks," "Push this to Friday and assign it to Maya," or "Next task."`}</p>}
+            {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "Give me my morning briefing," "Create a task to send the invoice by Friday," or "Push this to Friday and assign it to Maya."`}</p>}
             {log.map((turn, i) => (
               <div key={i} className={`text-sm rounded-lg px-3 py-2 max-w-[85%] ${turn.role === "user" ? "self-end bg-[#173f76] text-white" : "self-start bg-[#f1f3f7] text-[#202735]"}`}>
                 {turn.text}
