@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
-  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveNext, speakableDate,
-  type ActionStep, type Filters, type StoredTask,
+  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveActTargets, resolveNext, speakableDate,
+  type ActionStep, type ActTarget, type Filters, type StoredTask,
 } from "../app/lib/voice-query";
 
 let nextId = 1;
@@ -21,7 +21,7 @@ function baseTask(overrides: Partial<StoredTask> = {}): StoredTask {
 const noFilters: Filters = {
   owner: null, mineOnly: false, myRole: null, project: null, topic: null, recurringMeeting: null,
   account: null, opportunity: null, source: null, priority: null, dueWithin: null, createdWithin: null,
-  closedWithin: null, status: null,
+  closedWithin: null, status: null, textContains: null,
 };
 
 // ---- computeMatches ----
@@ -78,6 +78,16 @@ test("computeMatches: dueWithin overdue/week and closed/createdWithin today stil
   assert.equal(computeMatches({ ...noFilters, createdWithin: "today" }, tasks, "x", "2026-09-08", "2026-09-15").length, 1);
 });
 
+test("computeMatches: textContains matches subject OR description, case-insensitively", () => {
+  const tasks = [
+    baseTask({ subject: "Send sales playbook to Pavneet", description: "" }),
+    baseTask({ subject: "Update security FAQ", description: "Mentions the PLAYBOOK approach." }),
+    baseTask({ subject: "Unrelated task", description: "Nothing relevant here." }),
+  ];
+  const result = computeMatches({ ...noFilters, textContains: "playbook" }, tasks, "x", "2026-09-08", "2026-09-15");
+  assert.equal(result.length, 2);
+});
+
 // ---- describeFilterPhrase ----
 
 test("describeFilterPhrase: myRole produces a distinct phrase from mineOnly and from a plain owner filter", () => {
@@ -87,23 +97,24 @@ test("describeFilterPhrase: myRole produces a distinct phrase from mineOnly and 
   assert.equal(describeFilterPhrase({ ...noFilters, owner: "Maya Chen" }), "tasks for Maya Chen");
 });
 
-test("describeFilterPhrase: account/opportunity/source phrase in", () => {
-  const phrase = describeFilterPhrase({ ...noFilters, account: "Acme Corp", opportunity: "Q4 Renewal", source: "Sales AI" });
+test("describeFilterPhrase: account/opportunity/source/textContains phrase in", () => {
+  const phrase = describeFilterPhrase({ ...noFilters, account: "Acme Corp", opportunity: "Q4 Renewal", source: "Sales AI", textContains: "playbook" });
   assert.match(phrase, /for the Acme Corp account/);
   assert.match(phrase, /on the Q4 Renewal opportunity/);
   assert.match(phrase, /from Sales AI/);
+  assert.match(phrase, /"playbook" in the subject or description/);
 });
 
 // ---- applyActionSteps ----
 
 const step = (overrides: Partial<ActionStep>): ActionStep => ({
   type: null, dueDate: null, status: null, priority: null, owner: null,
-  updateText: null, subjectText: null, descriptionText: null, personName: null,
+  textValue: null, personName: null,
   ...overrides,
 });
 
 test("applyActionSteps: set_subject and set_description update the right fields and confirm", () => {
-  const result = applyActionSteps(baseTask(), [step({ type: "set_subject", subjectText: "New subject" }), step({ type: "set_description", descriptionText: "New description" })], "Rizan Flenner", []);
+  const result = applyActionSteps(baseTask(), [step({ type: "set_subject", textValue: "New subject" }), step({ type: "set_description", textValue: "New description" })], "Rizan Flenner", []);
   assert.equal(result.error, null);
   assert.equal(result.updated.subject, "New subject");
   assert.equal(result.updated.description, "New description");
@@ -112,8 +123,16 @@ test("applyActionSteps: set_subject and set_description update the right fields 
 
 test("applyActionSteps: set_subject is truncated to 140 characters, same limit manual create/edit already has", () => {
   const long = "x".repeat(200);
-  const result = applyActionSteps(baseTask(), [step({ type: "set_subject", subjectText: long })], "Rizan Flenner", []);
+  const result = applyActionSteps(baseTask(), [step({ type: "set_subject", textValue: long })], "Rizan Flenner", []);
   assert.equal(result.updated.subject.length, 140);
+});
+
+test("applyActionSteps: set_project and set_topic update the right fields and confirm with the new value", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "set_project", textValue: "Customer pilot" }), step({ type: "set_topic", textValue: "Playbook" })], "Rizan Flenner", []);
+  assert.equal(result.error, null);
+  assert.equal(result.updated.project, "Customer pilot");
+  assert.equal(result.updated.topic, "Playbook");
+  assert.deepEqual(result.confirmations, ["Set the project to Customer pilot.", "Set the topic to Playbook."]);
 });
 
 test("applyActionSteps: add_collaborator/add_recipient add once, never duplicate on a repeat command", () => {
@@ -137,8 +156,10 @@ test("applyActionSteps: remove_collaborator/remove_recipient take someone off, c
 });
 
 test("applyActionSteps: a missing required field on any new step type returns a clear error and stops there", () => {
-  assert.equal(applyActionSteps(baseTask(), [step({ type: "set_subject", subjectText: "" })], "x", []).error, "I didn't catch the new subject.");
-  assert.equal(applyActionSteps(baseTask(), [step({ type: "set_description", descriptionText: null })], "x", []).error, "I didn't catch the new description.");
+  assert.equal(applyActionSteps(baseTask(), [step({ type: "set_subject", textValue: "" })], "x", []).error, "I didn't catch the new subject.");
+  assert.equal(applyActionSteps(baseTask(), [step({ type: "set_description", textValue: null })], "x", []).error, "I didn't catch the new description.");
+  assert.equal(applyActionSteps(baseTask(), [step({ type: "set_project", textValue: "" })], "x", []).error, "I didn't catch the new project.");
+  assert.equal(applyActionSteps(baseTask(), [step({ type: "set_topic", textValue: null })], "x", []).error, "I didn't catch the new topic.");
   assert.equal(applyActionSteps(baseTask(), [step({ type: "add_collaborator", personName: null })], "x", []).error, "I didn't catch who to add as a coworker.");
   assert.equal(applyActionSteps(baseTask(), [step({ type: "add_recipient", personName: "" })], "x", []).error, "I didn't catch who to add as a recipient.");
 });
@@ -149,7 +170,7 @@ test("applyActionSteps: still applies every pre-existing action type exactly as 
     step({ type: "set_status", status: "Closed" }),
     step({ type: "set_priority", priority: "High" }),
     step({ type: "set_owner", owner: "Maya Chen" }),
-    step({ type: "add_update", updateText: "Redlines are in." }),
+    step({ type: "add_update", textValue: "Redlines are in." }),
   ], "Rizan Flenner", ["Maya Chen"]);
   assert.equal(result.error, null);
   assert.equal(result.updated.due, "2026-09-12");
@@ -166,6 +187,50 @@ test("applyActionSteps: clearing the due date (dueDate: null) is a valid instruc
   assert.equal(result.error, null);
   assert.equal(result.updated.due, "");
   assert.equal(result.confirmations[0], "Cleared the due date.");
+});
+
+// ---- resolveActTargets ----
+
+const noTarget: ActTarget = { taskId: null, applyToWorkingList: false };
+
+test("resolveActTargets: defaults to the current task when neither taskId nor applyToWorkingList is set", () => {
+  const current = baseTask({ id: 175 });
+  const result = resolveActTargets(noTarget, current, [], [current]);
+  assert.deepEqual(result.map(t => t.id), [175]);
+});
+
+test("resolveActTargets: no current task and no target set resolves to nothing, not an error by itself", () => {
+  assert.deepEqual(resolveActTargets(noTarget, null, [], []), []);
+});
+
+test("resolveActTargets: 'task 175' — an explicit taskId resolves that task even though it's not the one open", () => {
+  const current = baseTask({ id: 1 });
+  const named = baseTask({ id: 175 });
+  const result = resolveActTargets({ taskId: 175, applyToWorkingList: false }, current, [], [current, named]);
+  assert.deepEqual(result.map(t => t.id), [175]);
+});
+
+test("resolveActTargets: an explicit taskId that isn't visible resolves to nothing", () => {
+  const current = baseTask({ id: 1 });
+  assert.deepEqual(resolveActTargets({ taskId: 999, applyToWorkingList: false }, current, [], [current]), []);
+});
+
+test("resolveActTargets: applyToWorkingList resolves every visible task in the working list, in that order, de-duplicated", () => {
+  const a = baseTask({ id: 10 }), b = baseTask({ id: 20 }), c = baseTask({ id: 30 });
+  const result = resolveActTargets({ taskId: null, applyToWorkingList: true }, null, [10, 20, 10, 30], [a, b, c]);
+  assert.deepEqual(result.map(t => t.id), [10, 20, 30]);
+});
+
+test("resolveActTargets: applyToWorkingList skips a listed id that's no longer visible instead of erroring", () => {
+  const a = baseTask({ id: 10 }), c = baseTask({ id: 30 }); // id 20 deleted/hidden
+  const result = resolveActTargets({ taskId: null, applyToWorkingList: true }, null, [10, 20, 30], [a, c]);
+  assert.deepEqual(result.map(t => t.id), [10, 30]);
+});
+
+test("resolveActTargets: applyToWorkingList takes priority over an explicit taskId if both were somehow set", () => {
+  const a = baseTask({ id: 10 });
+  const result = resolveActTargets({ taskId: 999, applyToWorkingList: true }, null, [10], [a]);
+  assert.deepEqual(result.map(t => t.id), [10]);
 });
 
 // ---- briefing ----
@@ -207,6 +272,17 @@ test("describeBriefing: mentions overdue, due today, and recipient counts togeth
   assert.match(spoken, /where you're the recipient/);
 });
 
+test("describeBriefing: ends with the walk-through offer whenever anything's flagged", () => {
+  const tasks = [baseTask({ owner: "R", due: "2026-09-08", status: "Open" })];
+  const spoken = describeBriefing(computeBriefing(tasks, "R", "2026-09-08"));
+  assert.match(spoken, /Want me to walk you through them one by one\?$/);
+});
+
+test("describeBriefing: an all-clear day does NOT offer a walk-through — there's nothing to walk", () => {
+  const spoken = describeBriefing(computeBriefing([], "Rizan Flenner", "2026-09-08"));
+  assert.doesNotMatch(spoken, /walk you through/);
+});
+
 test("briefingWorkingList: orders overdue first, then due-today, then recipient, de-duplicated", () => {
   const overdueTask = baseTask({ id: 100 });
   const dueTodayTask = baseTask({ id: 200 });
@@ -235,6 +311,19 @@ test("describeTaskForWalk: reads subject, description, due date, then prompts fo
 });
 test("describeTaskForWalk: no due date reads as 'No due date.' rather than a blank", () => {
   assert.match(describeTaskForWalk(baseTask({ due: "" })), /No due date\./);
+});
+test("describeTaskForWalk: reads status and, when there's a most-recent status update, its text — requested 2026-09-08 so a walk-through covers Subject, status, due date, and last update", () => {
+  const withUpdate = describeTaskForWalk(baseTask({
+    status: "In progress",
+    updates: [{ text: "Waiting on legal.", at: "2026-09-01" }, { text: "Draft sent for review.", at: "2026-09-05" }],
+  }));
+  assert.match(withUpdate, /Status: In progress\./);
+  // The most recent update only — not the whole history.
+  assert.match(withUpdate, /Last update: Draft sent for review\./);
+  assert.doesNotMatch(withUpdate, /Waiting on legal/);
+});
+test("describeTaskForWalk: omits the 'Last update' line entirely when nothing's been posted yet", () => {
+  assert.doesNotMatch(describeTaskForWalk(baseTask({ updates: [] })), /Last update/);
 });
 
 test("resolveNext: returns the next visible id after currentTaskId, skipping ids no longer visible", () => {

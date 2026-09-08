@@ -28,13 +28,13 @@ export type VoiceFilters = {
 };
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
-// change could have touched (subject, description, coworkers/
-// recipients, due, status+closedAt together, priority, owner, or
-// updates), so the caller can merge this straight into its task state
-// without a full refetch.
+// change could have touched (subject, description, project, topic,
+// coworkers/recipients, due, status+closedAt together, priority,
+// owner, or updates), so the caller can merge this straight into its
+// task state without a full refetch.
 export type VoiceTaskUpdate = {
   id: number; subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
-  due: string; status: string; priority: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }>;
+  due: string; status: string; priority: string; project: string; topic: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }>;
 };
 // A brand-new task voice created directly from a spoken description
 // (mode "create_task") — the full row, same shape GET /api/tasks
@@ -61,7 +61,7 @@ function describeMicError(err: unknown) {
 }
 
 
-export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, currentTaskId, currentTaskLabel }: {
+export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, onShowTasks, currentTaskId, currentTaskLabel }: {
   onApplyFilters: (filters: VoiceFilters) => void;
   onNavigate: (target: VoiceNavigateTarget) => void;
   // "act" mode's write landed on currentTaskId — merge it in, no refetch needed.
@@ -75,6 +75,13 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // A confirmed delete completed server-side — remove it locally and
   // close the drawer if it was open.
   onTaskDeleted: (taskId: number) => void;
+  // "briefing" flags a set of tasks that don't fit any single Filters
+  // shape (overdue-owned OR due-today-owned OR due-today-recipient) —
+  // requested 2026-09-08, "physically select this task to be showing
+  // in the list": narrows the on-screen list to exactly these ids,
+  // separate from the Filters-object-based filtering onApplyFilters
+  // drives, so the summary you just heard is also what you see.
+  onShowTasks: (taskIds: number[]) => void;
   // Whichever task is currently open on screen (the drawer), owned by
   // the parent — not local state here, so a manual card click and a
   // voice-driven "next" both keep exactly one source of truth for what
@@ -254,7 +261,8 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
-        workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; nextTaskId?: number | null; openTaskId?: number | null;
+        workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; tasks?: VoiceTaskUpdate[] | null;
+        nextTaskId?: number | null; openTaskId?: number | null;
         dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null;
         spokenAnswer?: string; error?: string;
       };
@@ -275,7 +283,10 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       // on-screen filter (there's no single Filters shape for "overdue
       // OR due today OR due today as recipient"), but "next task"
       // afterward pages through exactly what got flagged.
-      if (data.mode === "briefing" && data.workingListIds) workingListRef.current = data.workingListIds;
+      if (data.mode === "briefing" && data.workingListIds) {
+        workingListRef.current = data.workingListIds;
+        onShowTasks(data.workingListIds);
+      }
       if (data.mode === "navigate" && data.navigateTarget) {
         onNavigate(data.navigateTarget);
         await speak(answer);
@@ -288,7 +299,12 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         return;
       }
       if (data.mode === "act") {
-        if (data.task) onTaskUpdated(data.task as VoiceTaskUpdate);
+        // A bulk command ("add this to all of these") updates several
+        // tasks at once — merge each in the same way a single-task
+        // update already does, one call per task. `task` (singular)
+        // still covers the ordinary one-task case.
+        if (data.tasks?.length) data.tasks.forEach(t => onTaskUpdated(t));
+        else if (data.task) onTaskUpdated(data.task as VoiceTaskUpdate);
         // A chained "...and go to the next task" resolved as part of
         // the same turn — open it right after applying the write.
         if (data.nextTaskId != null) onOpenTask(data.nextTaskId);
