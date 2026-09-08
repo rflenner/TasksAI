@@ -272,6 +272,17 @@ test("describeBriefing: mentions overdue, due today, and recipient counts togeth
   assert.match(spoken, /where you're the recipient/);
 });
 
+test("describeBriefing: ends with the walk-through offer whenever anything's flagged", () => {
+  const tasks = [baseTask({ owner: "R", due: "2026-09-08", status: "Open" })];
+  const spoken = describeBriefing(computeBriefing(tasks, "R", "2026-09-08"));
+  assert.match(spoken, /Want me to walk you through them one by one\?$/);
+});
+
+test("describeBriefing: an all-clear day does NOT offer a walk-through — there's nothing to walk", () => {
+  const spoken = describeBriefing(computeBriefing([], "Rizan Flenner", "2026-09-08"));
+  assert.doesNotMatch(spoken, /walk you through/);
+});
+
 test("briefingWorkingList: orders overdue first, then due-today, then recipient, de-duplicated", () => {
   const overdueTask = baseTask({ id: 100 });
   const dueTodayTask = baseTask({ id: 200 });
@@ -300,6 +311,19 @@ test("describeTaskForWalk: reads subject, description, due date, then prompts fo
 });
 test("describeTaskForWalk: no due date reads as 'No due date.' rather than a blank", () => {
   assert.match(describeTaskForWalk(baseTask({ due: "" })), /No due date\./);
+});
+test("describeTaskForWalk: reads status and, when there's a most-recent status update, its text — requested 2026-09-08 so a walk-through covers Subject, status, due date, and last update", () => {
+  const withUpdate = describeTaskForWalk(baseTask({
+    status: "In progress",
+    updates: [{ text: "Waiting on legal.", at: "2026-09-01" }, { text: "Draft sent for review.", at: "2026-09-05" }],
+  }));
+  assert.match(withUpdate, /Status: In progress\./);
+  // The most recent update only — not the whole history.
+  assert.match(withUpdate, /Last update: Draft sent for review\./);
+  assert.doesNotMatch(withUpdate, /Waiting on legal/);
+});
+test("describeTaskForWalk: omits the 'Last update' line entirely when nothing's been posted yet", () => {
+  assert.doesNotMatch(describeTaskForWalk(baseTask({ updates: [] })), /Last update/);
 });
 
 test("resolveNext: returns the next visible id after currentTaskId, skipping ids no longer visible", () => {

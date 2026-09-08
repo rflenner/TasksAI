@@ -61,7 +61,7 @@ function describeMicError(err: unknown) {
 }
 
 
-export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, currentTaskId, currentTaskLabel }: {
+export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, onShowTasks, currentTaskId, currentTaskLabel }: {
   onApplyFilters: (filters: VoiceFilters) => void;
   onNavigate: (target: VoiceNavigateTarget) => void;
   // "act" mode's write landed on currentTaskId — merge it in, no refetch needed.
@@ -75,6 +75,13 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // A confirmed delete completed server-side — remove it locally and
   // close the drawer if it was open.
   onTaskDeleted: (taskId: number) => void;
+  // "briefing" flags a set of tasks that don't fit any single Filters
+  // shape (overdue-owned OR due-today-owned OR due-today-recipient) —
+  // requested 2026-09-08, "physically select this task to be showing
+  // in the list": narrows the on-screen list to exactly these ids,
+  // separate from the Filters-object-based filtering onApplyFilters
+  // drives, so the summary you just heard is also what you see.
+  onShowTasks: (taskIds: number[]) => void;
   // Whichever task is currently open on screen (the drawer), owned by
   // the parent — not local state here, so a manual card click and a
   // voice-driven "next" both keep exactly one source of truth for what
@@ -276,7 +283,10 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       // on-screen filter (there's no single Filters shape for "overdue
       // OR due today OR due today as recipient"), but "next task"
       // afterward pages through exactly what got flagged.
-      if (data.mode === "briefing" && data.workingListIds) workingListRef.current = data.workingListIds;
+      if (data.mode === "briefing" && data.workingListIds) {
+        workingListRef.current = data.workingListIds;
+        onShowTasks(data.workingListIds);
+      }
       if (data.mode === "navigate" && data.navigateTarget) {
         onNavigate(data.navigateTarget);
         await speak(answer);

@@ -73,13 +73,19 @@ export function speakableDate(dateStr: string | null | undefined): string | null
 }
 
 // Shared by "walk"'s first task and wherever a task gets handed back to
-// the user to act on next (standalone "next", or a chained goto_next
-// inside "act") — one consistent read-out everywhere that happens.
+// the user to act on next (standalone "next", a chained goto_next
+// inside "act", or "next" resuming a briefing's own working list) —
+// one consistent read-out everywhere that happens. Requested 2026-09-08
+// to also say status and the last status update (when there is one) —
+// exactly what a coffee-morning triage pass actually needs to know
+// before deciding what to do with a task, not just its due date.
 export function describeTaskForWalk(t: StoredTask): string {
   const parts = [`${t.subject}.`];
   const description = t.description.trim();
   if (description) parts.push(/[.!?]$/.test(description) ? description : `${description}.`);
+  parts.push(`Status: ${t.status}.`);
   parts.push(t.due ? `Due ${speakableDate(t.due)}.` : "No due date.");
+  if (t.updates.length) parts.push(`Last update: ${t.updates[t.updates.length - 1].text}`);
   parts.push("What do you want me to do?");
   return parts.join(" ");
 }
@@ -346,7 +352,12 @@ export function describeBriefing(counts: BriefingCounts): string {
     `${counts.dueToday.length} due today`,
   ];
   if (counts.dueTodayAsRecipient.length) parts.push(`${counts.dueTodayAsRecipient.length} due today where you're the recipient`);
-  return `Here's your day: ${parts.join(", ")}.`;
+  // Ends with an explicit offer, not just a number dump — requested
+  // 2026-09-08. Answering "yes" to exactly this question is what the
+  // route's "next" handling now recognizes as "start walking the
+  // briefing's own list" (see the system prompt) — asking the SAME
+  // question every time keeps that recognition reliable.
+  return `Here's your day: ${parts.join(", ")}. Want me to walk you through them one by one?`;
 }
 
 // Overdue first (most urgent), then your own due-today, then what's due
