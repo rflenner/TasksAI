@@ -10,8 +10,8 @@ import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/ta
 import { callTaskExtractionAI } from "../../lib/task-extraction";
 import {
   applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
-  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveNext, speakableDate,
-  type ActionStep, type Filters, type StoredTask,
+  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveActTargets, resolveNext, speakableDate,
+  type ActionStep, type ActTarget, type Filters, type StoredTask,
 } from "../../lib/voice-query";
 
 // The lightweight alternative to Deepgram's bundled Voice Agent product
@@ -31,13 +31,13 @@ import {
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["mode", "filters", "navigateTarget", "actions", "answer"],
+  required: ["mode", "filters", "navigateTarget", "target", "actions", "answer"],
   properties: {
     mode: { type: "string", enum: ["filter", "answer", "navigate", "act", "next", "walk", "briefing", "create_task", "unclear"] },
     filters: {
       type: "object",
       additionalProperties: false,
-      required: ["owner", "mineOnly", "myRole", "project", "topic", "recurringMeeting", "account", "opportunity", "source", "priority", "dueWithin", "createdWithin", "closedWithin", "status"],
+      required: ["owner", "mineOnly", "myRole", "project", "topic", "recurringMeeting", "account", "opportunity", "source", "priority", "dueWithin", "createdWithin", "closedWithin", "status", "textContains"],
       properties: {
         owner: { type: ["string", "null"] },
         mineOnly: { type: "boolean" },
@@ -53,43 +53,59 @@ const schema = {
         createdWithin: { type: ["string", "null"], enum: ["today", null] },
         closedWithin: { type: ["string", "null"], enum: ["today", null] },
         status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
+        textContains: { type: ["string", "null"], description: "A word/phrase that must appear in the subject or description — for 'tasks with X in the subject', 'find/identify tasks about X'." },
       },
     },
     // For mode="navigate" only — opening a specific screen/form rather
     // than answering or filtering ("open dictate task", "start a new
     // action item", "paste meeting minutes").
     navigateTarget: { type: ["string", "null"], enum: ["dictate", "new_task", "paste_minutes", null] },
+    // For mode="act" only — which task(s) the actions below apply to.
+    // Almost always both fields stay at their default (null/false),
+    // meaning "whichever task is currently open" — the ONLY two cases
+    // to set one are: the user names/numbers a specific task that
+    // ISN'T the one open right now (taskId), or they want the change
+    // applied to every task in the most recent list discussed, not
+    // just one (applyToWorkingList).
+    target: {
+      type: "object",
+      additionalProperties: false,
+      required: ["taskId", "applyToWorkingList"],
+      properties: {
+        taskId: { type: ["number", "null"], description: "Set ONLY when the user names or numbers a task that is NOT the one currently open/in focus (e.g. 'task 175', 'task one seven five') — the exact id from the visible tasks list. Otherwise null." },
+        applyToWorkingList: { type: "boolean", description: "True ONLY when the user wants this applied to EVERY task in the most recently discussed/shown list ('add this to all of these', 'tag every one of them', 'update all the ones you just listed'), not just one task." },
+      },
+    },
     // For mode="act" only — an ORDERED list of one or more writes
-    // against the task currently in focus, so one utterance ("push
-    // this to Friday, assign it to Maya, add an update saying the
-    // redlines are in, and go to the next task") becomes one turn
-    // instead of four. Each entry needs exactly one type plus its one
-    // matching field; the strict schema requires every field present
-    // regardless, so the handler only trusts the field type actually
-    // names. A trailing goto_next entry (any position is accepted, but
-    // the model is told to put it last) hands off to the same list-walk
-    // "next" mode uses, after every other entry's write has applied.
+    // against the target task(s) above, so one utterance ("push this
+    // to Friday, assign it to Maya, add an update saying the redlines
+    // are in, and go to the next task") becomes one turn instead of
+    // four. Each entry needs exactly one type plus its one matching
+    // field; the strict schema requires every field present regardless,
+    // so the handler only trusts the field type actually names. A
+    // trailing goto_next entry (any position is accepted, but the model
+    // is told to put it last) hands off to the same list-walk "next"
+    // mode uses, after every other entry's write has applied.
     // delete_task is deliberately never applied straight from this
     // schema — it only ever triggers a confirmation round trip (see
-    // the route below), never an immediate delete.
+    // the route below), never an immediate delete, and never on more
+    // than one task at once.
     actions: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "dueDate", "status", "priority", "owner", "updateText", "subjectText", "descriptionText", "personName"],
+        required: ["type", "dueDate", "status", "priority", "owner", "textValue", "personName"],
         properties: {
           type: {
             type: ["string", "null"],
-            enum: ["set_due", "set_status", "set_priority", "set_owner", "set_subject", "set_description", "add_collaborator", "remove_collaborator", "add_recipient", "remove_recipient", "add_update", "delete_task", "goto_next", null],
+            enum: ["set_due", "set_status", "set_priority", "set_owner", "set_subject", "set_description", "set_project", "set_topic", "add_collaborator", "remove_collaborator", "add_recipient", "remove_recipient", "add_update", "delete_task", "goto_next", null],
           },
           dueDate: { type: ["string", "null"], description: "YYYY-MM-DD, resolved from any relative phrase against today's date; null means clear the due date" },
           status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
           priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", null] },
           owner: { type: ["string", "null"] },
-          updateText: { type: ["string", "null"] },
-          subjectText: { type: ["string", "null"], description: "For set_subject only — the new subject line." },
-          descriptionText: { type: ["string", "null"], description: "For set_description only — the new description." },
+          textValue: { type: ["string", "null"], description: "For set_subject/set_description/set_project/set_topic/add_update only — the new text." },
           personName: { type: ["string", "null"], description: "For add_collaborator/remove_collaborator/add_recipient/remove_recipient only — who to add or remove." },
         },
       },
@@ -107,6 +123,24 @@ const schema = {
 
 function toActionSummary(t: StoredTask) {
   return { id: t.id, subject: t.subject, owner: t.owner, due: t.due, status: t.status, priority: t.priority };
+}
+
+// Same registration every manual edit already gets (see register() in
+// app/api/tasks/route.ts, not importable here — a Next.js route file
+// can only export HTTP-method handlers) — a project/topic/person name
+// set for the first time via voice should show up as a suggestion
+// everywhere else the app offers one, the same as if it had been typed
+// into the drawer by hand. Added 2026-09-08 alongside set_project/
+// set_topic specifically so a brand-new project/topic name spoken by
+// voice doesn't silently fail to register.
+async function registerDimensionsFor(t: { project: string; recurringMeeting: string; topic: string; owner: string; collaborators: string[]; recipients: string[] }) {
+  const entries: Array<[string, string]> = [
+    ["project", t.project] as [string, string], ["meeting", t.recurringMeeting] as [string, string],
+    ["topic", t.topic] as [string, string], ["person", t.owner] as [string, string],
+    ...t.collaborators.map((c): [string, string] => ["person", c]),
+    ...t.recipients.map((r): [string, string] => ["person", r]),
+  ].filter(([, v]) => v);
+  for (const [type, value] of entries) await getDb().insert(dimensionValues).values({ type, value }).onConflictDoNothing();
 }
 
 export async function POST(request: Request) {
@@ -261,23 +295,24 @@ You are given the JSON list of every task ${actor.name} can currently see in Tas
 Every task's due/created/closedAt is a raw YYYY-MM-DD or ISO timestamp — fine for your own reasoning (sorting, comparing, deciding what's soonest or most recent) but NEVER speak one of those raw strings directly, it reads like nonsense out loud. Each one has a matching dueSpeakable/createdSpeakable/closedSpeakable field (e.g. "Monday, September 7th") right next to it — whenever your spoken answer mentions a date, use that speakable phrase verbatim instead, never the raw field. If the speakable field is null, that date genuinely isn't set — say so, don't invent one.
 Known exact project names: ${JSON.stringify(knownProjects)}. Known exact recurring meeting names: ${JSON.stringify(knownMeetings)}. Known exact topic names: ${JSON.stringify(knownTopics)}. Known exact people: ${JSON.stringify(knownPeople)}. Known exact account names: ${JSON.stringify(knownAccounts)}. Known exact opportunity names: ${JSON.stringify(knownOpportunities)}. Known exact sources: ${JSON.stringify(knownSources)}. When the user refers to any of these by a close, partial, or differently-worded phrase, use the EXACT string from these lists in the matching field — never your own paraphrase of it.
 Decide exactly one of:
-- "filter": the user wants the on-screen task list narrowed down ("show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "open tasks for the Architecture calls meeting", "tasks for the Acme Corp account", "opportunities on the Q4 renewal", "tasks from Sales AI", "what got created today", "what closed today"). Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.
-- "walk": the user wants to be guided through a whole list of tasks one at a time, starting right now ("walk me through my overdue tasks", "go through my tasks for the pilot project", "take me through what's due this week"). Fill in filters exactly like "filter" mode. Leave actions empty and answer empty — the caller reports how many match, opens the first one, and reads it aloud itself.
-- "briefing": the user wants a quick spoken rundown of their day, not a specific filter — "give me my morning briefing", "what's my day look like", "brief me", "day briefing". Leave every filters field null/false, actions empty, answer empty — the caller computes real counts (due today, overdue, and what's due today where they're only the recipient) and speaks the summary itself.
-- "create_task": the user is describing a brand-new task to create RIGHT NOW, not asking to open a form — "create a task to send the invoice by Friday", "add a task: follow up with legal about the NDA, assign it to Maya", "new action item: schedule the kickoff call". Leave every filters field null/false, actions empty, navigateTarget null, answer empty — the caller re-reads the original spoken request itself to extract the task's actual content, so you don't need to restate it anywhere.
-- "answer": a factual question the task or people data can answer ("is anyone overdue on the pilot", "what's the latest update on the CRM task", "how many tasks does Shankar have", "when was Drew last online"). Put the answer in answer, grounded ONLY in the provided data — never invent a task, person, date, or detail not present in it. Leave every filters field null/false and navigateTarget null.
-- "navigate": the user wants to open a specific screen or form, not ask about data — "open dictate task"/"let's dictate a task" -> "dictate"; "start a new action item"/"create a task" with genuinely no content spoken to extract (just the bare request, nothing describing what the task actually is) -> "new_task"; "paste meeting minutes"/"open the minutes paster" -> "paste_minutes". Put the target in navigateTarget, leave answer empty and every filters field null/false.
-- "act": change the task currently in focus (see above). One utterance can chain several changes ("push this to Friday, assign it to Maya, add an update saying the redlines are in, and go to the next task") — one actions[] entry per change, in the order requested, each with exactly one type plus its one matching field (every other field in that entry stays null). If no task is currently in focus, use "unclear" instead. Leave every filters field null/false, navigateTarget null, answer empty.
+- "filter": the user wants the on-screen task list narrowed down — this includes any "what/which tasks are X" phrasing where X maps to a filters field, NOT a question for "answer": "identify/find/show me all tasks with X in the subject" (textContains), "what tasks am I a recipient/reporter on" or "what am I a coworker on" (myRole — these are filter requests phrased as questions, not factual lookups). Other examples: "show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "tasks for the Acme Corp account", "tasks from Sales AI", "what got created today". The distinguishing test: if the answer is "a list of tasks matching some criteria", it's "filter" (or "walk"), even when phrased as a question — "answer" below is for questions that are NOT just "list the tasks matching X". Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.
+- "walk": the user wants to be guided through a whole list of tasks one at a time, starting right now ("walk me through my overdue tasks", "go through my tasks for the pilot project"). Fill in filters exactly like "filter" mode. Leave actions empty and answer empty — the caller reports how many match, opens the first one, and reads it aloud itself.
+- "briefing": a quick spoken rundown of their day, not a specific filter — "give me my morning briefing", "what's my day look like", "brief me". Leave every filters field null/false, actions empty, answer empty — the caller computes real counts and speaks the summary itself.
+- "create_task": describing a brand-new task to create RIGHT NOW, not asking to open a form — "create a task to send the invoice by Friday", "add a task: follow up with legal, assign it to Maya". Leave every filters field null/false, actions empty, navigateTarget null, answer empty — the caller re-reads the original spoken request itself to extract the task's content.
+- "answer": a factual question the task or people data can answer, about something OTHER than "list every task matching X" (that's "filter" above) — "is anyone overdue on the pilot", "what's the latest update on the CRM task", "how many tasks does Shankar have", "when was Drew last online". Put the answer in answer, grounded ONLY in the provided data — never invent a task, person, date, or detail not present in it. Leave every filters field null/false and navigateTarget null.
+- "navigate": open a specific screen or form, not ask about data — "open dictate task" -> "dictate"; "start a new action item" with genuinely no content spoken to extract -> "new_task"; "paste meeting minutes" -> "paste_minutes". Put the target in navigateTarget, leave answer empty and every filters field null/false.
+- "act": change one or more tasks. One utterance can chain several field changes ("push this to Friday, assign it to Maya, add an update saying the redlines are in, and go to the next task") — one actions[] entry per change, in the order requested, each with exactly one type plus its one matching field (every other field in that entry stays null). Leave every filters field null/false, navigateTarget null, answer empty.
+  WHICH task(s) — fill in target: almost always leave both fields at their default (taskId:null, applyToWorkingList:false), meaning "whichever task is currently open/in focus" (see above) — that covers ordinary "push this to Friday" while a task is open. Two exceptions: (1) the user names or numbers a task that is NOT the one open right now, e.g. "change the due date on task 175", "mark the pricing sheet task done" when that's not what's open -> set target.taskId to that task's exact id from the visible list. (2) the user wants the change applied to EVERY task in the most recent list you discussed with them (a prior "filter"/"walk"/"briefing" result, or a list you just read out in an "answer") — "add this to all of these", "tag every one of them", "update all the ones you just found" -> set target.applyToWorkingList true. If neither a task is open nor a specific one was named nor a working list exists to apply to, use "unclear" instead.
   set_due(dueDate): "push to Friday"/"set the deadline to Sept 20"/"clear the due date" — deadline/close date/completion date all mean this field. Resolve any relative phrase to YYYY-MM-DD against today: "next week"=Monday of the following week, "tomorrow"=the next calendar day, a bare weekday=its next upcoming occurrence, "ASAP"=next business day. dueDate:null clears it — a valid instruction, not a missing value.
   set_status(status): "mark done"/"close this out"->Closed, "reopen"->Open, "put in progress"->In progress.
   set_priority(priority). set_owner(owner): "assign to Maya" — use the exact known-people spelling when it matches who's meant.
-  set_subject(subjectText): "change/rename the subject to...". set_description(descriptionText): "update the description to say...".
+  set_subject(textValue): "change/rename the subject to...". set_description(textValue): "update the description to say...". set_project(textValue): "set the project to...", "tag this to the X project" — use the exact known-project spelling when it matches. set_topic(textValue): "set the topic to...", same idea for topics.
   add_collaborator/remove_collaborator(personName): coworkers — "add/take off Maya as a coworker".
   add_recipient/remove_recipient(personName): "reporter" and "recipient" are the same field.
-  add_update(updateText): "add an update saying..."/"note that...".
-  delete_task: no field — "delete this task". ONLY ever asks for confirmation, never deletes immediately; include it even though you don't yet know whether it'll actually happen.
-  goto_next: only when they also say to move on ("...then next one") — one further entry, every field null, put last, never combined with delete_task.
-- "next": the user wants to move on to another task from the list they were just looking at, with no other change requested ("next task", "go to the next one", "what's next", "skip this one", "next please"). Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
+  add_update(textValue): "add an update saying..."/"note that...".
+  delete_task: no field — "delete this task". ONLY ever asks for confirmation, never deletes immediately; NEVER combine with target.applyToWorkingList (deleting is always one task at a time — if they ask to delete several at once, use "unclear" and say so in answer instead).
+  goto_next: only when they also say to move on ("...then next one") — one further entry, every field null, put last, never combined with delete_task or with target.applyToWorkingList (bulk commands don't have a single "next" to advance to).
+- "next": move on to another task from the list they were just looking at, with no other change requested ("next task", "what's next", "skip this one"). Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
 - "unclear": none of the above fit. Leave answer as an empty string.
 For owner/coworker/recipient names, prefer the exact spelling from the known people list above when you can tell which person is meant; a first name or close match is fine otherwise — the caller does its own matching. If the user refers to their own tasks ("my tasks", "what do I have"), set mineOnly true and leave owner null. If they ask about tasks where THEY are specifically a coworker or a recipient/reporter (not owner) — "what am I a recipient on", "tasks where I'm a reporter" — set myRole to "collaborator" or "recipient" respectively instead of mineOnly. "Created today"/"closed today" map to createdWithin/closedWithin "today" respectively.`,
       }, ...recentHistory, {
@@ -289,7 +324,7 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
   if (!response.ok) return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 });
   const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
   const outputText = result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "";
-  let parsed: { mode: "filter" | "answer" | "navigate" | "act" | "next" | "walk" | "briefing" | "create_task" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; actions: ActionStep[]; answer: string };
+  let parsed: { mode: "filter" | "answer" | "navigate" | "act" | "next" | "walk" | "briefing" | "create_task" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; answer: string };
   try { parsed = JSON.parse(outputText); } catch { return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 }); }
 
   if (parsed.mode === "unclear") {
@@ -392,23 +427,31 @@ This is a spoken request to create ONE new task right now, not a written meeting
     });
   }
 
-  // mode === "act": one or more writes against whichever task the
-  // client says is currently in focus (currentTaskId) — never a task
-  // named in the transcript itself, since nothing here does that kind
-  // of lookup. Confirmed executed immediately, no confirmation round-
-  // trip, and confirmed as a CHAIN of steps in one utterance rather
-  // than one field per turn — the whole point of the coffee-morning
-  // workflow is triaging tasks hands-free. delete_task is the one
-  // exception: it only ever asks for confirmation here (see
-  // confirmDeleteTaskId above for the actual delete).
+  // mode === "act": one or more writes against one or more target
+  // tasks. Confirmed executed immediately, no confirmation round-trip,
+  // and confirmed as a CHAIN of steps in one utterance rather than one
+  // field per turn — the whole point of the coffee-morning workflow is
+  // triaging tasks hands-free. delete_task is the one exception: it
+  // only ever asks for confirmation here (see confirmDeleteTaskId
+  // above for the actual delete), and only ever for a single task.
   if (parsed.mode === "act") {
-    if (!currentTask) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have a task open right now — say \"next task\" or open one first." });
-    if (!canWriteTask(currentTask, actor)) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have permission to change that task." });
+    const target: ActTarget = parsed.target || { taskId: null, applyToWorkingList: false };
+    const list = Array.isArray(workingList) ? workingList : [];
+    const targets = resolveActTargets(target, currentTask, list, visible);
+
+    if (!targets.length) {
+      if (target.applyToWorkingList) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I don't have a list to apply that to — try asking a question first, like \"show me tasks with playbook in the subject.\"" });
+      if (target.taskId != null) return Response.json({ mode: "unclear", filters: null, spokenAnswer: `I couldn't find task #${target.taskId}.` });
+      return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have a task open right now — say \"next task\" or open one first." });
+    }
+    const writable = targets.filter(t => canWriteTask(t, actor));
+    if (!writable.length) return Response.json({ mode: "unclear", filters: null, spokenAnswer: targets.length > 1 ? "You don't have permission to change those tasks." : "You don't have permission to change that task." });
 
     const wantsDelete = parsed.actions.some(a => a.type === "delete_task");
     if (wantsDelete) {
+      if (target.applyToWorkingList || writable.length > 1) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I can only delete one task at a time — open the one you want to delete first, then ask again." });
       if (actor.role !== "site_admin") return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have permission to delete tasks." });
-      return Response.json({ mode: "confirm_delete", pendingDeleteTaskId: currentTask.id, spokenAnswer: `Are you sure you want to delete "${currentTask.subject}"? Say yes to confirm.` });
+      return Response.json({ mode: "confirm_delete", pendingDeleteTaskId: writable[0].id, spokenAnswer: `Are you sure you want to delete "${writable[0].subject}"? Say yes to confirm.` });
     }
 
     const steps = parsed.actions.filter(a => a.type && a.type !== "goto_next");
@@ -418,46 +461,61 @@ This is a spoken request to create ONE new task right now, not a written meeting
       if (!wantsNext) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I didn't catch what you'd like changed — try \"push this to next Friday\" or \"mark this done\"." });
       // A lone "go to next task" that got classified as act with no
       // real field change — functionally identical to mode "next", so
-      // just answer the same way that mode would.
-      const list = Array.isArray(workingList) ? workingList : [];
+      // just answer the same way that mode would. Only meaningful for
+      // the single-current-task case; bulk has no one "next" to advance to.
+      if (!currentTask) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have a task open right now — say \"next task\" or open one first." });
       if (!list.length) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I don't have a list to move through yet — try asking a question first, like \"show me my tasks this week.\"" });
       const found = resolveNext(currentTask.id, list, visible);
       if (!found) return Response.json({ mode: "next", nextTaskId: null, task: null, spokenAnswer: "That's the last one on the list." });
       return Response.json({ mode: "next", nextTaskId: found.id, task: toActionSummary(found), spokenAnswer: describeTaskForWalk(found) });
     }
 
-    const result = applyActionSteps(currentTask, steps, actor.name, knownPeople);
-    if (result.error) return Response.json({ mode: "unclear", filters: null, spokenAnswer: result.error });
+    // The same steps apply to every writable target — validation only
+    // ever depends on the step's own fields (a malformed date, a blank
+    // name), never on which task it's being applied to, so one failing
+    // means they all would; checking just the first is representative
+    // and lets a bad command fail before touching anything.
+    const preview = applyActionSteps(writable[0], steps, actor.name, knownPeople);
+    if (preview.error) return Response.json({ mode: "unclear", filters: null, spokenAnswer: preview.error });
 
-    // Same auto-advance rule as PATCH /api/tasks (the manual "Post
-    // update" button) — see autoAdvanceStatus — so voice and a click
-    // behave identically: a posted update bumps Open -> In progress
-    // unless this same command already set a status explicitly.
-    const finalStatus = autoAdvanceStatus(result.updated.status, result.updatesGrew, result.explicitStatus);
-    const confirmations = [...result.confirmations];
-    if (finalStatus !== result.updated.status) confirmations.push("Status moved to In progress.");
+    const updatedTasks: StoredTask[] = [];
+    let anyStatusBumped = false;
+    for (const targetTask of writable) {
+      const result = applyActionSteps(targetTask, steps, actor.name, knownPeople);
+      // Same auto-advance rule as PATCH /api/tasks (the manual "Post
+      // update" button) — see autoAdvanceStatus — so voice and a click
+      // behave identically: a posted update bumps Open -> In progress
+      // unless this same command already set a status explicitly.
+      const finalStatus = autoAdvanceStatus(result.updated.status, result.updatesGrew, result.explicitStatus);
+      if (finalStatus !== result.updated.status) anyStatusBumped = true;
+      // Identical closedAt transition rule to PATCH /api/tasks: a fresh
+      // timestamp only on the Open/In progress -> Closed transition,
+      // kept as-is if already closed, cleared on reopen.
+      const closedAt = finalStatus !== "Closed" ? null : targetTask.status === "Closed" ? targetTask.closedAt : new Date();
+      const [updated] = await getDb().update(tasks).set({ ...result.updated, status: finalStatus, closedAt }).where(eq(tasks.id, targetTask.id)).returning();
+      // describeChanges deliberately skips `updates` (it's the Status
+      // Updates log, shown as its own section) and no-ops with an empty
+      // detail list, so calling this unconditionally is safe.
+      await recordActivity(updated.id, actor.name, describeChanges(targetTask, updated));
+      await registerDimensionsFor(updated);
+      updatedTasks.push(updated);
+    }
 
-    // Identical closedAt transition rule to PATCH /api/tasks: a fresh
-    // timestamp only on the Open/In progress -> Closed transition, kept
-    // as-is if it was already closed (so a further change on a closed
-    // task doesn't bump its close date), cleared on reopen.
-    const closedAt = finalStatus !== "Closed" ? null : currentTask.status === "Closed" ? currentTask.closedAt : new Date();
-    const [updated] = await getDb().update(tasks).set({ ...result.updated, status: finalStatus, closedAt }).where(eq(tasks.id, currentTask.id)).returning();
-    // describeChanges deliberately skips `updates` (it's the Status
-    // Updates log, shown as its own section) and no-ops with an empty
-    // detail list, so calling this unconditionally is safe and matches
-    // the PATCH route even when the only change was an added update.
-    await recordActivity(updated.id, actor.name, describeChanges(currentTask, updated));
+    const confirmations = [...preview.confirmations];
+    if (anyStatusBumped) confirmations.push("Status moved to In progress.");
+    const summaryPrefix = updatedTasks.length > 1 ? `Updated ${updatedTasks.length} tasks: ` : "";
 
     // A trailing goto_next resolves the same way standalone "next"
     // does, from the same client-sent workingList — applied AFTER the
-    // write above lands, so the confirmation for what just changed and
-    // the read-out of what's coming up both arrive in one turn.
+    // write(s) above land, so the confirmation for what just changed
+    // and the read-out of what's coming up both arrive in one turn.
+    // Never fires for a bulk command — see the prompt instruction and
+    // the wantsDelete-style guard above; there's no single "current"
+    // task to advance from in that case.
     let nextTaskId: number | null = null;
     let nextTaskPayload: ReturnType<typeof toActionSummary> | null = null;
     let trailer = "";
-    if (wantsNext) {
-      const list = Array.isArray(workingList) ? workingList : [];
+    if (wantsNext && currentTask && !target.applyToWorkingList) {
       const found = resolveNext(currentTask.id, list, visible);
       if (found) {
         nextTaskId = found.id;
@@ -468,20 +526,24 @@ This is a spoken request to create ONE new task right now, not a written meeting
       }
     }
 
+    // Every field any action variant could have touched — not just the
+    // ones this particular command changed — so the client can merge
+    // this straight into its task list/drawer state and stay exactly
+    // in sync with the DB without a full refetch. `task` (singular) for
+    // the ordinary one-task case the client already knew how to merge;
+    // `tasks` (plural) added alongside it for the new bulk case.
+    const toPayload = (u: StoredTask) => ({
+      id: u.id, subject: u.subject, description: u.description, owner: u.owner,
+      collaborators: u.collaborators, recipients: u.recipients,
+      due: u.due, status: u.status, priority: u.priority, project: u.project, topic: u.topic,
+      closedAt: u.closedAt ? u.closedAt.toISOString() : null, updates: u.updates,
+    });
     return Response.json({
       mode: "act",
-      // Every field any action variant could have touched — not just
-      // the ones this particular command changed — so the client can
-      // merge this straight into its task list/drawer state and stay
-      // exactly in sync with the DB without a full refetch.
-      task: {
-        id: updated.id, subject: updated.subject, description: updated.description, owner: updated.owner,
-        collaborators: updated.collaborators, recipients: updated.recipients,
-        due: updated.due, status: updated.status, priority: updated.priority,
-        closedAt: updated.closedAt ? updated.closedAt.toISOString() : null, updates: updated.updates,
-      },
+      task: updatedTasks.length === 1 ? toPayload(updatedTasks[0]) : null,
+      tasks: updatedTasks.length > 1 ? updatedTasks.map(toPayload) : null,
       nextTaskId, nextTask: nextTaskPayload,
-      spokenAnswer: `${confirmations.join(" ")}${trailer}`.trim(),
+      spokenAnswer: `${summaryPrefix}${confirmations.join(" ")}${trailer}`.trim(),
     });
   }
 

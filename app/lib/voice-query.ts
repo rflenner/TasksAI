@@ -30,6 +30,13 @@ export type Filters = {
   createdWithin: "today" | null;
   closedWithin: "today" | null;
   status: string | null;
+  // Free-text search — requested 2026-09-08 after "identify all tasks
+  // that have playbook in their subject line" fell into "answer" mode
+  // (a one-off read-out) instead of a real filter, so the follow-up
+  // "add this to all of these" had nothing to act on. A real filter
+  // narrows the screen AND seeds the working list "act" can bulk-apply
+  // to (see ActionStep/target below) — the missing link that turn needed.
+  textContains: string | null;
 };
 
 // Same "how long ago" reasoning as the Users & access page's own
@@ -117,6 +124,7 @@ export function computeMatches(f: Filters, visible: StoredTask[], actorName: str
     if (f.source && t.source !== f.source) return false;
     if (f.priority && t.priority !== f.priority) return false;
     if (f.status && t.status !== f.status) return false;
+    if (f.textContains && !`${t.subject} ${t.description}`.toLowerCase().includes(f.textContains.toLowerCase())) return false;
     if (f.dueWithin === "overdue" && !(t.due && t.due < today && t.status !== "Closed")) return false;
     if (f.dueWithin === "week" && !(t.due && t.due >= today && t.due <= weekAhead && t.status !== "Closed")) return false;
     if (f.createdWithin === "today" && t.created.slice(0, 10) !== today) return false;
@@ -143,6 +151,7 @@ export function describeFilterPhrase(f: Filters): string {
   if (f.source) parts.push(`from ${f.source}`);
   if (f.priority) parts.push(`marked ${f.priority} priority`);
   if (f.status) parts.push(`with status ${f.status}`);
+  if (f.textContains) parts.push(`with "${f.textContains}" in the subject or description`);
   if (f.dueWithin === "week") parts.push("due this week");
   if (f.dueWithin === "overdue") parts.push("that are overdue");
   if (f.createdWithin === "today") parts.push("created today");
@@ -158,17 +167,29 @@ export function describeFilterPhrase(f: Filters): string {
 // the same resolveNext/workingList machinery standalone "next" uses —
 // both stay in the route itself.
 export type ActionStep = {
-  type: "set_due" | "set_status" | "set_priority" | "set_owner" | "set_subject" | "set_description"
+  type: "set_due" | "set_status" | "set_priority" | "set_owner" | "set_subject" | "set_description" | "set_project" | "set_topic"
       | "add_collaborator" | "remove_collaborator" | "add_recipient" | "remove_recipient"
       | "add_update" | "delete_task" | "goto_next" | null;
   dueDate: string | null; status: string | null; priority: string | null; owner: string | null;
-  updateText: string | null; subjectText: string | null; descriptionText: string | null; personName: string | null;
+  // One shared slot for every "set this text field" / "append this
+  // text" step (subject, description, project, topic, add_update) —
+  // consolidated from four separate fields (subjectText/descriptionText/
+  // updateText, plus what would have been two more for project/topic)
+  // requested 2026-09-08 specifically to *shrink* the schema while
+  // adding set_project/set_topic, not grow it further — this route's
+  // own prior growth was a real contributor to a live latency
+  // regression (see app/api/voice-query/route.ts). `type` alone already
+  // disambiguates which field a value is meant for; a model has no more
+  // reasoning to do with one generic slot than with four near-identical
+  // dedicated ones.
+  textValue: string | null;
+  personName: string | null;
 };
 
 export type ActionResult = {
   updated: {
     subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
-    due: string; status: string; priority: string;
+    due: string; status: string; priority: string; project: string; topic: string;
     updates: Array<{ text: string; at: string; by?: string }>;
   };
   confirmations: string[];
@@ -190,6 +211,7 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
     subject: current.subject, description: current.description, owner: current.owner,
     collaborators: [...current.collaborators], recipients: [...current.recipients],
     due: current.due, status: current.status, priority: current.priority,
+    project: current.project, topic: current.topic,
     updates: [...current.updates],
   };
   const confirmations: string[] = [];
@@ -219,13 +241,21 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
       updated.owner = resolvePerson(a.owner.trim());
       confirmations.push(`Assigned it to ${updated.owner}.`);
     } else if (a.type === "set_subject") {
-      if (!a.subjectText?.trim()) return fail("I didn't catch the new subject.");
-      updated.subject = a.subjectText.trim().slice(0, 140);
+      if (!a.textValue?.trim()) return fail("I didn't catch the new subject.");
+      updated.subject = a.textValue.trim().slice(0, 140);
       confirmations.push("Updated the subject.");
     } else if (a.type === "set_description") {
-      if (!a.descriptionText?.trim()) return fail("I didn't catch the new description.");
-      updated.description = a.descriptionText.trim();
+      if (!a.textValue?.trim()) return fail("I didn't catch the new description.");
+      updated.description = a.textValue.trim();
       confirmations.push("Updated the description.");
+    } else if (a.type === "set_project") {
+      if (!a.textValue?.trim()) return fail("I didn't catch the new project.");
+      updated.project = a.textValue.trim();
+      confirmations.push(`Set the project to ${updated.project}.`);
+    } else if (a.type === "set_topic") {
+      if (!a.textValue?.trim()) return fail("I didn't catch the new topic.");
+      updated.topic = a.textValue.trim();
+      confirmations.push(`Set the topic to ${updated.topic}.`);
     } else if (a.type === "add_collaborator") {
       if (!a.personName?.trim()) return fail("I didn't catch who to add as a coworker.");
       const name = resolvePerson(a.personName.trim());
@@ -247,13 +277,49 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
       updated.recipients = updated.recipients.filter(p => p.toLowerCase() !== name.toLowerCase());
       confirmations.push(`Removed ${name} as a recipient.`);
     } else if (a.type === "add_update") {
-      if (!a.updateText?.trim()) return fail("I didn't catch what to add as an update.");
-      updated.updates.push({ text: a.updateText.trim(), at: new Date().toISOString(), by: actorName });
+      if (!a.textValue?.trim()) return fail("I didn't catch what to add as an update.");
+      updated.updates.push({ text: a.textValue.trim(), at: new Date().toISOString(), by: actorName });
       updatesGrew = true;
       confirmations.push("Added the update.");
     }
   }
   return { updated, confirmations, explicitStatus, updatesGrew, error: null };
+}
+
+// What "act" applies to — requested 2026-09-08 after "change the due
+// date on task 175" failed outright: "act" previously only ever knew
+// about whichever task was physically open in the UI drawer
+// (currentTask), with no way to target a task named/numbered purely in
+// conversation, and no way to apply one command to several tasks at
+// once ("add this to all of these").
+export type ActTarget = { taskId: number | null; applyToWorkingList: boolean };
+
+// Resolves which task(s) an "act" command applies to — pure, so the
+// priority order (an explicit id wins over bulk, bulk wins over
+// whatever's currently open) is unit-testable without a live classify
+// call. Bulk resolves against the workingList the last filter/walk/
+// briefing produced, de-duplicated, in that order; an explicit id or
+// the current task each resolve to a single-item list. An id or a
+// working-list entry that's no longer visible (deleted, or permissions
+// changed) is silently skipped rather than surfaced as an error here —
+// the caller decides what an empty result means for its response.
+export function resolveActTargets(target: ActTarget, currentTask: StoredTask | null, workingList: number[], visible: StoredTask[]): StoredTask[] {
+  if (target.applyToWorkingList) {
+    const seen = new Set<number>();
+    const result: StoredTask[] = [];
+    for (const id of workingList) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const found = visible.find(t => t.id === id);
+      if (found) result.push(found);
+    }
+    return result;
+  }
+  if (typeof target.taskId === "number") {
+    const found = visible.find(t => t.id === target.taskId);
+    return found ? [found] : [];
+  }
+  return currentTask ? [currentTask] : [];
 }
 
 export type BriefingCounts = { dueToday: StoredTask[]; overdue: StoredTask[]; dueTodayAsRecipient: StoredTask[] };

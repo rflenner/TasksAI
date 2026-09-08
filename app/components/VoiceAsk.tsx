@@ -28,13 +28,13 @@ export type VoiceFilters = {
 };
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
-// change could have touched (subject, description, coworkers/
-// recipients, due, status+closedAt together, priority, owner, or
-// updates), so the caller can merge this straight into its task state
-// without a full refetch.
+// change could have touched (subject, description, project, topic,
+// coworkers/recipients, due, status+closedAt together, priority,
+// owner, or updates), so the caller can merge this straight into its
+// task state without a full refetch.
 export type VoiceTaskUpdate = {
   id: number; subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
-  due: string; status: string; priority: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }>;
+  due: string; status: string; priority: string; project: string; topic: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }>;
 };
 // A brand-new task voice created directly from a spoken description
 // (mode "create_task") — the full row, same shape GET /api/tasks
@@ -254,7 +254,8 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
-        workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; nextTaskId?: number | null; openTaskId?: number | null;
+        workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; tasks?: VoiceTaskUpdate[] | null;
+        nextTaskId?: number | null; openTaskId?: number | null;
         dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null;
         spokenAnswer?: string; error?: string;
       };
@@ -288,7 +289,12 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         return;
       }
       if (data.mode === "act") {
-        if (data.task) onTaskUpdated(data.task as VoiceTaskUpdate);
+        // A bulk command ("add this to all of these") updates several
+        // tasks at once — merge each in the same way a single-task
+        // update already does, one call per task. `task` (singular)
+        // still covers the ordinary one-task case.
+        if (data.tasks?.length) data.tasks.forEach(t => onTaskUpdated(t));
+        else if (data.task) onTaskUpdated(data.task as VoiceTaskUpdate);
         // A chained "...and go to the next task" resolved as part of
         // the same turn — open it right after applying the write.
         if (data.nextTaskId != null) onOpenTask(data.nextTaskId);
