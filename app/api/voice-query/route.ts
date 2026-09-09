@@ -7,6 +7,7 @@ import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
+import { isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 import { callTaskExtractionAI } from "../../lib/task-extraction";
 import {
   applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
@@ -37,7 +38,7 @@ const schema = {
     filters: {
       type: "object",
       additionalProperties: false,
-      required: ["owner", "mineOnly", "myRole", "project", "topic", "recurringMeeting", "account", "opportunity", "source", "priority", "dueWithin", "createdWithin", "closedWithin", "status", "textContains"],
+      required: ["owner", "mineOnly", "myRole", "project", "topic", "recurringMeeting", "account", "opportunity", "source", "priority", "dueWithin", "createdWithin", "closedWithin", "status", "textContains", "isNew"],
       properties: {
         owner: { type: ["string", "null"] },
         mineOnly: { type: "boolean" },
@@ -54,6 +55,7 @@ const schema = {
         closedWithin: { type: ["string", "null"], enum: ["today", null] },
         status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
         textContains: { type: ["string", "null"], description: "A word/phrase that must appear in the subject or description — for 'tasks with X in the subject', 'find/identify tasks about X'." },
+        isNew: { type: "boolean", description: "True for 'what's new', 'show me new tasks', 'anything new assigned to me' — the same flag the on-screen NEW badge uses: created or assigned in the last 72 hours and not yet opened." },
       },
     },
     // For mode="navigate" only — opening a specific screen/form rather
@@ -206,6 +208,12 @@ export async function POST(request: Request) {
   // be the next improvement if newest-200 ever isn't enough on its own.
   const all = await getDb().select().from(tasks).orderBy(desc(tasks.id));
   const visible = all.filter(task => canSeeTask(task, actor) && !task.mergedIntoTaskId);
+  // Same per-actor NEW computation the on-screen badge uses (see
+  // app/lib/task-flags.ts) — just membership here, for the isNew filter
+  // ("what's new") rather than a per-task boolean payload field.
+  const newFlagContext = await loadNewFlagContext(actor.name);
+  const newFlagNow = Date.now();
+  const isNewTaskIds = new Set(visible.filter(t => isTaskNewFor(t, newFlagNow, newFlagContext.viewedAt.get(t.id) ?? null, newFlagContext.assignedAt.get(t.id) ?? null)).map(t => t.id));
 
   // Resolved against the unsliced visible list (not the 200-row summary
   // below) so "this task" still works even when it's an older task that
@@ -295,7 +303,7 @@ You are given the JSON list of every task ${actor.name} can currently see in Tas
 Every task's due/created/closedAt is a raw YYYY-MM-DD or ISO timestamp — fine for your own reasoning (sorting, comparing, deciding what's soonest or most recent) but NEVER speak one of those raw strings directly, it reads like nonsense out loud. Each one has a matching dueSpeakable/createdSpeakable/closedSpeakable field (e.g. "Monday, September 7th") right next to it — whenever your spoken answer mentions a date, use that speakable phrase verbatim instead, never the raw field. If the speakable field is null, that date genuinely isn't set — say so, don't invent one.
 Known exact project names: ${JSON.stringify(knownProjects)}. Known exact recurring meeting names: ${JSON.stringify(knownMeetings)}. Known exact topic names: ${JSON.stringify(knownTopics)}. Known exact people: ${JSON.stringify(knownPeople)}. Known exact account names: ${JSON.stringify(knownAccounts)}. Known exact opportunity names: ${JSON.stringify(knownOpportunities)}. Known exact sources: ${JSON.stringify(knownSources)}. When the user refers to any of these by a close, partial, or differently-worded phrase, use the EXACT string from these lists in the matching field — never your own paraphrase of it.
 Decide exactly one of:
-- "filter": the user wants the on-screen task list narrowed down — this includes any "what/which tasks are X" phrasing where X maps to a filters field, NOT a question for "answer": "identify/find/show me all tasks with X in the subject" (textContains), "what tasks am I a recipient/reporter on" or "what am I a coworker on" (myRole — these are filter requests phrased as questions, not factual lookups). Other examples: "show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "tasks for the Acme Corp account", "tasks from Sales AI", "what got created today". The distinguishing test: if the answer is "a list of tasks matching some criteria", it's "filter" (or "walk"), even when phrased as a question — "answer" below is for questions that are NOT just "list the tasks matching X". Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.
+- "filter": the user wants the on-screen task list narrowed down — this includes any "what/which tasks are X" phrasing where X maps to a filters field, NOT a question for "answer": "identify/find/show me all tasks with X in the subject" (textContains), "what tasks am I a recipient/reporter on" or "what am I a coworker on" (myRole — these are filter requests phrased as questions, not factual lookups). Other examples: "show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "tasks for the Acme Corp account", "tasks from Sales AI", "what got created today", "what's new"/"show me new tasks"/"anything new assigned to me" (isNew). The distinguishing test: if the answer is "a list of tasks matching some criteria", it's "filter" (or "walk"), even when phrased as a question — "answer" below is for questions that are NOT just "list the tasks matching X". Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.
 - "walk": the user wants to be guided through a whole list of tasks one at a time, starting right now ("walk me through my overdue tasks", "go through my tasks for the pilot project"). Fill in filters exactly like "filter" mode. Leave actions empty and answer empty — the caller reports how many match, opens the first one, and reads it aloud itself.
 - "briefing": a quick spoken rundown of their day, not a specific filter — "give me my morning briefing", "what's my day look like", "brief me". Leave every filters field null/false, actions empty, answer empty — the caller computes real counts and speaks the summary itself.
 - "create_task": describing a brand-new task to create RIGHT NOW, not asking to open a form — "create a task to send the invoice by Friday", "add a task: follow up with legal, assign it to Maya". Leave every filters field null/false, actions empty, navigateTarget null, answer empty — the caller re-reads the original spoken request itself to extract the task's content.
@@ -497,6 +505,7 @@ This is a spoken request to create ONE new task right now, not a written meeting
       // Updates log, shown as its own section) and no-ops with an empty
       // detail list, so calling this unconditionally is safe.
       await recordActivity(updated.id, actor.name, describeChanges(targetTask, updated));
+      await noteAssignments(updated.id, newlyAssignedPeople(targetTask, updated));
       await registerDimensionsFor(updated);
       updatedTasks.push(updated);
     }
@@ -569,7 +578,7 @@ This is a spoken request to create ONE new task right now, not a written meeting
   if (parsed.mode === "walk") {
     const f = parsed.filters;
     const weekAhead = new Date(Date.now() + 6048e5).toISOString().slice(0, 10);
-    const matches = computeMatches(f, visible, actor.name, today, weekAhead);
+    const matches = computeMatches(f, visible, actor.name, today, weekAhead, isNewTaskIds);
     const workingListIds = matches.slice(0, 500).map(t => t.id);
     if (!matches.length) {
       return Response.json({ mode: "walk", filters: f, matchCount: 0, workingListIds: [], openTaskId: null, spokenAnswer: `You have no ${describeFilterPhrase(f)}.` });
@@ -586,7 +595,7 @@ This is a spoken request to create ONE new task right now, not a written meeting
   // reports a real number, never one the model might have guessed at.
   const f = parsed.filters;
   const weekAhead = new Date(Date.now() + 6048e5).toISOString().slice(0, 10);
-  const matches = computeMatches(f, visible, actor.name, today, weekAhead);
+  const matches = computeMatches(f, visible, actor.name, today, weekAhead, isNewTaskIds);
   const spokenAnswer = `Showing ${matches.length} ${describeFilterPhrase(f)}.`;
 
   // The exact ordered id list "next task" walks through afterwards —

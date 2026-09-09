@@ -21,7 +21,7 @@ function baseTask(overrides: Partial<StoredTask> = {}): StoredTask {
 const noFilters: Filters = {
   owner: null, mineOnly: false, myRole: null, project: null, topic: null, recurringMeeting: null,
   account: null, opportunity: null, source: null, priority: null, dueWithin: null, createdWithin: null,
-  closedWithin: null, status: null, textContains: null,
+  closedWithin: null, status: null, textContains: null, isNew: false,
 };
 
 // ---- computeMatches ----
@@ -88,6 +88,16 @@ test("computeMatches: textContains matches subject OR description, case-insensit
   assert.equal(result.length, 2);
 });
 
+test("computeMatches: isNew filters to exactly the ids the caller marked as new, ignoring everything else about the task", () => {
+  const tasks = [baseTask({ id: 10 }), baseTask({ id: 20 }), baseTask({ id: 30 })];
+  const result = computeMatches({ ...noFilters, isNew: true }, tasks, "x", "2026-09-08", "2026-09-15", new Set([20]));
+  assert.deepEqual(result.map(t => t.id), [20]);
+});
+test("computeMatches: isNew false (the default) never narrows by newness, even with no isNewTaskIds supplied", () => {
+  const tasks = [baseTask({ id: 10 }), baseTask({ id: 20 })];
+  assert.equal(computeMatches(noFilters, tasks, "x", "2026-09-08", "2026-09-15").length, 2);
+});
+
 // ---- describeFilterPhrase ----
 
 test("describeFilterPhrase: myRole produces a distinct phrase from mineOnly and from a plain owner filter", () => {
@@ -103,6 +113,9 @@ test("describeFilterPhrase: account/opportunity/source/textContains phrase in", 
   assert.match(phrase, /on the Q4 Renewal opportunity/);
   assert.match(phrase, /from Sales AI/);
   assert.match(phrase, /"playbook" in the subject or description/);
+});
+test("describeFilterPhrase: isNew reads as 'flagged new'", () => {
+  assert.match(describeFilterPhrase({ ...noFilters, isNew: true }), /flagged new/);
 });
 
 // ---- applyActionSteps ----

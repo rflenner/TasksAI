@@ -5,6 +5,7 @@ import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
+import { isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 type StoredTask=typeof tasks.$inferSelect; type Input=Partial<StoredTask>&{recurring_meeting?:string}; type DimensionType="project"|"meeting"|"topic"|"person";
 const cleanList=(value:unknown)=>Array.isArray(value)?value.map(String).map(x=>x.trim()).filter(Boolean):[];
 // externalSource/externalId only ever come through when a caller explicitly
@@ -39,7 +40,12 @@ export async function GET(){const actor=await currentActor();if(!actor)return Re
  // as "not yet on Task AI" and offer to invite them, without a whole
  // separate endpoint just for that.
  const registeredPeople=(await getDb().select({name:users.name}).from(users)).map(row=>row.name);
- return Response.json({tasks:visible,dimensions:{...(actor.role==="site_admin"?await dimensions():scoped),account,opportunity},registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
+ // "isNew" per task, for THIS actor only — the same task can be flagged
+ // for one person and not another (see app/lib/task-flags.ts), so this
+ // has to be computed per request, never cached on the row itself.
+ const flagContext=await loadNewFlagContext(actor.name);const now=Date.now();
+ const withFlags=visible.map(task=>({...task,isNew:isTaskNewFor(task,now,flagContext.viewedAt.get(task.id)??null,flagContext.assignedAt.get(task.id)??null)}));
+ return Response.json({tasks:withFlags,dimensions:{...(actor.role==="site_admin"?await dimensions():scoped),account,opportunity},registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
 export async function POST(request:Request){
  const invalid=requireSameOrigin(request);if(invalid)return invalid;
  const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});
@@ -84,7 +90,7 @@ export async function PATCH(request:Request){const invalid=requireSameOrigin(req
  const rebuilt=values(body);
  const updatesGrew=rebuilt.updates.length>existing.updates.length;
  const finalStatus=updatesGrew?autoAdvanceStatus(existing.status,true,null):rebuilt.status;
- const next={...rebuilt,status:finalStatus,id:body.id};if(!canWriteTask(existing,actor)||!canWriteTask(next,actor))return Response.json({error:"You cannot change this task"},{status:403});const closedAt=finalStatus!=="Closed"?null:existing.status==="Closed"?existing.closedAt:new Date();const[task]=await getDb().update(tasks).set({...rebuilt,status:finalStatus,closedAt}).where(eq(tasks.id,body.id)).returning();await register(task);await recordActivity(task.id,actor.name,describeChanges(existing,task));return Response.json({task,dimensions:await dimensions()})}
+ const next={...rebuilt,status:finalStatus,id:body.id};if(!canWriteTask(existing,actor)||!canWriteTask(next,actor))return Response.json({error:"You cannot change this task"},{status:403});const closedAt=finalStatus!=="Closed"?null:existing.status==="Closed"?existing.closedAt:new Date();const[task]=await getDb().update(tasks).set({...rebuilt,status:finalStatus,closedAt}).where(eq(tasks.id,body.id)).returning();await register(task);await recordActivity(task.id,actor.name,describeChanges(existing,task));await noteAssignments(task.id,newlyAssignedPeople(existing,task));return Response.json({task,dimensions:await dimensions()})}
 // Site Admin only, deliberately stricter than canWriteTask (which an area
 // admin also passes) — closing a bad task is reversible and available to
 // whoever could already edit it, deleting it outright isn't, so it stays

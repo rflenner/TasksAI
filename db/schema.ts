@@ -183,6 +183,28 @@ export const taskActivity = pgTable("task_activity", {
 export const taskViews = pgTable("task_views", {
   taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }), actorName: text("actor_name").notNull(), viewedAt: timestamp("viewed_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [uniqueIndex("task_views_task_actor_unique").on(table.taskId, table.actorName)]);
+// When a person most recently became newly involved with an EXISTING
+// task (owner/collaborator/recipient added where they weren't before) —
+// requested 2026-09-09 for the "flag newly assigned tasks" feature, the
+// deferred piece from the original briefing request. Deliberately NOT
+// written on task *creation* — a brand-new task's own owner/collaborators/
+// recipients are already exactly as fresh as the task itself, so the
+// "created" flag reason (tasks.created + taskViews, see app/lib/task-
+// flags.ts) covers that case for free, no row needed here. Only the two
+// interactive reassignment paths write here (PATCH /api/tasks, voice
+// "act" set_owner/add_collaborator/add_recipient) — Sales AI sync only
+// ever creates new rows for an unseen externalId, never updates an
+// existing task's people (see sales-ai-sync.ts), and the invitations/
+// accept.ts name-migration (a placeholder name -> the same person's real
+// account name) is deliberately excluded too, since that's the same
+// person, not a new one. One row per (task, person), upserted — re-
+// assigning the same person again just refreshes assignedAt, same "last
+// state wins" convention as taskViews itself.
+export const taskAssignments = pgTable("task_assignments", {
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  personName: text("person_name").notNull(),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex("task_assignments_task_person_unique").on(table.taskId, table.personName)]);
 // One row per registered WebAuthn credential (Face ID, Touch ID, Windows
 // Hello, a hardware key) — a user can have several, one per device. counter
 // is the authenticator's signature counter, used to detect a cloned

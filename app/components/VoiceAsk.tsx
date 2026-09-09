@@ -25,6 +25,10 @@ export type VoiceFilters = {
   account: string | null; opportunity: string | null; source: string | null;
   priority: "Low" | "Medium" | "High" | null; dueWithin: "week" | "overdue" | null;
   createdWithin: "today" | null; closedWithin: "today" | null; status: string | null;
+  // Both were already sent by the server and already read by
+  // TaskApp.js's applyVoiceFilters — just missing from this type
+  // annotation until now.
+  textContains: string | null; isNew: boolean;
 };
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
@@ -61,7 +65,7 @@ function describeMicError(err: unknown) {
 }
 
 
-export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, onShowTasks, currentTaskId, currentTaskLabel }: {
+export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, onOpenTask, onTaskCreated, onTaskDeleted, onShowTasks, currentTaskId, currentTaskLabel, drawerOpen }: {
   onApplyFilters: (filters: VoiceFilters) => void;
   onNavigate: (target: VoiceNavigateTarget) => void;
   // "act" mode's write landed on currentTaskId — merge it in, no refetch needed.
@@ -91,6 +95,18 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // it wasn't obvious which task voice commands would act on. null
   // renders no banner at all, same as no task being in focus.
   currentTaskLabel: string | null;
+  // Whether the task drawer (or new-task/paste-minutes overlay) is
+  // currently open — requested 2026-09-09: confirmed live, this panel's
+  // own fixed left-6/left-[270px] positioning could sit underneath the
+  // right-docked drawer at plenty of realistic desktop widths, not just
+  // the "narrow-but-still-desktop" edge case the original positioning
+  // comment already knew about. When true, the panel docks from the
+  // RIGHT instead, flush against the drawer's own left edge (see
+  // --drawer-w in app/globals.css, the single shared source for that
+  // width) — genuinely can't overlap a panel it's positioned relative
+  // to, rather than two independently-guessed offsets from opposite
+  // sides of the screen.
+  drawerOpen: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
@@ -520,18 +536,23 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
           role="dialog" aria-label="Ask Task AI"
           // Confirmed live 2026-09-08: docked at bottom-right, this sat
           // directly on top of a task's drawer — which also docks
-          // right (see .overlay/.drawer in app/globals.css) — so
-          // having both open at once (the exact point of "next"/"walk"
-          // voice navigation) meant one covered the other. Moved to
-          // the left: below ~620px the sidebar collapses off-canvas
-          // (matching app/globals.css's own mobile breakpoint) so
-          // left-6 sits where the sidebar would be; above it, left-
-          // [270px] clears the sidebar's own 246px width instead. Not
-          // airtight at every in-between width — the drawer can itself
-          // reach as far left as roughly the sidebar's edge on a
-          // narrow-but-still-desktop window — but resolves the
-          // overlap for the realistic common case.
-          className="fixed bottom-6 left-6 min-[621px]:left-[270px] z-50 w-[calc(100%-3rem)] max-w-sm bg-white rounded-2xl shadow-[0_8px_30px_rgba(16,47,89,0.2)] border border-[#e3e8ee] flex flex-col p-5 max-h-[70vh]"
+          // right (see .overlay/.drawer in app/globals.css). First fix
+          // was to dock left instead (below ~620px the sidebar collapses
+          // off-canvas, matching app/globals.css's own mobile breakpoint,
+          // so left-6 sits where the sidebar would be; above it, left-
+          // [270px] clears the sidebar's own 246px width) — but that was
+          // two independently-guessed offsets from opposite edges of the
+          // screen, and confirmed live again 2026-09-09 that plenty of
+          // realistic desktop widths still overlapped, not just the
+          // narrow edge case the first fix called out. Real fix: while a
+          // drawer is open, stop guessing a left offset entirely and
+          // dock from the RIGHT, flush against the drawer's own left
+          // edge (--drawer-w, the same custom property the drawer's own
+          // width comes from in app/globals.css — one shared number, so
+          // the two can't drift apart into an overlap again). No drawer
+          // open still uses the original left-docked position — no
+          // reason to change what was never the problem.
+          className={`fixed bottom-6 z-50 w-[calc(100%-3rem)] max-w-sm bg-white rounded-2xl shadow-[0_8px_30px_rgba(16,47,89,0.2)] border border-[#e3e8ee] flex flex-col p-5 max-h-[70vh] ${drawerOpen ? "left-6 min-[621px]:left-auto min-[621px]:right-[calc(var(--drawer-w)_+_1.5rem)]" : "left-6 min-[621px]:left-[270px]"}`}
           onKeyDown={e => { if (e.key === "Escape") closePanel(); }}
         >
           <div className="flex items-center justify-between mb-3">
