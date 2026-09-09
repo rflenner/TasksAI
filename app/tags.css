@@ -1,10 +1,15 @@
-.i-folder:before{content:"▰";font-size:18px;position:absolute;top:-1px}
-.i-repeat:before{content:"↻";font-size:23px;position:absolute;top:-5px}
+/* A second stylesheet alongside app/globals.css (see the import in
+   app/layout.tsx) — easy to miss, confirmed live 2026-09-09: the
+   .i-folder/.i-repeat icon glyphs used to live here too, untouched by
+   globals.css's mask-image icon restyle, so both an old text glyph and
+   a new SVG mask rendered on top of each other until this was found and
+   removed. The .i-* icon SET itself (mask-image + currentColor, one
+   rule per name) lives entirely in globals.css now — this file only
+   ever sizes/positions icons via plain width/height on .i, never
+   redefines what one looks like. */
 .tags,.drawer-tags{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
 .tags span,.drawer-tags span{display:inline-flex;align-items:center;gap:5px;background:#eef4fc;color:var(--navy);border:1px solid #dce7f5;border-radius:14px;padding:5px 9px;font-size:10px;font-weight:700}
 .tags .i,.drawer-tags .i{width:13px;height:13px}
-.tags .i-folder:before,.drawer-tags .i-folder:before{font-size:11px}
-.tags .i-repeat:before,.drawer-tags .i-repeat:before{font-size:15px;top:-3px}
 .drawer-tags{margin:-14px 0 25px}
 .dimension-bar{min-height:58px;background:#fff;border-bottom:1px solid var(--line);padding:10px 38px;display:flex;align-items:center;gap:8px;overflow-x:auto}
 .dimension-bar>b{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#8a919c;margin-right:5px;white-space:nowrap}
@@ -26,7 +31,11 @@
 .side nav .admin-nav-group .admin-nav .tri{color:#9aa2ad;font-size:11px}
 @media(max-width:900px){.nav-children{display:none}}
 .edit-section{display:grid;gap:16px;margin:24px 0}
-.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+/* Three per row (requested 2026-09-09): Owner/Coworkers/Recipients —
+   the "who" row — on one line, Project/Topic/Recurring meeting — the
+   "what/where" row — on the next, in that DOM order below so the grid's
+   own row-major flow lines them up without extra grid-column rules. */
+.edit-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px}
 .editable-field{display:flex;flex-direction:column;gap:6px}
 .editable-field>span{color:#7b8490;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.55px}
 .editable-field input,.editable-field textarea,.editable-field select{width:100%;border:1px solid #d9dee5;border-radius:8px;padding:10px 11px;color:var(--ink);background:#fff;outline:none}
@@ -37,5 +46,3 @@
 @media(max-width:620px){.edit-grid{grid-template-columns:1fr}}
 .meta .tag-mini{background:#f1f5fa;border:1px solid #e1e8f1;color:#536b89;border-radius:10px;padding:2px 7px;font-size:10px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta .tag-mini .i{width:11px;height:11px}
-.meta .tag-mini .i-folder:before{font-size:9px;top:0}
-.meta .tag-mini .i-repeat:before{font-size:13px;top:-3px}
