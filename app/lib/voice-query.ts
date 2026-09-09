@@ -37,6 +37,14 @@ export type Filters = {
   // narrows the screen AND seeds the working list "act" can bulk-apply
   // to (see ActionStep/target below) — the missing link that turn needed.
   textContains: string | null;
+  // "What's new" / "show me new tasks" — requested 2026-09-09 alongside
+  // the on-screen NEW badge (see app/lib/task-flags.ts): the same
+  // per-actor flag, just usable as a filter too. Membership is supplied
+  // by the caller (isNewTaskIds, computed once per request from the
+  // DB-backed view/assignment context) rather than recomputed here —
+  // this file stays DB-free, same reason StoredTask itself never carries
+  // per-actor fields.
+  isNew: boolean;
 };
 
 // Same "how long ago" reasoning as the Users & access page's own
@@ -108,8 +116,9 @@ export function resolveNext(currentTaskId: number | null, list: number[], visibl
 
 // Shared by "filter" and "walk" — the exact same matching rules; only
 // what happens with the result differs.
-export function computeMatches(f: Filters, visible: StoredTask[], actorName: string, today: string, weekAhead: string): StoredTask[] {
+export function computeMatches(f: Filters, visible: StoredTask[], actorName: string, today: string, weekAhead: string, isNewTaskIds: ReadonlySet<number> = new Set()): StoredTask[] {
   return visible.filter(t => {
+    if (f.isNew && !isNewTaskIds.has(t.id)) return false;
     // Owner only — matches the My tasks page's own default. Confirmed
     // live 2026-09-08: "my overdue tasks" said 41 while "overdue tasks
     // where I am the owner" said 3 — the old, broader owner-OR-
@@ -158,6 +167,7 @@ export function describeFilterPhrase(f: Filters): string {
   if (f.priority) parts.push(`marked ${f.priority} priority`);
   if (f.status) parts.push(`with status ${f.status}`);
   if (f.textContains) parts.push(`with "${f.textContains}" in the subject or description`);
+  if (f.isNew) parts.push("flagged new");
   if (f.dueWithin === "week") parts.push("due this week");
   if (f.dueWithin === "overdue") parts.push("that are overdue");
   if (f.createdWithin === "today") parts.push("created today");
