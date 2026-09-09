@@ -512,17 +512,43 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
 
   return (
     <>
-      {/* relative z-30: confirmed live 2026-09-07 — a task's drawer
-          renders a full-viewport dimmed backdrop at z-index:20 (see
-          .overlay in app/globals.css) with no z-index of its own on the
-          header underneath, so without this the backdrop paints over
-          this button and a real click never reaches it, even though it
-          looks clickable. z-30 lifts it above that backdrop (still well
-          under the panel's own z-50 below) without moving it out of the
-          header's normal layout flow — the whole point of "this task"
-          context is being able to open the assistant while a task is
-          already open. */}
-      <button type="button" onClick={() => setOpen(o => !o)} className="relative z-30 h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]">
+      {/* Two different problems, two different fixes, both confirmed live:
+          1) (2026-09-07) The drawer's dimmed backdrop (.overlay) used to
+             share ONE z-index with its own opaque content — without
+             lifting this button above that shared layer, the dim
+             painted over it and a real click never landed, even though
+             it looked clickable.
+          2) (2026-09-09, from a real screenshot) That same lift also
+             painted this button OVER the drawer's actual content
+             wherever the two happened to share screen space — which,
+             once the drawer got wide enough (see --drawer-w in app/
+             globals.css), turned out to be almost always on a normal
+             desktop width, not some narrow edge case. Splitting the
+             z-index (.overlay's dim stays low, .drawer's own content
+             got z-40, see app/globals.css) fixed the visual overlap —
+             but then correctly and totally hid this button behind the
+             now-opaque drawer instead, right back to problem 1: while a
+             drawer's open, the button that's supposed to let you open
+             the assistant on top of it became unreachable again.
+          Real fix: while a drawer's open AND the panel itself is
+          closed, this button leaves the header's normal layout flow
+          entirely and floats in the same fixed, drawer-aware safe spot
+          the open panel itself uses (right-anchored against
+          --drawer-w) — nowhere left for it to collide with the
+          drawer's content, because it's no longer sharing that
+          horizontal space at all. Once the panel opens, this button
+          goes back to its ordinary (harmless, hidden-behind-the-drawer)
+          header position — the panel's own × already covers closing it,
+          and the panel itself takes over that same safe spot the button
+          just vacated, so nothing needs both at once. */}
+      <button
+        type="button" onClick={() => setOpen(o => !o)}
+        className={
+          drawerOpen && !open
+            ? "fixed z-30 bottom-6 left-6 min-[621px]:left-auto min-[621px]:right-[calc(var(--drawer-w)_+_1.5rem)] h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3] shadow-[0_8px_30px_rgba(16,47,89,0.2)]"
+            : "relative z-30 h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]"
+        }
+      >
         🗣️ Ask Task AI
       </button>
       {open && (
