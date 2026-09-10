@@ -1,5 +1,5 @@
 @import "tailwindcss";
-:root{--navy:#173f76;--dark:#102f59;--orange:#ffa614;--ink:#202735;--muted:#697181;--line:#e7ebef;--bg:#f5f7fa;
+:root{--navy:#173f76;--dark:#102f59;--orange:#ffa614;--ink:#202735;--muted:#697181;--line:#e7ebef;--bg:#f5f7fa;--green:#25784b;
 /* Task drawer width — requested 2026-09-09, ~16% wider than the old
    560px so more fits without truncation. Shared with VoiceAsk.tsx's own
    panel positioning (it reads this to sit just left of the drawer,
@@ -11,10 +11,20 @@
    card-head so it reads before the subject, same order a person would
    scan a list left to right. */
 .badge-new{flex:none;background:var(--navy);color:white;font-size:10px;font-weight:800;letter-spacing:.4px;border-radius:999px;padding:4px 10px;line-height:1.4}
-/* Bottom-right of the card's own meta row (requested 2026-09-09) — the
-   row already wraps with a gap, so margin-left:auto is enough to push
-   just this one span to the far right without a separate layout. */
-.last-updated{margin-left:auto}/* No z-index here, deliberately — confirmed live 2026-09-09, this was
+/* "New status update" badge (requested 2026-09-10) — same pill shape as
+   .badge-new so the two read as one family of "needs your attention"
+   markers, in the theme's own green (var(--green), the same tone the
+   Closed status uses) rather than navy so they're still tellable apart
+   at a glance. Per-viewer, clears when you open the task — see
+   hasUnseenUpdateFor in app/lib/task-flags.ts. */
+.badge-update{flex:none;background:var(--green);color:white;font-size:10px;font-weight:800;letter-spacing:.4px;border-radius:999px;padding:4px 10px;line-height:1.4}
+/* Bottom-right of the card's own meta row (requested 2026-09-09,
+   extended 2026-09-10 to a two-line block: the date, then who posted
+   the latest update under it). The meta row already wraps with a gap,
+   so margin-left:auto pushes this to the far right; the column layout
+   stacks "Updated 7 Sept" over "by Shankar Morwal", both right-aligned. */
+.last-updated{margin-left:auto;flex-direction:column;align-items:flex-end;gap:1px;text-align:right}
+.last-updated small{color:#9aa1ab;font-size:10px;font-weight:400}/* No z-index here, deliberately — confirmed live 2026-09-09, this was
    the real cause of "Ask Task AI overlapping the task details": the
    drawer's dimmed backdrop and its own opaque white content used to
    share this ONE element's z-index:20, and the "Ask Task AI" toggle

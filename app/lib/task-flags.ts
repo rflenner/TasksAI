@@ -47,6 +47,37 @@ export function isTaskNewFor(
   return false;
 }
 
+// A status update was posted on this task after the last time THIS
+// person opened it (or they've never opened it), and they aren't the
+// one who posted it — requested 2026-09-10. The activity counterpart
+// to isTaskNewFor above: same per-viewer, clears-on-open shape (see
+// openTask in app/TaskApp.js and the /api/tasks/view call it makes),
+// different trigger. Only the latest update matters — seeing that one
+// means you're caught up, and an older unseen update behind a seen one
+// is not a real "you missed something" case. Parses the update's `at`
+// defensively: the oldest updates stored a non-ISO string ("18 Aug,
+// 09:42"), and an unparseable timestamp is treated as "can't tell,
+// don't flag" rather than a guess.
+export function hasUnseenUpdateFor(
+  task: { updates: Array<{ at: string; by?: string }> },
+  actorName: string,
+  viewedAt: number | null,
+): boolean {
+  if (!task.updates.length) return false;
+  const latest = task.updates[task.updates.length - 1];
+  if (latest.by && latest.by === actorName) return false;
+  // Only trust a real ISO timestamp (the shape every genuine update has
+  // stored since `new Date().toISOString()` — always with a "T"). The
+  // built-in bootstrap fixture's legacy "18 Aug, 09:42" strings DO
+  // parse, just into a plausible-looking wrong value (current year,
+  // local tz) — worse than not flagging at all, so anything that isn't
+  // clearly ISO is left as "can't tell."
+  if (typeof latest.at !== "string" || !latest.at.includes("T")) return false;
+  const at = new Date(latest.at).getTime();
+  if (Number.isNaN(at)) return false;
+  return viewedAt === null || at > viewedAt;
+}
+
 // Which names are newly present in owner/collaborators/recipients on an
 // EXISTING task compared to before this edit — the trigger for writing a
 // taskAssignments row. Owner is a single field (added only when it

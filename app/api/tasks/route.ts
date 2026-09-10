@@ -5,7 +5,7 @@ import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
-import { isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
+import { hasUnseenUpdateFor, isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 type StoredTask=typeof tasks.$inferSelect; type Input=Partial<StoredTask>&{recurring_meeting?:string}; type DimensionType="project"|"meeting"|"topic"|"person";
 const cleanList=(value:unknown)=>Array.isArray(value)?value.map(String).map(x=>x.trim()).filter(Boolean):[];
 // externalSource/externalId only ever come through when a caller explicitly
@@ -44,7 +44,7 @@ export async function GET(){const actor=await currentActor();if(!actor)return Re
  // for one person and not another (see app/lib/task-flags.ts), so this
  // has to be computed per request, never cached on the row itself.
  const flagContext=await loadNewFlagContext(actor.name);const now=Date.now();
- const withFlags=visible.map(task=>({...task,isNew:isTaskNewFor(task,now,flagContext.viewedAt.get(task.id)??null,flagContext.assignedAt.get(task.id)??null)}));
+ const withFlags=visible.map(task=>({...task,isNew:isTaskNewFor(task,now,flagContext.viewedAt.get(task.id)??null,flagContext.assignedAt.get(task.id)??null),hasUnseenUpdate:hasUnseenUpdateFor(task,actor.name,flagContext.viewedAt.get(task.id)??null)}));
  return Response.json({tasks:withFlags,dimensions:{...(actor.role==="site_admin"?await dimensions():scoped),account,opportunity},registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
 export async function POST(request:Request){
  const invalid=requireSameOrigin(request);if(invalid)return invalid;
