@@ -39,16 +39,30 @@ const schema = {
 export async function callTaskExtractionAI(text: string, opts: { extraInstruction?: string } = {}): Promise<ExtractionResult> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return { ok: false, error: "AI is not configured", code: "ai_unavailable", status: 503 };
+  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+  // Same fix as /api/voice-query (see that route for the fuller writeup) —
+  // confirmed live 2026-09-09: a messy/multilingual/numbered-list paste
+  // (e.g. mixed German/English with inline "- Owner X" annotations) took
+  // 14.5–20+ seconds with GPT-5's default reasoning effort, long enough
+  // that "did it even work?" is a completely reasonable thing to wonder
+  // mid-wait. Deliberately "low", not "minimal" like voice-query's simple
+  // classification — this task has to actually re-scan the whole source
+  // for completeness and hold several extracted items in mind at once,
+  // real work "minimal" risks shortcutting; "low" still cuts real latency
+  // without visibly hurting extraction quality on the same case (checked
+  // side by side against the pre-change baseline before shipping this).
+  const isGpt5 = model.startsWith("gpt-5");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5-mini",
+      model,
       input: [{ role: "system", content: `Extract every concrete commitment, follow-up, decision requiring work, unanswered request, and implied action from the supplied minutes.
 The source may be incomplete, badly formatted, conversational, multilingual, table-like, or use headings/initials without consistent punctuation. Treat fragments under a heading as part of that section. Preserve one task per distinct action and do not merge unrelated commitments.
 Extraction completeness matters: before returning, re-scan the entire source for missed actions. Never discard an action because metadata is absent. Use null or [] for unknown fields and never invent people, dates, projects, meetings, or recipients. Follow the JSON schema exactly.
 Every task must be grounded in something actually said in the source — restate or closely paraphrase it, never invent a plausible-sounding generic agenda item ("Review previous action items", "Any other business", "Discuss blockers", "Project updates", and the like) that nobody in the source actually said. If the source is short, unclear, or contains no concrete commitments, follow-ups, decisions, or requests at all, return an empty tasks array — never fill it with a typical meeting-agenda checklist just to have something to return.${opts.extraInstruction || ""}` }, { role: "user", content: text }],
-      text: { format: { type: "json_schema", name: "meeting_actions", strict: true, schema } },
+      ...(isGpt5 ? { reasoning: { effort: "low" } } : {}),
+      text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "meeting_actions", strict: true, schema } },
     }),
   });
   if (!response.ok) return { ok: false, error: "AI extraction failed", code: "ai_failed", status: 502 };
