@@ -3,6 +3,7 @@ import { getDb } from "../../../../db";
 import { contacts, dimensionValues, tasks, users } from "../../../../db/schema";
 import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../../lib/dictate-intent";
 import { addBusinessDays, bareEmail, extractEmailNameHints, resolveViaEmailHint, stripHtml } from "../../../lib/inbound-email";
+import { getKnownPersonNames } from "../../../lib/known-people";
 import { canCreateTask, type Actor } from "../../../lib/permissions";
 import { resolveTaskNames } from "../../../lib/name-resolution";
 import { isFreshTimestamp, verifyResendSignature } from "../../../lib/resend-webhook";
@@ -104,14 +105,13 @@ Today's date, for resolving any relative time expression in this email, is ${ref
   // back as several tasks gets folded into one here, deterministically.
   const extractedTasks = extraction.tasks.length > 1 && !detectsMultiTaskTrigger(combined) ? [collapseToSingleTask(extraction.tasks)] : extraction.tasks;
 
-  // Cross-checked against every registered user *and* every known Sales
-  // AI contact — a name mentioned in a forwarded email is just as likely
-  // to be an existing contact as a Task AI user, and matching either
+  // Cross-checked against every registered user, every known Sales AI
+  // contact, and every already-named person — same shared pool every
+  // other extraction entry point now checks (see app/lib/known-people.ts)
+  // — a name mentioned in a forwarded email is just as likely to be an
+  // existing contact as a Task AI user, and matching any of the three
   // avoids minting a stray near-duplicate person.
-  const registeredNames = [...new Set([
-    ...(await getDb().select({ name: users.name }).from(users)).map(r => r.name),
-    ...(await getDb().select({ name: contacts.name }).from(contacts)).map(r => r.name),
-  ])];
+  const registeredNames = await getKnownPersonNames();
   // Header-name -> canonical name, built from every "Name <email>" pair
   // found anywhere in the email text (typically the quoted From/To/Cc
   // lines a forward carries) cross-checked by address against users and

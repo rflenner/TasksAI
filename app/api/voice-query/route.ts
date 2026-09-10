@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { dimensionValues, sessions, tasks, users } from "../../../db/schema";
 import { detectsMultiTaskTrigger } from "../../lib/dictate-intent";
+import { getKnownPersonNames } from "../../lib/known-people";
 import { resolveTaskNames } from "../../lib/name-resolution";
 import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
@@ -380,7 +381,7 @@ This is a spoken request to create ONE new task right now, not a written meeting
     if (items.length > 1 && !detectsMultiTaskTrigger(transcript)) items = [items[0]];
     if (!items.length) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I didn't catch enough to create a task from that." });
 
-    const registeredNames = (await getDb().select({ name: users.name }).from(users)).map(row => row.name);
+    const registeredNames = await getKnownPersonNames();
     const resolved = resolveTaskNames(items[0], registeredNames, actor.name);
     // Same "no owner said -> the person speaking" default as Dictate
     // Task — a spoken creation request is almost always either a

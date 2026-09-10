@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { pastedMinutes, users } from "../../../db/schema";
+import { pastedMinutes } from "../../../db/schema";
 import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../lib/dictate-intent";
+import { getKnownPersonNames } from "../../lib/known-people";
 import { resolveTaskNames } from "../../lib/name-resolution";
 import { hashPastedMinutes } from "../../lib/pasted-minutes";
 import { requireSameOrigin } from "../../lib/request";
@@ -54,7 +55,7 @@ This is live spoken dictation, not a written meeting-notes document. By default,
     // "me"/"myself"/"I" (what dictating "assign this to me" actually
     // extracts as) to the person dictating — confirmed live 2026-09-03,
     // a self-assigned task landed with owner "me" instead of their name.
-    const registeredNames = (await getDb().select({ name: users.name }).from(users)).map(row => row.name);
+    const registeredNames = await getKnownPersonNames();
     const selfName = source === "dictate" ? actor.name : undefined;
     parsed.tasks = parsed.tasks.map(task => {
       const resolved = resolveTaskNames(task, registeredNames, selfName);
