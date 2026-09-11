@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isTaskNewFor, newlyAssignedPeople, NEW_FLAG_WINDOW_MS, parseCreatedAt } from "../app/lib/task-flags";
+import { hasUnseenUpdateFor, isTaskNewFor, newlyAssignedPeople, NEW_FLAG_WINDOW_MS, parseCreatedAt } from "../app/lib/task-flags";
 
 function task(overrides: Partial<{ status: string; updates: unknown[]; created: string }> = {}) {
   return { status: "Open", updates: [] as unknown[], created: "2026-09-09", ...overrides };
@@ -55,6 +55,38 @@ test("isTaskNewFor: created flag and assigned flag are independent — either on
   // window, so this should read as not-new (guards against the
   // assignment check accidentally supplying a false positive).
   assert.equal(isTaskNewFor(task({ created: "2026-01-01" }), NOW, null, null), false);
+});
+
+const upd = (at: string, by?: string) => ({ at, by, text: "note" });
+
+test("hasUnseenUpdateFor: an update posted, task never opened by this person -> unseen", () => {
+  assert.equal(hasUnseenUpdateFor({ updates: [upd("2026-09-09T10:00:00Z")] }, "Ada", null), true);
+});
+test("hasUnseenUpdateFor: no updates at all -> nothing to be unseen", () => {
+  assert.equal(hasUnseenUpdateFor({ updates: [] }, "Ada", null), false);
+});
+test("hasUnseenUpdateFor: latest update predates this person's last view -> seen", () => {
+  const viewedAt = new Date("2026-09-09T12:00:00Z").getTime();
+  assert.equal(hasUnseenUpdateFor({ updates: [upd("2026-09-09T10:00:00Z")] }, "Ada", viewedAt), false);
+});
+test("hasUnseenUpdateFor: latest update posted after this person's last view -> unseen", () => {
+  const viewedAt = new Date("2026-09-09T09:00:00Z").getTime();
+  assert.equal(hasUnseenUpdateFor({ updates: [upd("2026-09-09T10:00:00Z")] }, "Ada", viewedAt), true);
+});
+test("hasUnseenUpdateFor: only the LATEST update matters — an old unseen one behind a seen one doesn't count", () => {
+  const viewedAt = new Date("2026-09-09T11:00:00Z").getTime();
+  const updates = [upd("2026-09-08T10:00:00Z"), upd("2026-09-09T10:00:00Z")]; // both before the view
+  assert.equal(hasUnseenUpdateFor({ updates }, "Ada", viewedAt), false);
+});
+test("hasUnseenUpdateFor: the person's OWN latest update is never flagged back at them", () => {
+  assert.equal(hasUnseenUpdateFor({ updates: [upd("2026-09-09T10:00:00Z", "Ada")] }, "Ada", null), false);
+});
+test("hasUnseenUpdateFor: someone else's latest update still flags even if an earlier one was mine", () => {
+  const updates = [upd("2026-09-09T09:00:00Z", "Ada"), upd("2026-09-09T10:00:00Z", "Grace")];
+  assert.equal(hasUnseenUpdateFor({ updates }, "Ada", null), true);
+});
+test("hasUnseenUpdateFor: an unparseable legacy timestamp ('18 Aug, 09:42') is treated as can't-tell, not flagged", () => {
+  assert.equal(hasUnseenUpdateFor({ updates: [upd("18 Aug, 09:42")] }, "Ada", null), false);
 });
 
 const before = { owner: "Ada Lovelace", collaborators: ["Grace Hopper"], recipients: [] as string[] };
