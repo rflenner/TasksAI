@@ -28,7 +28,7 @@ export type VoiceFilters = {
   // Both were already sent by the server and already read by
   // TaskApp.js's applyVoiceFilters — just missing from this type
   // annotation until now.
-  textContains: string | null; isNew: boolean;
+  textContains: string | null; isNew: boolean; hasUnseenUpdate: boolean;
 };
 export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
