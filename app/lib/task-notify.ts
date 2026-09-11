@@ -15,7 +15,7 @@
 import { inArray } from "drizzle-orm";
 import { getDb } from "../../db";
 import { users } from "../../db/schema";
-import { buildTaskCardBlocks, lookupSlackUserByEmail, openDirectMessage, postMessage } from "./slack";
+import { buildDigestBlocks, buildTaskCardBlocks, type DigestLine, lookupSlackUserByEmail, openDirectMessage, postMessage } from "./slack";
 
 type NotifiableTask = { id: number; subject: string; description: string; status: string; due: string | null; owner: string; collaborators: string[]; recipients: string[] };
 
@@ -60,5 +60,28 @@ export async function notifySlackOnTaskChange(task: NotifiableTask, actorName: s
     }));
   } catch (error) {
     console.error("Slack notify failed:", error instanceof Error ? error.message : error);
+  }
+}
+
+// The Slack counterpart to the 3 email-cron digests — same idea as
+// notifySlackOnTaskChange (best-effort, one DM, never throws to the
+// caller) but for a whole digest's worth of lines at once, grouped into
+// sections, rather than one task's change. Returns {sent, reason} the
+// same shape sendWithResend already does, so a cron script can log both
+// channels' outcomes the same way.
+export async function sendSlackDigest(user: { name: string; email: string }, intro: string, sections: Array<{ heading?: string; lines: DigestLine[] }>): Promise<{ sent: boolean; reason?: string }> {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) return { sent: false, reason: "Slack is not configured" };
+  try {
+    const slackUserId = await lookupSlackUserByEmail(token, user.email);
+    if (!slackUserId) return { sent: false, reason: "no Slack account at this address" };
+    const channel = await openDirectMessage(token, slackUserId);
+    if (!channel) return { sent: false, reason: "could not open a Slack DM" };
+    await postMessage(token, { channel, text: intro.replace(/[*_~`]/g, ""), blocks: buildDigestBlocks(intro, sections) });
+    return { sent: true };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`Slack digest failed for ${user.email}:`, reason);
+    return { sent: false, reason };
   }
 }

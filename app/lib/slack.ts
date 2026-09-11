@@ -93,6 +93,41 @@ export function buildTaskCardBlocks(task: { id: number; subject: string; descrip
   ];
 }
 
+// One digest line — the same shape app/lib/email.ts's PendingTaskLine
+// already carries (updateUrl included, when attachUpdateLinks has run),
+// so a cron script that already built its email lines can hand them
+// straight to buildDigestBlocks with no reshaping.
+export type DigestLine = { taskId?: number; subject: string; due?: string; overdue?: boolean; status?: "Open" | "In progress" | "Closed"; closedAt?: string; updateUrl?: string };
+
+function digestLineText(line: DigestLine): string {
+  const label = line.updateUrl ? `<${line.updateUrl}|#${line.taskId ?? "?"} ${line.subject}>` : `#${line.taskId ?? "?"} ${line.subject}`;
+  const detail = line.status === "Closed" ? `Closed${line.closedAt ? ` · ${line.closedAt}` : ""}` : line.overdue ? "Overdue" : line.due ? `Due ${line.due}` : "No due date";
+  return `• ${label} — ${detail}`;
+}
+
+// The Slack counterpart to the 3 email-cron digests (new assignment,
+// overdue, weekly) — a bulleted mrkdwn list per section (mirroring the
+// email template's own grouping: My tasks / Delegated / Recently closed,
+// or a single ungrouped section for the simpler digests), each line
+// linking to the task's own passwordless update link — the exact same
+// one the email already uses — rather than a full card per task: a
+// weekly digest can be a dozen-plus tasks, well past what stacking
+// buildTaskCardBlocks per task would fit in one message.
+export function buildDigestBlocks(intro: string, sections: Array<{ heading?: string; lines: DigestLine[] }>): unknown[] {
+  const blocks: unknown[] = [{ type: "section", text: { type: "mrkdwn", text: intro } }];
+  for (const section of sections) {
+    if (!section.lines.length) continue;
+    if (section.heading) blocks.push({ type: "section", text: { type: "mrkdwn", text: `*${section.heading}*` } });
+    // Slack's mrkdwn section text caps at 3000 characters — chunked
+    // generously short of that rather than counted exactly, since task
+    // subjects vary in length.
+    for (let i = 0; i < section.lines.length; i += 10) {
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: section.lines.slice(i, i + 10).map(digestLineText).join("\n") } });
+    }
+  }
+  return blocks;
+}
+
 // The "Update" button's modal — a single text field, private_metadata
 // carries what the view_submission handler needs back (the task id and
 // this message's own response_url, so submitting it can refresh the
