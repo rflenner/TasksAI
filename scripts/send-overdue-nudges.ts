@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { renderOverdueNudgeEmail, sendWithResend } from "../app/lib/email";
+import { resolvePrefs, wantsEmail, wantsSlack } from "../app/lib/notification-prefs";
 import { overdueOwnedTasks } from "../app/lib/pending-tasks";
 import { sendSlackDigest } from "../app/lib/task-notify";
 import { attachUpdateLinks } from "../app/lib/task-update-tokens";
@@ -44,17 +45,22 @@ for (const user of active) {
   try {
     let overdueTasks = await overdueOwnedTasks(user);
     if (!overdueTasks.length) { skipped++; continue; }
+    const channel = resolvePrefs(user.notificationPrefs).overdue;
+    if (channel === "off") { skipped++; console.log(`Skipped ${user.email}: notifications off for this digest`); continue; }
     // No sign-in required to use these — see app/update-task/page.tsx.
     overdueTasks = await attachUpdateLinks(overdueTasks, appUrl, user.name, user.email);
-    const message = renderOverdueNudgeEmail({ firstName: user.name, appUrl, overdueTasks });
-    const idempotencyKey = testEmail ? `overdue-${user.id}-test-${Date.now()}` : `overdue-${user.id}-${dayKey}`;
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
-    if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${overdueTasks.length} overdue and owned`); }
-    else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
-    // Both channels for now — see send-new-task-assignments.ts for why.
-    const slackIntro = `⚠️ ${overdueTasks.length} overdue task${overdueTasks.length === 1 ? "" : "s"} — action needed.`;
-    const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: overdueTasks }]);
-    if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    if (wantsEmail(channel)) {
+      const message = renderOverdueNudgeEmail({ firstName: user.name, appUrl, overdueTasks });
+      const idempotencyKey = testEmail ? `overdue-${user.id}-test-${Date.now()}` : `overdue-${user.id}-${dayKey}`;
+      const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
+      if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${overdueTasks.length} overdue and owned`); }
+      else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    }
+    if (wantsSlack(channel)) {
+      const slackIntro = `⚠️ ${overdueTasks.length} overdue task${overdueTasks.length === 1 ? "" : "s"} — action needed.`;
+      const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: overdueTasks }]);
+      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    }
   } catch (error) {
     failed++;
     console.error(`Failed to notify ${user.email}:`, error instanceof Error ? error.message : error);

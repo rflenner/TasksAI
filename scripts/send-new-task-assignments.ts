@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { renderNewTasksEmail, sendWithResend } from "../app/lib/email";
+import { resolvePrefs, wantsEmail, wantsSlack } from "../app/lib/notification-prefs";
 import { newlyAssignedTasks } from "../app/lib/pending-tasks";
 import { sendSlackDigest } from "../app/lib/task-notify";
 import { attachUpdateLinks } from "../app/lib/task-update-tokens";
@@ -41,20 +42,24 @@ for (const user of active) {
   try {
     let newTasks = await newlyAssignedTasks(user, 26);
     if (!newTasks.length) { skipped++; continue; }
+    const channel = resolvePrefs(user.notificationPrefs).newAssignment;
+    if (channel === "off") { skipped++; console.log(`Skipped ${user.email}: notifications off for this digest`); continue; }
     // No sign-in required to use these — see app/update-task/page.tsx.
+    // Attached regardless of which channel(s) are wanted below — the
+    // Slack digest's lines link to the same update URLs the email uses.
     newTasks = await attachUpdateLinks(newTasks, appUrl, user.name, user.email);
-    const message = renderNewTasksEmail({ firstName: user.name, appUrl, newTasks });
-    const idempotencyKey = testEmail ? `new-tasks-${user.id}-test-${Date.now()}` : `new-tasks-${user.id}-${dayKey}`;
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
-    if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${newTasks.length} newly assigned`); }
-    else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
-    // Both channels for now — Phase 3 (per-user notification preferences)
-    // is what lets someone choose just one. A Slack miss (no account at
-    // this address, bot not configured) is exactly as normal as an email
-    // skip above, never counted against `failed`.
-    const slackIntro = `📬 ${newTasks.length} new task${newTasks.length === 1 ? "" : "s"} assigned to you in Task AI.`;
-    const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: newTasks }]);
-    if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    if (wantsEmail(channel)) {
+      const message = renderNewTasksEmail({ firstName: user.name, appUrl, newTasks });
+      const idempotencyKey = testEmail ? `new-tasks-${user.id}-test-${Date.now()}` : `new-tasks-${user.id}-${dayKey}`;
+      const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
+      if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${newTasks.length} newly assigned`); }
+      else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    }
+    if (wantsSlack(channel)) {
+      const slackIntro = `📬 ${newTasks.length} new task${newTasks.length === 1 ? "" : "s"} assigned to you in Task AI.`;
+      const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: newTasks }]);
+      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    }
   } catch (error) {
     failed++;
     console.error(`Failed to notify ${user.email}:`, error instanceof Error ? error.message : error);

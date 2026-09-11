@@ -15,6 +15,7 @@
 import { inArray } from "drizzle-orm";
 import { getDb } from "../../db";
 import { users } from "../../db/schema";
+import { resolvePrefs } from "./notification-prefs";
 import { buildDigestBlocks, buildTaskCardBlocks, type DigestLine, lookupSlackUserByEmail, openDirectMessage, postMessage } from "./slack";
 
 type NotifiableTask = { id: number; subject: string; description: string; status: string; due: string | null; owner: string; collaborators: string[]; recipients: string[] };
@@ -38,7 +39,8 @@ export async function notifySlackOnTaskChange(task: NotifiableTask, actorName: s
     if (!token) return; // Slack isn't configured (e.g. local dev) — silently skip, not an error.
     const names = namesToNotify(task, actorName);
     if (!names.length) return;
-    const recipients = await getDb().select({ email: users.email, name: users.name }).from(users).where(inArray(users.name, names));
+    const candidates = await getDb().select({ email: users.email, name: users.name, notificationPrefs: users.notificationPrefs }).from(users).where(inArray(users.name, names));
+    const recipients = candidates.filter(person => resolvePrefs(person.notificationPrefs).statusUpdateSlack);
     if (!recipients.length) return;
 
     const lead = trigger === "closed"

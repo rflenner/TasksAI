@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb } from "../../db";
-import { passkeys } from "../../db/schema";
+import { passkeys, users } from "../../db/schema";
+import { resolvePrefs } from "../lib/notification-prefs";
 import { currentActor } from "../lib/session";
 import AccountClient from "./AccountClient";
 export const dynamic = "force-dynamic";
@@ -10,5 +11,6 @@ export default async function AccountPage() {
   if (!actor?.id) redirect("/login?returnTo=/account");
   const rows = await getDb().select({ id: passkeys.id, deviceLabel: passkeys.deviceLabel, createdAt: passkeys.createdAt, lastUsedAt: passkeys.lastUsedAt }).from(passkeys).where(eq(passkeys.userId, actor.id)).orderBy(passkeys.createdAt);
   const initialPasskeys = rows.map(row => ({ ...row, createdAt: row.createdAt.toISOString(), lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null }));
-  return <AccountClient initialPasskeys={initialPasskeys} />;
+  const [userRow] = await getDb().select({ notificationPrefs: users.notificationPrefs }).from(users).where(eq(users.id, actor.id)).limit(1);
+  return <AccountClient initialPasskeys={initialPasskeys} initialPrefs={resolvePrefs(userRow?.notificationPrefs)} />;
 }

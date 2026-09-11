@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { renderPendingTasksEmail, sendWithResend } from "../app/lib/email";
+import { resolvePrefs, wantsEmail, wantsSlack } from "../app/lib/notification-prefs";
 import { endOfThisWeek, personalTaskDigest } from "../app/lib/pending-tasks";
 import { sendSlackDigest } from "../app/lib/task-notify";
 import { attachUpdateLinks } from "../app/lib/task-update-tokens";
@@ -46,26 +47,31 @@ for (const user of active) {
     let delegatedTasks = digest.delegatedTasks.filter(task => (task.due || "") <= weekEnd);
     const totalOpen = myTasks.length + delegatedTasks.length;
     if (!totalOpen && !digest.recentlyClosed.length) { skipped++; continue; }
+    const channel = resolvePrefs(user.notificationPrefs).weeklyDigest;
+    if (channel === "off") { skipped++; console.log(`Skipped ${user.email}: notifications off for this digest`); continue; }
     const overdueCount = [...myTasks, ...delegatedTasks].filter(task => task.overdue).length;
     // No sign-in required to use these — see app/update-task/page.tsx.
     [myTasks, delegatedTasks] = await Promise.all([
       attachUpdateLinks(myTasks, appUrl, user.name, user.email),
       attachUpdateLinks(delegatedTasks, appUrl, user.name, user.email),
     ]);
-    const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
-    const idempotencyKey = testEmail ? `weekly-${user.id}-test-${Date.now()}` : `weekly-${user.id}-${dayKey}`;
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
-    if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${totalOpen} due this week or earlier, ${digest.recentlyClosed.length} recently closed`); }
-    else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
-    // Both channels for now — see send-new-task-assignments.ts for why.
-    const overdueClause = overdueCount ? `, ${overdueCount} overdue` : "";
-    const slackIntro = `🗓️ ${totalOpen} task${totalOpen === 1 ? "" : "s"} due this week or earlier${overdueClause}.`;
-    const slackDelivery = await sendSlackDigest(user, slackIntro, [
-      { heading: "My tasks", lines: myTasks },
-      { heading: "Delegated tasks", lines: delegatedTasks },
-      { heading: "Recently closed", lines: digest.recentlyClosed },
-    ]);
-    if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    if (wantsEmail(channel)) {
+      const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
+      const idempotencyKey = testEmail ? `weekly-${user.id}-test-${Date.now()}` : `weekly-${user.id}-${dayKey}`;
+      const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
+      if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${totalOpen} due this week or earlier, ${digest.recentlyClosed.length} recently closed`); }
+      else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    }
+    if (wantsSlack(channel)) {
+      const overdueClause = overdueCount ? `, ${overdueCount} overdue` : "";
+      const slackIntro = `🗓️ ${totalOpen} task${totalOpen === 1 ? "" : "s"} due this week or earlier${overdueClause}.`;
+      const slackDelivery = await sendSlackDigest(user, slackIntro, [
+        { heading: "My tasks", lines: myTasks },
+        { heading: "Delegated tasks", lines: delegatedTasks },
+        { heading: "Recently closed", lines: digest.recentlyClosed },
+      ]);
+      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    }
   } catch (error) {
     failed++;
     console.error(`Failed to notify ${user.email}:`, error instanceof Error ? error.message : error);
