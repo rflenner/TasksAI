@@ -64,6 +64,17 @@ services:
         sync: false
       - key: SALES_AI_BASE_URL
         sync: false
+      # Set manually in the Render dashboard, from the Slack app's own
+      # settings at api.slack.com/apps — SLACK_BOT_TOKEN from OAuth &
+      # Permissions (starts "xoxb-"), SLACK_SIGNING_SECRET from Basic
+      # Information. Both used only by app/api/webhooks/slack/route.ts,
+      # added 2026-09-11 before either value exists yet — the route
+      # degrades to a harmless no-op until they're set, same convention
+      # every other optional integration here uses.
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
       # OAuth client from Google Cloud Console → APIs & Services →
       # Credentials — Web application type, with
       # https://tasks-ai.onrender.com/api/auth/google/callback registered as
