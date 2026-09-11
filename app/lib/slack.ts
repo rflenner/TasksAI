@@ -61,6 +61,17 @@ export async function lookupSlackUserByEmail(token: string, email: string): Prom
   }
 }
 
+// Opens (or resolves the already-open) 1:1 DM channel with a Slack user,
+// so a proactive notification (see app/lib/task-notify.ts) can post the
+// same way an interactive response does — chat.postMessage to a channel
+// id. Needs the bot to have the im:write scope, in addition to the
+// chat:write it already needs for postMessage — see render.yaml's
+// SLACK_BOT_TOKEN comment.
+export async function openDirectMessage(token: string, slackUserId: string): Promise<string | null> {
+  const result = await callSlackApi<{ ok: boolean; channel?: { id?: string } }>("conversations.open", token, { users: slackUserId });
+  return result.channel?.id || null;
+}
+
 // The reminder/task card — one shared builder for both the on-demand
 // "/task list" command and (once wired) the automatic reminder crons, so
 // a task always looks the same in Slack regardless of what triggered it.

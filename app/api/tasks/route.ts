@@ -6,6 +6,7 @@ import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
 import { hasUnseenUpdateFor, isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
+import { notifySlackOnTaskChange } from "../../lib/task-notify";
 type StoredTask=typeof tasks.$inferSelect; type Input=Partial<StoredTask>&{recurring_meeting?:string}; type DimensionType="project"|"meeting"|"topic"|"person";
 const cleanList=(value:unknown)=>Array.isArray(value)?value.map(String).map(x=>x.trim()).filter(Boolean):[];
 // externalSource/externalId only ever come through when a caller explicitly
@@ -90,7 +91,7 @@ export async function PATCH(request:Request){const invalid=requireSameOrigin(req
  const rebuilt=values(body);
  const updatesGrew=rebuilt.updates.length>existing.updates.length;
  const finalStatus=updatesGrew?autoAdvanceStatus(existing.status,true,null):rebuilt.status;
- const next={...rebuilt,status:finalStatus,id:body.id};if(!canWriteTask(existing,actor)||!canWriteTask(next,actor))return Response.json({error:"You cannot change this task"},{status:403});const closedAt=finalStatus!=="Closed"?null:existing.status==="Closed"?existing.closedAt:new Date();const[task]=await getDb().update(tasks).set({...rebuilt,status:finalStatus,closedAt}).where(eq(tasks.id,body.id)).returning();await register(task);await recordActivity(task.id,actor.name,describeChanges(existing,task));await noteAssignments(task.id,newlyAssignedPeople(existing,task));return Response.json({task,dimensions:await dimensions()})}
+ const next={...rebuilt,status:finalStatus,id:body.id};if(!canWriteTask(existing,actor)||!canWriteTask(next,actor))return Response.json({error:"You cannot change this task"},{status:403});const closedAt=finalStatus!=="Closed"?null:existing.status==="Closed"?existing.closedAt:new Date();const[task]=await getDb().update(tasks).set({...rebuilt,status:finalStatus,closedAt}).where(eq(tasks.id,body.id)).returning();await register(task);await recordActivity(task.id,actor.name,describeChanges(existing,task));await noteAssignments(task.id,newlyAssignedPeople(existing,task));const justClosed=existing.status!=="Closed"&&finalStatus==="Closed";if(justClosed||updatesGrew)await notifySlackOnTaskChange(task,actor.name,justClosed?"closed":"update");return Response.json({task,dimensions:await dimensions()})}
 // Site Admin only, deliberately stricter than canWriteTask (which an area
 // admin also passes) — closing a bad task is reversible and available to
 // whoever could already edit it, deleting it outright isn't, so it stays

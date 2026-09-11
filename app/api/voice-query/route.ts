@@ -10,6 +10,7 @@ import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
 import { hasUnseenUpdateFor, isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 import { callTaskExtractionAI } from "../../lib/task-extraction";
+import { notifySlackOnTaskChange } from "../../lib/task-notify";
 import {
   applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
   describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveActTargets, resolveNext, speakableDate,
@@ -511,6 +512,8 @@ This is a spoken request to create ONE new task right now, not a written meeting
       // detail list, so calling this unconditionally is safe.
       await recordActivity(updated.id, actor.name, describeChanges(targetTask, updated));
       await noteAssignments(updated.id, newlyAssignedPeople(targetTask, updated));
+      const justClosed = targetTask.status !== "Closed" && finalStatus === "Closed";
+      if (justClosed || result.updatesGrew) await notifySlackOnTaskChange(updated, actor.name, justClosed ? "closed" : "update");
       await registerDimensionsFor(updated);
       updatedTasks.push(updated);
     }
