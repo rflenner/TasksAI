@@ -21,7 +21,7 @@ function baseTask(overrides: Partial<StoredTask> = {}): StoredTask {
 const noFilters: Filters = {
   owner: null, mineOnly: false, myRole: null, project: null, topic: null, recurringMeeting: null,
   account: null, opportunity: null, source: null, priority: null, dueWithin: null, createdWithin: null,
-  closedWithin: null, status: null, textContains: null, isNew: false,
+  closedWithin: null, status: null, textContains: null, isNew: false, hasUnseenUpdate: false,
 };
 
 // ---- computeMatches ----
@@ -97,6 +97,16 @@ test("computeMatches: isNew false (the default) never narrows by newness, even w
   const tasks = [baseTask({ id: 10 }), baseTask({ id: 20 })];
   assert.equal(computeMatches(noFilters, tasks, "x", "2026-09-08", "2026-09-15").length, 2);
 });
+test("computeMatches: hasUnseenUpdate filters to exactly the ids the caller marked as having an unseen update", () => {
+  const tasks = [baseTask({ id: 10 }), baseTask({ id: 20 }), baseTask({ id: 30 })];
+  const result = computeMatches({ ...noFilters, hasUnseenUpdate: true }, tasks, "x", "2026-09-08", "2026-09-15", new Set(), new Set([30]));
+  assert.deepEqual(result.map(t => t.id), [30]);
+});
+test("computeMatches: isNew and hasUnseenUpdate combine (AND), each against its own id set", () => {
+  const tasks = [baseTask({ id: 10 }), baseTask({ id: 20 }), baseTask({ id: 30 })];
+  const result = computeMatches({ ...noFilters, isNew: true, hasUnseenUpdate: true }, tasks, "x", "2026-09-08", "2026-09-15", new Set([10, 20]), new Set([20, 30]));
+  assert.deepEqual(result.map(t => t.id), [20]);
+});
 
 // ---- describeFilterPhrase ----
 
@@ -116,6 +126,9 @@ test("describeFilterPhrase: account/opportunity/source/textContains phrase in", 
 });
 test("describeFilterPhrase: isNew reads as 'flagged new'", () => {
   assert.match(describeFilterPhrase({ ...noFilters, isNew: true }), /flagged new/);
+});
+test("describeFilterPhrase: hasUnseenUpdate reads as 'with a new status update'", () => {
+  assert.match(describeFilterPhrase({ ...noFilters, hasUnseenUpdate: true }), /with a new status update/);
 });
 
 // ---- applyActionSteps ----
