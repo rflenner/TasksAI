@@ -61,6 +61,17 @@ export async function lookupSlackUserByEmail(token: string, email: string): Prom
   }
 }
 
+// Opens (or resolves the already-open) 1:1 DM channel with a Slack user,
+// so a proactive notification (see app/lib/task-notify.ts) can post the
+// same way an interactive response does — chat.postMessage to a channel
+// id. Needs the bot to have the im:write scope, in addition to the
+// chat:write it already needs for postMessage — see render.yaml's
+// SLACK_BOT_TOKEN comment.
+export async function openDirectMessage(token: string, slackUserId: string): Promise<string | null> {
+  const result = await callSlackApi<{ ok: boolean; channel?: { id?: string } }>("conversations.open", token, { users: slackUserId });
+  return result.channel?.id || null;
+}
+
 // The reminder/task card — one shared builder for both the on-demand
 // "/task list" command and (once wired) the automatic reminder crons, so
 // a task always looks the same in Slack regardless of what triggered it.
@@ -80,6 +91,41 @@ export function buildTaskCardBlocks(task: { id: number; subject: string; descrip
       ],
     },
   ];
+}
+
+// One digest line — the same shape app/lib/email.ts's PendingTaskLine
+// already carries (updateUrl included, when attachUpdateLinks has run),
+// so a cron script that already built its email lines can hand them
+// straight to buildDigestBlocks with no reshaping.
+export type DigestLine = { taskId?: number; subject: string; due?: string; overdue?: boolean; status?: "Open" | "In progress" | "Closed"; closedAt?: string; updateUrl?: string };
+
+function digestLineText(line: DigestLine): string {
+  const label = line.updateUrl ? `<${line.updateUrl}|#${line.taskId ?? "?"} ${line.subject}>` : `#${line.taskId ?? "?"} ${line.subject}`;
+  const detail = line.status === "Closed" ? `Closed${line.closedAt ? ` · ${line.closedAt}` : ""}` : line.overdue ? "Overdue" : line.due ? `Due ${line.due}` : "No due date";
+  return `• ${label} — ${detail}`;
+}
+
+// The Slack counterpart to the 3 email-cron digests (new assignment,
+// overdue, weekly) — a bulleted mrkdwn list per section (mirroring the
+// email template's own grouping: My tasks / Delegated / Recently closed,
+// or a single ungrouped section for the simpler digests), each line
+// linking to the task's own passwordless update link — the exact same
+// one the email already uses — rather than a full card per task: a
+// weekly digest can be a dozen-plus tasks, well past what stacking
+// buildTaskCardBlocks per task would fit in one message.
+export function buildDigestBlocks(intro: string, sections: Array<{ heading?: string; lines: DigestLine[] }>): unknown[] {
+  const blocks: unknown[] = [{ type: "section", text: { type: "mrkdwn", text: intro } }];
+  for (const section of sections) {
+    if (!section.lines.length) continue;
+    if (section.heading) blocks.push({ type: "section", text: { type: "mrkdwn", text: `*${section.heading}*` } });
+    // Slack's mrkdwn section text caps at 3000 characters — chunked
+    // generously short of that rather than counted exactly, since task
+    // subjects vary in length.
+    for (let i = 0; i < section.lines.length; i += 10) {
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: section.lines.slice(i, i + 10).map(digestLineText).join("\n") } });
+    }
+  }
+  return blocks;
 }
 
 // The "Update" button's modal — a single text field, private_metadata

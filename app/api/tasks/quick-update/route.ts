@@ -3,6 +3,7 @@ import { getDb } from "../../../../db";
 import { tasks } from "../../../../db/schema";
 import { requireSameOrigin } from "../../../lib/request";
 import { recordActivity } from "../../../lib/task-activity";
+import { notifySlackOnTaskChange } from "../../../lib/task-notify";
 import { resolveTaskUpdateToken } from "../../../lib/task-update-tokens";
 
 const STATUSES = ["Open", "In progress", "Closed"] as const;
@@ -49,6 +50,12 @@ export async function POST(request: Request) {
   if (trimmedText) activity.push(`added an update via email link`);
   if (newStatus !== task.status) activity.push(`changed status from ${task.status} to ${newStatus} via email link`);
   await recordActivity(task.id, by, activity);
+
+  // recipientName, not `by` — namesToNotify excludes by exact match
+  // against owner/collaborators/recipients, which store the clean name,
+  // not the "(via email)" suffix used for the activity log.
+  const justClosed = task.status !== "Closed" && newStatus === "Closed";
+  if (justClosed || trimmedText) await notifySlackOnTaskChange(updated, recipientName, justClosed ? "closed" : "update");
 
   return Response.json({ ok: true, task: { subject: updated.subject, status: updated.status } });
 }

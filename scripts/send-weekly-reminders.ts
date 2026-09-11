@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { renderPendingTasksEmail, sendWithResend } from "../app/lib/email";
+import { resolvePrefs, wantsEmail, wantsSlack } from "../app/lib/notification-prefs";
 import { endOfThisWeek, personalTaskDigest } from "../app/lib/pending-tasks";
+import { sendSlackDigest } from "../app/lib/task-notify";
 import { attachUpdateLinks } from "../app/lib/task-update-tokens";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
@@ -29,7 +31,7 @@ if (testEmail) console.log(`TEST MODE: restricting this run to ${testEmail}`);
 
 let active = await getDb().select().from(users).where(eq(users.status, "active"));
 if (testEmail) active = active.filter(user => user.email.toLowerCase() === testEmail);
-let sent = 0, skipped = 0, failed = 0;
+let sent = 0, skipped = 0, failed = 0, slackSent = 0, slackSkipped = 0;
 
 // Scoped per user per calendar day on purpose — a retried Render cron run
 // shouldn't double-email anyone. In TEST_EMAIL mode that same protection
@@ -45,23 +47,37 @@ for (const user of active) {
     let delegatedTasks = digest.delegatedTasks.filter(task => (task.due || "") <= weekEnd);
     const totalOpen = myTasks.length + delegatedTasks.length;
     if (!totalOpen && !digest.recentlyClosed.length) { skipped++; continue; }
+    const channel = resolvePrefs(user.notificationPrefs).weeklyDigest;
+    if (channel === "off") { skipped++; console.log(`Skipped ${user.email}: notifications off for this digest`); continue; }
     const overdueCount = [...myTasks, ...delegatedTasks].filter(task => task.overdue).length;
     // No sign-in required to use these — see app/update-task/page.tsx.
     [myTasks, delegatedTasks] = await Promise.all([
       attachUpdateLinks(myTasks, appUrl, user.name, user.email),
       attachUpdateLinks(delegatedTasks, appUrl, user.name, user.email),
     ]);
-    const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
-    const idempotencyKey = testEmail ? `weekly-${user.id}-test-${Date.now()}` : `weekly-${user.id}-${dayKey}`;
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
-    if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${totalOpen} due this week or earlier, ${digest.recentlyClosed.length} recently closed`); }
-    else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    if (wantsEmail(channel)) {
+      const message = renderPendingTasksEmail({ firstName: user.name, appUrl, myTasks, delegatedTasks, recentlyClosed: digest.recentlyClosed, overdueCount });
+      const idempotencyKey = testEmail ? `weekly-${user.id}-test-${Date.now()}` : `weekly-${user.id}-${dayKey}`;
+      const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
+      if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${totalOpen} due this week or earlier, ${digest.recentlyClosed.length} recently closed`); }
+      else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    }
+    if (wantsSlack(channel)) {
+      const overdueClause = overdueCount ? `, ${overdueCount} overdue` : "";
+      const slackIntro = `🗓️ ${totalOpen} task${totalOpen === 1 ? "" : "s"} due this week or earlier${overdueClause}.`;
+      const slackDelivery = await sendSlackDigest(user, slackIntro, [
+        { heading: "My tasks", lines: myTasks },
+        { heading: "Delegated tasks", lines: delegatedTasks },
+        { heading: "Recently closed", lines: digest.recentlyClosed },
+      ]);
+      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    }
   } catch (error) {
     failed++;
     console.error(`Failed to notify ${user.email}:`, error instanceof Error ? error.message : error);
   }
 }
 
-console.log(`Weekly reminders done: ${sent} sent, ${skipped} skipped, ${failed} failed (of ${active.length} active users)`);
+console.log(`Weekly reminders done: ${sent} emails sent, ${skipped} skipped, ${slackSent} Slack DMs sent, ${slackSkipped} Slack skipped, ${failed} failed (of ${active.length} active users)`);
 await getSql().end();
 if (failed) process.exitCode = 1;

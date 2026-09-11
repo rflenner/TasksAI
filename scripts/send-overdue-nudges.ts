@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { renderOverdueNudgeEmail, sendWithResend } from "../app/lib/email";
+import { resolvePrefs, wantsEmail, wantsSlack } from "../app/lib/notification-prefs";
 import { overdueOwnedTasks } from "../app/lib/pending-tasks";
+import { sendSlackDigest } from "../app/lib/task-notify";
 import { attachUpdateLinks } from "../app/lib/task-update-tokens";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
@@ -28,7 +30,7 @@ if (testEmail) console.log(`TEST MODE: restricting this run to ${testEmail}`);
 
 let active = await getDb().select().from(users).where(eq(users.status, "active"));
 if (testEmail) active = active.filter(user => user.email.toLowerCase() === testEmail);
-let sent = 0, skipped = 0, failed = 0;
+let sent = 0, skipped = 0, failed = 0, slackSent = 0, slackSkipped = 0;
 
 // The idempotency key is scoped per user per calendar day on purpose — if
 // Render ever retries a cron run, the same person shouldn't get double-
@@ -43,19 +45,28 @@ for (const user of active) {
   try {
     let overdueTasks = await overdueOwnedTasks(user);
     if (!overdueTasks.length) { skipped++; continue; }
+    const channel = resolvePrefs(user.notificationPrefs).overdue;
+    if (channel === "off") { skipped++; console.log(`Skipped ${user.email}: notifications off for this digest`); continue; }
     // No sign-in required to use these — see app/update-task/page.tsx.
     overdueTasks = await attachUpdateLinks(overdueTasks, appUrl, user.name, user.email);
-    const message = renderOverdueNudgeEmail({ firstName: user.name, appUrl, overdueTasks });
-    const idempotencyKey = testEmail ? `overdue-${user.id}-test-${Date.now()}` : `overdue-${user.id}-${dayKey}`;
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
-    if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${overdueTasks.length} overdue and owned`); }
-    else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    if (wantsEmail(channel)) {
+      const message = renderOverdueNudgeEmail({ firstName: user.name, appUrl, overdueTasks });
+      const idempotencyKey = testEmail ? `overdue-${user.id}-test-${Date.now()}` : `overdue-${user.id}-${dayKey}`;
+      const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
+      if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${overdueTasks.length} overdue and owned`); }
+      else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    }
+    if (wantsSlack(channel)) {
+      const slackIntro = `⚠️ ${overdueTasks.length} overdue task${overdueTasks.length === 1 ? "" : "s"} — action needed.`;
+      const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: overdueTasks }]);
+      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    }
   } catch (error) {
     failed++;
     console.error(`Failed to notify ${user.email}:`, error instanceof Error ? error.message : error);
   }
 }
 
-console.log(`Overdue nudges done: ${sent} sent, ${skipped} skipped, ${failed} failed (of ${active.length} active users)`);
+console.log(`Overdue nudges done: ${sent} emails sent, ${skipped} skipped, ${slackSent} Slack DMs sent, ${slackSkipped} Slack skipped, ${failed} failed (of ${active.length} active users)`);
 await getSql().end();
 if (failed) process.exitCode = 1;

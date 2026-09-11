@@ -3,11 +3,23 @@ import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestam
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
 export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
+// Third of the three Slack notification pieces agreed 2026-09-11, after
+// the real-time DM and the digest-to-Slack crons — see
+// app/lib/notification-prefs.ts for the default value and the
+// wantsEmail/wantsSlack helpers built on this type.
+export type DigestChannel = "email" | "slack" | "both" | "off";
+export type NotificationPrefs = {
+  newAssignment: DigestChannel; overdue: DigestChannel; weeklyDigest: DigestChannel;
+  // The real-time status-update/closed DM (notifySlackOnTaskChange) has
+  // no email equivalent — Slack only, so on/off rather than a 4-way choice.
+  statusUpdateSlack: boolean;
+};
 export const companies = pgTable("companies", { id: serial("id").primaryKey(), name: text("name").notNull(), normalizedName: text("normalized_name").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [uniqueIndex("companies_normalized_name_unique").on(table.normalizedName)]);
 export const users = pgTable("users", {
   id: serial("id").primaryKey(), email: text("email").notNull(), name: text("name").notNull(), firstName: text("first_name"), lastName: text("last_name"), companyId: integer("company_id").references(() => companies.id),
   role: roleEnum("role").notNull(), status: userStatusEnum("status").notNull().default("pending"), emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }), phone: text("phone"), inviteChannel: text("invite_channel").notNull().default("email"),
   canInvite: boolean("can_invite").notNull().default(false), projects: jsonb("projects").$type<string[]>().notNull().default([]), meetings: jsonb("meetings").$type<string[]>().notNull().default([]), topics: jsonb("topics").$type<string[]>().notNull().default([]),
+  notificationPrefs: jsonb("notification_prefs").$type<NotificationPrefs>().notNull().default({ newAssignment: "both", overdue: "both", weeklyDigest: "both", statusUpdateSlack: true }),
   inviteTokenHash: text("invite_token_hash"), invitedAt: timestamp("invited_at", { withTimezone: true }), inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true }), acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   // Resend delivery tracking for the most recent invitation email: lastEmailId
   // correlates an inbound Resend webhook event back to this row; emailStatus

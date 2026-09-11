@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialCreationOptionsJSON } from "@simplewebauthn/browser";
+import type { DigestChannel, NotificationPrefs } from "../../db/schema";
 
 type Passkey = { id: number; deviceLabel: string | null; createdAt: string; lastUsedAt: string | null };
 
@@ -11,7 +12,83 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export default function AccountClient({ initialPasskeys }: { initialPasskeys: Passkey[] }) {
+const CHANNEL_OPTIONS: Array<{ value: DigestChannel; label: string }> = [
+  { value: "both", label: "Email + Slack" },
+  { value: "email", label: "Email only" },
+  { value: "slack", label: "Slack only" },
+  { value: "off", label: "Off" },
+];
+
+const DIGEST_ROWS: Array<{ key: "newAssignment" | "overdue" | "weeklyDigest"; label: string; hint: string }> = [
+  { key: "newAssignment", label: "New assignments", hint: "Daily, only when you were just put on a task." },
+  { key: "overdue", label: "Overdue nudge", hint: "Every 2 days, only for tasks you own that are overdue." },
+  { key: "weeklyDigest", label: "Weekly digest", hint: "Monday mornings — everything due this week or earlier." },
+];
+
+function NotificationSettings({ initialPrefs }: { initialPrefs: NotificationPrefs }) {
+  const [prefs, setPrefs] = useState(initialPrefs);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  async function save(patch: Partial<NotificationPrefs>) {
+    const key = Object.keys(patch)[0];
+    setSaving(key);
+    const next = { ...prefs, ...patch };
+    setPrefs(next); // optimistic — same reasoning as the passkey list's refresh-after-write elsewhere on this page
+    try {
+      const res = await fetch("/api/account/notification-prefs", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+      if (res.ok) setPrefs((await res.json() as { prefs: NotificationPrefs }).prefs);
+      else setPrefs(prefs); // revert on failure
+    } catch {
+      setPrefs(prefs);
+    }
+    setSaving(null);
+  }
+
+  return (
+    <div className="mt-10">
+      <div className="text-[11px] font-extrabold tracking-widest text-[#173f76]">ACCOUNT</div>
+      <h2 className="text-2xl font-bold text-[#102f59] mt-2 mb-1">Notifications</h2>
+      <p className="text-[#697181] mb-6">Choose how you hear about task activity — a Slack DM needs a Slack account at this email address in your workspace.</p>
+
+      <div className="grid gap-2 mb-4">
+        {DIGEST_ROWS.map(row => (
+          <div key={row.key} className="flex items-center justify-between gap-4 border border-[#e3e8ee] bg-white rounded-lg p-4">
+            <div>
+              <div className="font-bold text-[#202735]">{row.label}</div>
+              <div className="text-xs text-[#9299a3] mt-1">{row.hint}</div>
+            </div>
+            <select
+              value={prefs[row.key]}
+              disabled={saving === row.key}
+              onChange={e => void save({ [row.key]: e.target.value as DigestChannel })}
+              className="h-10 border border-[#d9dee5] rounded-lg px-2 text-sm outline-none focus:border-[#7898be] disabled:opacity-50"
+            >
+              {CHANNEL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between gap-4 border border-[#e3e8ee] bg-white rounded-lg p-4">
+        <div>
+          <div className="font-bold text-[#202735]">Real-time status updates</div>
+          <div className="text-xs text-[#9299a3] mt-1">A Slack DM the moment someone posts an update or closes a task you&apos;re on — no digest wait. Slack only, no email equivalent.</div>
+        </div>
+        <select
+          value={prefs.statusUpdateSlack ? "on" : "off"}
+          disabled={saving === "statusUpdateSlack"}
+          onChange={e => void save({ statusUpdateSlack: e.target.value === "on" })}
+          className="h-10 border border-[#d9dee5] rounded-lg px-2 text-sm outline-none focus:border-[#7898be] disabled:opacity-50"
+        >
+          <option value="on">On</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
+export default function AccountClient({ initialPasskeys, initialPrefs }: { initialPasskeys: Passkey[]; initialPrefs: NotificationPrefs }) {
   const [passkeys, setPasskeys] = useState<Passkey[]>(initialPasskeys);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -94,6 +171,8 @@ export default function AccountClient({ initialPasskeys }: { initialPasskeys: Pa
           ))}
         </div>
       )}
+
+      <NotificationSettings initialPrefs={initialPrefs} />
     </div>
   );
 }

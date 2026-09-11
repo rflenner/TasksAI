@@ -19,6 +19,7 @@ import {
 } from "../../../lib/slack";
 import { isFreshSlackTimestamp, verifySlackSignature } from "../../../lib/slack-webhook";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../../lib/task-activity";
+import { notifySlackOnTaskChange } from "../../../lib/task-notify";
 
 async function resolveActor(slackUserId: string | undefined, token: string): Promise<(Actor & { id: number }) | null> {
   if (!slackUserId) return null;
@@ -74,6 +75,8 @@ export async function POST(request: Request) {
         const [updated] = await getDb().update(tasks).set({ status: "Closed", closedAt }).where(eq(tasks.id, taskId)).returning();
         await recordActivity(updated.id, actor.name, describeChanges(existing, updated));
         if (payload.response_url) await respondToInteraction(payload.response_url, { text: `✅ Closed by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
+        // Not the actor — they just saw this refreshed in place above.
+        await notifySlackOnTaskChange(updated, actor.name, "closed");
       } else if (action?.action_id === "task_update" && payload.trigger_id && payload.response_url) {
         await openView(token, payload.trigger_id, buildUpdateModal(taskId, existing.subject, payload.response_url));
       }
@@ -98,6 +101,7 @@ export async function POST(request: Request) {
           const [updated] = await getDb().update(tasks).set({ updates, status: finalStatus, closedAt }).where(eq(tasks.id, meta.taskId as number)).returning();
           await recordActivity(updated.id, actor.name, [`posted an update: "${text.slice(0, 140)}"`]);
           if (meta.responseUrl) await respondToInteraction(meta.responseUrl, { text: `📝 Updated by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
+          await notifySlackOnTaskChange(updated, actor.name, finalStatus === "Closed" && existing.status !== "Closed" ? "closed" : "update");
         }
       }
       return Response.json({ response_action: "clear" });

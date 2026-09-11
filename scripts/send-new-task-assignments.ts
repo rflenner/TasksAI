@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { renderNewTasksEmail, sendWithResend } from "../app/lib/email";
+import { resolvePrefs, wantsEmail, wantsSlack } from "../app/lib/notification-prefs";
 import { newlyAssignedTasks } from "../app/lib/pending-tasks";
+import { sendSlackDigest } from "../app/lib/task-notify";
 import { attachUpdateLinks } from "../app/lib/task-update-tokens";
 import { getDb, getSql } from "../db";
 import { users } from "../db/schema";
@@ -28,7 +30,7 @@ if (testEmail) console.log(`TEST MODE: restricting this run to ${testEmail}`);
 
 let active = await getDb().select().from(users).where(eq(users.status, "active"));
 if (testEmail) active = active.filter(user => user.email.toLowerCase() === testEmail);
-let sent = 0, skipped = 0, failed = 0;
+let sent = 0, skipped = 0, failed = 0, slackSent = 0, slackSkipped = 0;
 
 // Scoped per user per calendar day, same reasoning as the overdue nudge's
 // idempotency key: if Render ever retries a cron run, the same person
@@ -40,19 +42,30 @@ for (const user of active) {
   try {
     let newTasks = await newlyAssignedTasks(user, 26);
     if (!newTasks.length) { skipped++; continue; }
+    const channel = resolvePrefs(user.notificationPrefs).newAssignment;
+    if (channel === "off") { skipped++; console.log(`Skipped ${user.email}: notifications off for this digest`); continue; }
     // No sign-in required to use these — see app/update-task/page.tsx.
+    // Attached regardless of which channel(s) are wanted below — the
+    // Slack digest's lines link to the same update URLs the email uses.
     newTasks = await attachUpdateLinks(newTasks, appUrl, user.name, user.email);
-    const message = renderNewTasksEmail({ firstName: user.name, appUrl, newTasks });
-    const idempotencyKey = testEmail ? `new-tasks-${user.id}-test-${Date.now()}` : `new-tasks-${user.id}-${dayKey}`;
-    const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
-    if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${newTasks.length} newly assigned`); }
-    else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    if (wantsEmail(channel)) {
+      const message = renderNewTasksEmail({ firstName: user.name, appUrl, newTasks });
+      const idempotencyKey = testEmail ? `new-tasks-${user.id}-test-${Date.now()}` : `new-tasks-${user.id}-${dayKey}`;
+      const delivery = await sendWithResend({ ...message, to: user.email, idempotencyKey });
+      if (delivery.sent) { sent++; console.log(`Sent ${user.email}: ${newTasks.length} newly assigned`); }
+      else { skipped++; console.log(`Skipped ${user.email}: ${delivery.reason}`); }
+    }
+    if (wantsSlack(channel)) {
+      const slackIntro = `📬 ${newTasks.length} new task${newTasks.length === 1 ? "" : "s"} assigned to you in Task AI.`;
+      const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: newTasks }]);
+      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+    }
   } catch (error) {
     failed++;
     console.error(`Failed to notify ${user.email}:`, error instanceof Error ? error.message : error);
   }
 }
 
-console.log(`New task assignment nudges done: ${sent} sent, ${skipped} skipped, ${failed} failed (of ${active.length} active users)`);
+console.log(`New task assignment nudges done: ${sent} emails sent, ${skipped} skipped, ${slackSent} Slack DMs sent, ${slackSkipped} Slack skipped, ${failed} failed (of ${active.length} active users)`);
 await getSql().end();
 if (failed) process.exitCode = 1;
