@@ -117,6 +117,13 @@ services:
         value: Task AI <notifications@tasks.flenner.at>
       - key: RESEND_API_KEY
         sync: false
+      # Same value as the web service's SLACK_BOT_TOKEN (see above) — this
+      # job needs it too, added 2026-09-13 alongside the digest-to-Slack
+      # feature. Missed on the first pass: without this, sendSlackDigest
+      # silently no-ops (email still sends fine, Slack just never fires) —
+      # exactly the bug this fixes.
+      - key: SLACK_BOT_TOKEN
+        sync: false
   - type: cron
     name: tasks-ai-overdue-nudges
     runtime: node
@@ -140,6 +147,13 @@ services:
       - key: TASK_AI_FROM_EMAIL
         value: Task AI <notifications@tasks.flenner.at>
       - key: RESEND_API_KEY
+        sync: false
+      # Same value as the web service's SLACK_BOT_TOKEN (see above) — this
+      # job needs it too, added 2026-09-13 alongside the digest-to-Slack
+      # feature. Missed on the first pass: without this, sendSlackDigest
+      # silently no-ops (email still sends fine, Slack just never fires) —
+      # exactly the bug this fixes.
+      - key: SLACK_BOT_TOKEN
         sync: false
   - type: cron
     name: tasks-ai-new-task-nudges
@@ -167,6 +181,13 @@ services:
       - key: TASK_AI_FROM_EMAIL
         value: Task AI <notifications@tasks.flenner.at>
       - key: RESEND_API_KEY
+        sync: false
+      # Same value as the web service's SLACK_BOT_TOKEN (see above) — this
+      # job needs it too, added 2026-09-13 alongside the digest-to-Slack
+      # feature. Missed on the first pass: without this, sendSlackDigest
+      # silently no-ops (email still sends fine, Slack just never fires) —
+      # exactly the bug this fixes.
+      - key: SLACK_BOT_TOKEN
         sync: false
   - type: cron
     name: tasks-ai-sales-ai-sync
