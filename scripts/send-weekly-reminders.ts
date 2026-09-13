@@ -70,7 +70,7 @@ for (const user of active) {
         { heading: "Delegated tasks", lines: delegatedTasks },
         { heading: "Recently closed", lines: digest.recentlyClosed },
       ]);
-      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+      if (slackDelivery.sent) slackSent++; else { slackSkipped++; console.log(`Slack skipped for ${user.email}: ${slackDelivery.reason}`); }
     }
   } catch (error) {
     failed++;

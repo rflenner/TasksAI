@@ -58,7 +58,7 @@ for (const user of active) {
     if (wantsSlack(channel)) {
       const slackIntro = `📬 ${newTasks.length} new task${newTasks.length === 1 ? "" : "s"} assigned to you in Task AI.`;
       const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: newTasks }]);
-      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+      if (slackDelivery.sent) slackSent++; else { slackSkipped++; console.log(`Slack skipped for ${user.email}: ${slackDelivery.reason}`); }
     }
   } catch (error) {
     failed++;

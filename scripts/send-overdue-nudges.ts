@@ -59,7 +59,7 @@ for (const user of active) {
     if (wantsSlack(channel)) {
       const slackIntro = `⚠️ ${overdueTasks.length} overdue task${overdueTasks.length === 1 ? "" : "s"} — action needed.`;
       const slackDelivery = await sendSlackDigest(user, slackIntro, [{ lines: overdueTasks }]);
-      if (slackDelivery.sent) slackSent++; else slackSkipped++;
+      if (slackDelivery.sent) slackSent++; else { slackSkipped++; console.log(`Slack skipped for ${user.email}: ${slackDelivery.reason}`); }
     }
   } catch (error) {
     failed++;
