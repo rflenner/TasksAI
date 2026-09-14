@@ -2,21 +2,28 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildDigestBlocks, buildEditTaskModal, buildTaskCardBlocks, type DigestLine } from "../app/lib/slack";
 
-test("buildTaskCardBlocks: an open task's checkbox is unchecked, block_id carries the task id", () => {
-  const [main] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Open", due: null, owner: "Y" }) as Array<{ block_id: string; accessory: { options: unknown[]; initial_options?: unknown[] } }>;
-  assert.equal(main.block_id, "task_toggle_7");
-  assert.equal(main.accessory.options.length, 1);
-  assert.equal(main.accessory.initial_options, undefined);
+type CardSection = { block_id: string; text: { text: string }; accessory: { type: string; action_id: string; options?: unknown[]; initial_options?: unknown[] } };
+
+test("buildTaskCardBlocks: the title section carries the checkbox, unchecked for an open task", () => {
+  const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Open", due: null, owner: "Y" }) as CardSection[];
+  assert.equal(title.block_id, "task_toggle_7");
+  assert.equal(title.accessory.type, "checkboxes");
+  assert.equal(title.accessory.options?.length, 1);
+  assert.equal(title.accessory.initial_options, undefined);
 });
 
 test("buildTaskCardBlocks: a closed task's checkbox starts checked", () => {
-  const [main] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Closed", due: null, owner: "Y" }) as Array<{ accessory: { initial_options?: unknown[] } }>;
-  assert.equal(main.accessory.initial_options?.length, 1);
+  const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Closed", due: null, owner: "Y" }) as CardSection[];
+  assert.equal(title.accessory.initial_options?.length, 1);
 });
 
-test("buildTaskCardBlocks: the actions row has only Edit now, no separate Close button", () => {
-  const [, , actionsBlock] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Open", due: null, owner: "Y" }) as Array<{ elements?: Array<{ action_id: string }> }>;
-  assert.deepEqual(actionsBlock.elements?.map(e => e.action_id), ["task_edit"]);
+test("buildTaskCardBlocks: the description section carries the Edit button, no separate actions block", () => {
+  const blocks = buildTaskCardBlocks({ id: 7, subject: "X", description: "Some notes", status: "Open", due: null, owner: "Y" }) as CardSection[];
+  assert.equal(blocks.length, 3); // title, description, context — no actions block
+  const [, description] = blocks;
+  assert.equal(description.text.text, "Some notes");
+  assert.equal(description.accessory.type, "button");
+  assert.equal(description.accessory.action_id, "task_edit");
 });
 
 function textOf(block: unknown): string {
