@@ -15,6 +15,7 @@
 import { inArray } from "drizzle-orm";
 import { getDb } from "../../db";
 import { users } from "../../db/schema";
+import { renderManualNotifyEmail, sendWithResend } from "./email";
 import { resolvePrefs } from "./notification-prefs";
 import { buildDigestBlocks, buildTaskCardBlocks, type DigestLine, lookupSlackUserByEmail, openDirectMessage, postMessage } from "./slack";
 
@@ -84,6 +85,95 @@ export async function sendSlackDigest(user: { name: string; email: string }, int
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error(`Slack digest failed for ${user.email}:`, reason);
+    return { sent: false, reason };
+  }
+}
+
+// The "notify someone right now" button on a task — the direct answer to
+// Rizan's "I would like to manually notify a owner or co-worker on a
+// specific task ... to give me an update" (2026-09-14). Deliberately not
+// routed through namesToNotify/notifySlackOnTaskChange above: those are
+// automatic, best-effort, and fan out to everyone on the task; this is a
+// single, explicit, person-picked send, and a failure has to be reported
+// back to whoever clicked Send rather than only logged.
+export type NotifyChannel = "email" | "slack";
+export type NotifyCandidate = { name: string; email: string; channels: NotifyChannel[] };
+
+// Who could be notified about this task — its owner, coworkers and
+// recipients, minus the actor themself, restricted to people who are
+// actually registered users (an unregistered plain-text name has no
+// email to send to at all — see unregisteredNames/invite-strip in
+// TaskApp.js for the existing "not yet invited" treatment of those).
+// Channel availability is per person: email whenever they have one on
+// file (always, for a registered user), Slack only if a live
+// users.lookupByEmail resolves for their address — same check
+// notifySlackOnTaskChange already relies on, so "connected" here means
+// exactly what it means everywhere else in this app.
+export async function notifyCandidates(names: string[], actorName: string | null): Promise<NotifyCandidate[]> {
+  const wanted = [...new Set(names.filter(name => name && name !== actorName))];
+  if (!wanted.length) return [];
+  const rows = await getDb().select({ email: users.email, name: users.name }).from(users).where(inArray(users.name, wanted));
+  const token = process.env.SLACK_BOT_TOKEN;
+  return Promise.all(rows.map(async person => {
+    const channels: NotifyChannel[] = ["email"];
+    if (token) {
+      try { if (await lookupSlackUserByEmail(token, person.email)) channels.push("slack"); }
+      catch { /* Slack lookup failed — email is still offered, not a hard failure */ }
+    }
+    return { name: person.name, email: person.email, channels };
+  }));
+}
+
+// Fires one message right now, on the channel the sender picked — email
+// via the same sendWithResend every other email in this app uses, Slack
+// via the same DM plumbing as the automatic notifications, just with a
+// short free-text note instead of the full task card.
+export type ManualNotifyTask = {
+  id: number; subject: string; description: string; due: string | null; status: string;
+  project?: string; topic?: string; recurringMeeting?: string;
+};
+export async function sendManualNotify(input: {
+  task: ManualNotifyTask; fromName: string;
+  toEmail: string; toName: string; channel: NotifyChannel; message: string; appUrl: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  if (input.channel === "slack") {
+    const token = process.env.SLACK_BOT_TOKEN;
+    if (!token) return { sent: false, reason: "Slack is not configured" };
+    try {
+      const slackUserId = await lookupSlackUserByEmail(token, input.toEmail);
+      if (!slackUserId) return { sent: false, reason: "no Slack account at this address" };
+      const channel = await openDirectMessage(token, slackUserId);
+      if (!channel) return { sent: false, reason: "could not open a Slack DM" };
+      const lead = `👋 *${input.fromName}* on *#${input.task.id} ${input.task.subject}*:`;
+      const blocks = [
+        { type: "section", text: { type: "mrkdwn", text: lead } },
+        { type: "section", text: { type: "mrkdwn", text: input.message } },
+        { type: "context", elements: [{ type: "mrkdwn", text: `<${input.appUrl}|Open in Task AI>` }] },
+      ];
+      await postMessage(token, { channel, text: `${input.fromName} on #${input.task.id} ${input.task.subject}: ${input.message}`, blocks });
+      return { sent: true };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`Manual Slack notify failed for ${input.toEmail}:`, reason);
+      return { sent: false, reason };
+    }
+  }
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const { subject, html, text } = renderManualNotifyEmail({
+      toFirstName: input.toName.split(" ")[0] || input.toName,
+      fromName: input.fromName, message: input.message, appUrl: input.appUrl,
+      task: {
+        subject: input.task.subject, description: input.task.description, due: input.task.due || undefined,
+        status: input.task.status as "Open" | "In progress" | "Closed", overdue: Boolean(input.task.due && input.task.due < today && input.task.status !== "Closed"),
+        project: input.task.project, topic: input.task.topic, meeting: input.task.recurringMeeting, taskId: input.task.id,
+      },
+    });
+    const result = await sendWithResend({ to: input.toEmail, subject, html, text });
+    return result.sent ? { sent: true } : { sent: false, reason: result.reason };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`Manual email notify failed for ${input.toEmail}:`, reason);
     return { sent: false, reason };
   }
 }

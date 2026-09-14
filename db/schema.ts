@@ -13,6 +13,12 @@ export type NotificationPrefs = {
   // The real-time status-update/closed DM (notifySlackOnTaskChange) has
   // no email equivalent — Slack only, so on/off rather than a 4-way choice.
   statusUpdateSlack: boolean;
+  // Sticky default for the manual "notify" button on a task (POST
+  // /api/tasks/notify) — added 2026-09-14. Not a setting anyone chooses
+  // in Account settings, just remembered from whichever channel they
+  // picked last time so the picker doesn't reset every time; undefined
+  // until they've sent one manual notification.
+  lastNotifyChannel?: "email" | "slack";
 };
 export const companies = pgTable("companies", { id: serial("id").primaryKey(), name: text("name").notNull(), normalizedName: text("normalized_name").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, table => [uniqueIndex("companies_normalized_name_unique").on(table.normalizedName)]);
 export const users = pgTable("users", {
