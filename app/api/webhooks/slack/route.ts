@@ -14,8 +14,9 @@ import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { tasks, users } from "../../../../db/schema";
 import { type Actor, canWriteTask } from "../../../lib/permissions";
+import { applyChecklistSelection, checklistJustAdvanced } from "../../../lib/checklist";
 import {
-  buildEditTaskModal, buildTaskCardBlocks, getSlackUserEmail, openView, respondToInteraction,
+  buildEditTaskModal, buildTaskCardBlocks, getSlackUserEmail, MAX_CHECKLIST_ITEMS_IN_SLACK, openView, respondToInteraction,
 } from "../../../lib/slack";
 import { isFreshSlackTimestamp, verifySlackSignature } from "../../../lib/slack-webhook";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../../lib/task-activity";
@@ -72,12 +73,15 @@ export async function POST(request: Request) {
 
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
-      // The checkbox's task id rides on its section's block_id, not the
-      // option's value — see doneCheckbox's comment in app/lib/slack.ts
-      // for why: unchecking reports an empty selected_options, leaving
-      // no value to read at all on that direction of the toggle.
+      // Both checkboxes elements' task id rides on their block's
+      // block_id, not any option's value — see doneCheckbox's comment
+      // in app/lib/slack.ts for why: unchecking everything reports an
+      // empty selected_options, leaving no value to read at all on
+      // that direction of the toggle.
       const taskId = action?.action_id === "task_toggle_done"
         ? Number(action.block_id?.replace("task_toggle_", ""))
+        : action?.action_id === "task_checklist_toggle"
+        ? Number(action.block_id?.replace("task_checklist_", ""))
         : Number(action?.value);
       const actor = await resolveActor(payload.user?.id, token);
       if (!Number.isInteger(taskId) || !actor) return Response.json({ ok: true });
@@ -97,6 +101,29 @@ export async function POST(request: Request) {
         // Reopening isn't a notify trigger anywhere else in the app
         // either (see notifySlackOnTaskChange's callers) — only closing is.
         if (checked) await notifySlackOnTaskChange(updated, actor.name, "closed");
+      } else if (action?.action_id === "task_checklist_toggle") {
+        // Slack reports the checkbox group's whole current selection, not
+        // which single item just flipped — applyChecklistSelection applies
+        // that reported truth directly rather than diffing, and only to
+        // the ids Slack could actually show (the first
+        // MAX_CHECKLIST_ITEMS_IN_SLACK — anything beyond that wasn't
+        // rendered here at all, so nothing Slack reports could touch it).
+        const visibleIds = existing.checklist.slice(0, MAX_CHECKLIST_ITEMS_IN_SLACK).map(item => item.id);
+        const checkedIds = new Set((action.selected_options ?? []).map(o => o.value).filter((v): v is string => Boolean(v)));
+        const checklist = applyChecklistSelection(existing.checklist, visibleIds, checkedIds);
+        const advanced = checklistJustAdvanced(existing.checklist, checklist);
+        const finalStatus = advanced ? autoAdvanceStatus(existing.status, true, null) : existing.status;
+        const closedAt = finalStatus !== "Closed" ? null : existing.status === "Closed" ? existing.closedAt : new Date();
+        const [updated] = await getDb().update(tasks).set({ checklist, status: finalStatus, closedAt }).where(eq(tasks.id, taskId)).returning();
+        const details = existing.checklist.map(before => {
+          const after = checklist.find(item => item.id === before.id);
+          if (!after || after.done === before.done) return null;
+          return after.done ? `checked off "${after.text.slice(0, 140)}"` : `unchecked "${after.text.slice(0, 140)}"`;
+        }).filter((line): line is string => Boolean(line));
+        details.push(...describeChanges(existing, updated));
+        await recordActivity(updated.id, actor.name, details);
+        if (payload.response_url) await respondToInteraction(payload.response_url, { text: `Checklist updated by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
+        if (advanced) await notifySlackOnTaskChange(updated, actor.name, "update");
       } else if (action?.action_id === "task_edit" && payload.trigger_id && payload.response_url) {
         await openView(token, payload.trigger_id, buildEditTaskModal(existing, payload.response_url, "card"));
       } else if (action?.action_id === "task_edit_from_digest" && payload.trigger_id && payload.response_url) {

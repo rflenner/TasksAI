@@ -84,6 +84,35 @@ function doneCheckbox(task: { id: number; status: string }) {
   return { type: "checkboxes", action_id: "task_toggle_done", options: [option], ...(task.status === "Closed" ? { initial_options: [option] } : {}) };
 }
 
+// Optional, so most cards render exactly as before — only the first
+// this-many items get a real Slack checkbox, same MAX_CARDS/MAX_
+// ACTIONABLE_DIGEST_LINES reasoning as elsewhere: Slack's own
+// checkboxes element caps out at 10 options, well short of anything
+// this app would ever need to hard-limit for block-count reasons on
+// its own. The rest are just not shown here — still fully manageable
+// from the web app or the Edit modal, never lost.
+export const MAX_CHECKLIST_ITEMS_IN_SLACK = 10;
+type ChecklistItem = { id: string; text: string; done: boolean };
+
+// Empty array (or no checklist at all — the field is optional) renders
+// nothing, not an empty checkboxes group; Slack rejects a checkboxes
+// element with zero options outright.
+function checklistBlocks(task: { id: number; checklist?: ChecklistItem[] }): unknown[] {
+  const all = task.checklist ?? [];
+  if (!all.length) return [];
+  const shown = all.slice(0, MAX_CHECKLIST_ITEMS_IN_SLACK);
+  const options = shown.map(item => ({ text: { type: "plain_text", text: item.text.slice(0, 75) }, value: item.id }));
+  const initialOptions = options.filter((_, i) => shown[i].done);
+  const overflow = all.length - shown.length;
+  return [
+    {
+      type: "actions", block_id: `task_checklist_${task.id}`,
+      elements: [{ type: "checkboxes", action_id: "task_checklist_toggle", options, ...(initialOptions.length ? { initial_options: initialOptions } : {}) }],
+    },
+    ...(overflow > 0 ? [{ type: "context", elements: [{ type: "mrkdwn", text: `+${overflow} more checklist item${overflow === 1 ? "" : "s"} — open Edit to see the rest.` }] }] : []),
+  ];
+}
+
 // The reminder/task card — one shared builder for both the on-demand
 // "/task list" command and the automatic reminder crons/real-time
 // notify, so a task always looks the same in Slack regardless of what
@@ -93,7 +122,7 @@ function doneCheckbox(task: { id: number; status: string }) {
 // right beside the title it's checking off, and Edit reads better
 // beside the description it edits, than both crowded onto one combined
 // block the way the very first version had them.
-export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string }): unknown[] {
+export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string; checklist?: ChecklistItem[] }): unknown[] {
   const dueLine = task.due ? `Due ${task.due}` : "No due date";
   return [
     { type: "section", block_id: `task_toggle_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` }, accessory: doneCheckbox(task) },
@@ -101,6 +130,9 @@ export function buildTaskCardBlocks(task: { id: number; subject: string; descrip
       type: "section", block_id: `task_desc_${task.id}`, text: { type: "mrkdwn", text: task.description || "_No description_" },
       accessory: { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },
     },
+    // Right after the description, not after the status/due/owner line —
+    // requested 2026-09-14, in both the card and the web drawer.
+    ...checklistBlocks(task),
     { type: "context", elements: [{ type: "mrkdwn", text: `${task.status} · ${dueLine} · Owner: ${task.owner}` }] },
   ];
 }
