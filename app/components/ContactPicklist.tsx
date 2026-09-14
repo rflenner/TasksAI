@@ -57,19 +57,10 @@ function highlight(name: string, query: string) {
   );
 }
 
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-      <path d="M20 20l-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 // Searchable multi-select with the current selection always pinned to the
 // top of the list, even while filtering — see app/lib/picklist.ts for the
 // exact rule and why. Approved as an interactive prototype on 2026-09-03,
-// then fixed against real usage across four rounds of live feedback:
+// then fixed against real usage across five rounds of live feedback:
 //
 // 1. The search box lives at the top of the open panel, not squeezed
 //    inline among the chips (it shrank to a sliver once a couple of
@@ -78,14 +69,16 @@ function SearchIcon({ className }: { className?: string }) {
 //    it used to watch the trigger only, so clicking an option's
 //    mousedown bubbled to the document listener and closed the panel
 //    *before* the click that was supposed to select something landed.
-// 3. [superseded by #4 below — the "entire field opens a panel with its
-//    own separate search box" shape point 1 and 2 were fixing turned out
-//    to be the actual problem: "I click on nobody selected and then the
-//    search-as-you-type is in the dropdown... I was expecting to type
-//    in the same box." Fixed by making the visible trigger row BE the
-//    input, not a button that reveals a different one below it —
-//    the convention this was missing (GitHub/Linear/Notion-style
-//    assignee pickers): click the box, type immediately, right there.]
+// 3. [tried, then reverted the same day] moved the search input into the
+//    trigger row itself, so clicking the box you see is the box you type
+//    into — but with no dropdown affordance on that row, nothing marked
+//    it as a combobox rather than plain text, and collapsing the input
+//    to just an icon once a chip existed (to avoid a cluttered near-empty
+//    second row) swapped one unclear affordance for another. Reverted to
+//    #1's shape, this time adding a caret (▸ closed / ▾ open, the same
+//    convention the sidebar already uses) as the one obvious "click here
+//    to search" cue — closed by default, chips + caret only, exactly
+//    like the Project/Topic <select>s next to it.
 // 4. A search with no exact match offers "+ Add "<query>"" (allowCreate,
 //    on by default) so a genuinely new name isn't a dead end.
 export default function ContactPicklist({ label, value, options, onChange, hint, showAvatar = true, allowCreate = true, single = false }: Props) {
@@ -93,15 +86,19 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(-1);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const baseId = useId();
-  const inputId = `${baseId}-input`;
+  const labelId = `${baseId}-label`;
+  const triggerId = `${baseId}-trigger`;
   const panelId = `${baseId}-panel`;
   const createId = `${baseId}-create`;
   const rowId = (name: string) => `${baseId}-opt-${encodeURIComponent(name)}`;
 
+  // Opening focuses the panel's search input immediately — the whole
+  // point of the caret is "click once, then just start typing."
   useEffect(() => {
     if (!open) return;
+    searchRef.current?.focus();
     const onDocMouseDown = (event: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) close();
     };
@@ -109,7 +106,8 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [open]);
 
-  function close() { setOpen(false); setQuery(""); setHi(-1); inputRef.current?.blur(); }
+  function close() { setOpen(false); setQuery(""); setHi(-1); }
+  function openPanel() { setOpen(true); }
   function toggle(name: string) {
     if (single) {
       onChange(value.includes(name) ? [] : [name]);
@@ -118,7 +116,7 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
     }
     onChange(value.includes(name) ? value.filter(item => item !== name) : [...value, name]);
     setQuery(""); setHi(-1);
-    inputRef.current?.focus();
+    searchRef.current?.focus();
   }
 
   const { pinned, rest } = groupOptions(options, value, query);
@@ -133,47 +131,63 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
 
   return (
     <div className="picklist" ref={wrapRef}>
-      <label htmlFor={inputId}>{label}</label>
-      {/* The row itself is the input's home, not a button that reveals a
-          separate one — the input has flex:1 and fills the row, so
-          clicking anywhere on it (not just its exact text) goes
-          straight to typing, same as clicking any normal text field. */}
-      <div className={`pl-trigger${open ? " open" : ""}`}>
+      <label id={labelId}>{label}</label>
+      {/* A closed dropdown by default — chips plus one caret, no visible
+          input until it's opened. Real <button> chip-removers can sit
+          inside this even though it's role="button" itself (it's a div,
+          not a native <button> — nesting real buttons in it is valid).
+          Each chip button stops its own click from bubbling here, so a
+          plain unconditional onClick on the row is enough to "click
+          anywhere that isn't a chip's × opens the panel." */}
+      <div
+        id={triggerId}
+        className={`pl-trigger${open ? " open" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-labelledby={labelId}
+        onClick={openPanel}
+        onKeyDown={event => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPanel(); }
+          else if (event.key === "Backspace" && value.length) { toggle(value[value.length - 1]); }
+        }}
+      >
+        {value.length === 0 && <span className="pl-placeholder">None selected</span>}
         {value.map(name => (
           <span className="chip" key={name}>
             <span>{name}</span>
             <button type="button" aria-label={`Remove ${name}`} onClick={event => { event.stopPropagation(); toggle(name); }}>×</button>
           </span>
         ))}
-        <input
-          id={inputId}
-          ref={inputRef}
-          className="pl-inline-search"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={panelId}
-          aria-activedescendant={hi >= 0 ? (onCreateRow ? createId : rowId(rows[hi])) : undefined}
-          autoComplete="off"
-          value={query}
-          placeholder={value.length === 0 ? "Search…" : ""}
-          onFocus={() => setOpen(true)}
-          onChange={event => { setQuery(event.target.value); setOpen(true); setHi(-1); }}
-          onKeyDown={event => {
-            if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setHi(index => Math.min(index + 1, maxIndex)); }
-            else if (event.key === "ArrowUp") { event.preventDefault(); setHi(index => Math.max(index - 1, 0)); }
-            else if (event.key === "Enter") {
-              event.preventDefault();
-              if (onCreateRow) toggle(trimmedQuery);
-              else if (rows[hi]) toggle(rows[hi]);
-            }
-            else if (event.key === "Escape") { close(); }
-            else if (event.key === "Backspace" && !query && value.length) { toggle(value[value.length - 1]); }
-          }}
-        />
-        <SearchIcon className="pl-search-icon" />
+        <span className="pl-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
       </div>
       {open && (
-        <div id={panelId} className="pl-panel" role="listbox">
+        <div id={panelId} className="pl-panel" role="listbox" aria-labelledby={labelId}>
+          <input
+            ref={searchRef}
+            className="pl-panel-search"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={panelId}
+            aria-activedescendant={hi >= 0 ? (onCreateRow ? createId : rowId(rows[hi])) : undefined}
+            autoComplete="off"
+            value={query}
+            placeholder="Search…"
+            onChange={event => { setQuery(event.target.value); setHi(-1); }}
+            onKeyDown={event => {
+              if (event.key === "ArrowDown") { event.preventDefault(); setHi(index => Math.min(index + 1, maxIndex)); }
+              else if (event.key === "ArrowUp") { event.preventDefault(); setHi(index => Math.max(index - 1, 0)); }
+              else if (event.key === "Enter") {
+                event.preventDefault();
+                if (onCreateRow) toggle(trimmedQuery);
+                else if (rows[hi]) toggle(rows[hi]);
+              }
+              else if (event.key === "Escape") { close(); }
+              else if (event.key === "Backspace" && !query && value.length) { toggle(value[value.length - 1]); }
+            }}
+          />
           {rows.length === 0 && !canCreate && <div className="pl-empty">{query ? `No matches for "${query}"` : "No options"}</div>}
           {pinned.length > 0 && <div className="pl-group-label">Selected</div>}
           {pinned.map(name => (
