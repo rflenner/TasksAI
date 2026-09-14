@@ -128,8 +128,12 @@ export async function notifyCandidates(names: string[], actorName: string | null
 // via the same sendWithResend every other email in this app uses, Slack
 // via the same DM plumbing as the automatic notifications, just with a
 // short free-text note instead of the full task card.
+export type ManualNotifyTask = {
+  id: number; subject: string; description: string; due: string | null; status: string;
+  project?: string; topic?: string; recurringMeeting?: string;
+};
 export async function sendManualNotify(input: {
-  taskId: number; taskSubject: string; fromName: string;
+  task: ManualNotifyTask; fromName: string;
   toEmail: string; toName: string; channel: NotifyChannel; message: string; appUrl: string;
 }): Promise<{ sent: boolean; reason?: string }> {
   if (input.channel === "slack") {
@@ -140,13 +144,13 @@ export async function sendManualNotify(input: {
       if (!slackUserId) return { sent: false, reason: "no Slack account at this address" };
       const channel = await openDirectMessage(token, slackUserId);
       if (!channel) return { sent: false, reason: "could not open a Slack DM" };
-      const lead = `👋 *${input.fromName}* on *#${input.taskId} ${input.taskSubject}*:`;
+      const lead = `👋 *${input.fromName}* on *#${input.task.id} ${input.task.subject}*:`;
       const blocks = [
         { type: "section", text: { type: "mrkdwn", text: lead } },
         { type: "section", text: { type: "mrkdwn", text: input.message } },
         { type: "context", elements: [{ type: "mrkdwn", text: `<${input.appUrl}|Open in Task AI>` }] },
       ];
-      await postMessage(token, { channel, text: `${input.fromName} on #${input.taskId} ${input.taskSubject}: ${input.message}`, blocks });
+      await postMessage(token, { channel, text: `${input.fromName} on #${input.task.id} ${input.task.subject}: ${input.message}`, blocks });
       return { sent: true };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -155,10 +159,15 @@ export async function sendManualNotify(input: {
     }
   }
   try {
+    const today = new Date().toISOString().slice(0, 10);
     const { subject, html, text } = renderManualNotifyEmail({
       toFirstName: input.toName.split(" ")[0] || input.toName,
-      fromName: input.fromName, taskSubject: input.taskSubject, taskId: input.taskId,
-      message: input.message, appUrl: input.appUrl,
+      fromName: input.fromName, message: input.message, appUrl: input.appUrl,
+      task: {
+        subject: input.task.subject, description: input.task.description, due: input.task.due || undefined,
+        status: input.task.status as "Open" | "In progress" | "Closed", overdue: Boolean(input.task.due && input.task.due < today && input.task.status !== "Closed"),
+        project: input.task.project, topic: input.task.topic, meeting: input.task.recurringMeeting, taskId: input.task.id,
+      },
     });
     const result = await sendWithResend({ to: input.toEmail, subject, html, text });
     return result.sent ? { sent: true } : { sent: false, reason: result.reason };

@@ -278,16 +278,18 @@ export function renderLoginEmail(input: { name: string; code: string; link: stri
 }
 
 // The manual "notify" button's email channel — app/lib/task-notify.ts's
-// sendManualNotify, 2026-09-14. Deliberately not a task card (that's what
-// the digests already send): just the short note, quoted, since the
-// point of this one is "someone typed you a specific question," not "here's
-// everything about this task." The quote's orange left-border treatment
-// matches .citation-quote in the web app, reused here rather than a new
-// accent.
-export function renderManualNotifyEmail(input: { toFirstName: string; fromName: string; taskSubject: string; taskId: number; message: string; appUrl: string }) {
-  const subject = `${input.fromName} is asking about "${input.taskSubject}"`;
-  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(input.toFirstName)},</div><p style="margin-top:10px;color:#5b6577;font-size:14px;line-height:1.6"><b>${esc(input.fromName)}</b> is asking about <b>#${input.taskId} ${esc(input.taskSubject)}</b>:</p><div style="margin-top:6px;padding:16px 18px;border-left:3px solid #ffa614;border-radius:0 8px 8px 0;background:#fff7e8;color:#4a5160;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(input.message)}</div><a href="${esc(input.appUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open the task</a></td></tr></table></td></tr></table></body></html>`;
-  const text = `Hi ${input.toFirstName},\n\n${input.fromName} is asking about #${input.taskId} ${input.taskSubject}:\n\n${input.message}\n\nOpen the task: ${input.appUrl}`;
+// sendManualNotify. First cut quoted the note in its own box with no task
+// context at all; Rizan's follow-up: "use the templates we have, but add
+// the text above" — so this now reuses taskCard(), the exact same card
+// every digest email already renders (status pill, due badge, tags,
+// description), with the personal note sitting above it as the reason
+// this email exists, same "Hi {name}," open every other template here
+// uses.
+export function renderManualNotifyEmail(input: { toFirstName: string; fromName: string; message: string; appUrl: string; task: PendingTaskLine }) {
+  const subject = `${input.fromName} sent you a note on "${input.task.subject}"`;
+  const card = taskCard({ ...input.task, url: input.task.url || input.appUrl });
+  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76">Task</span> <span style="padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(input.toFirstName)},</div><div style="margin-top:8px;color:#4a5160;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(input.message)}</div><div style="margin-top:6px;color:#9299a3;font-size:12px">— ${esc(input.fromName)}</div><table role="presentation" width="100%" style="border-collapse:collapse;margin-top:22px">${card}</table><a href="${esc(input.appUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${input.toFirstName},\n\n${input.message}\n\n— ${input.fromName}\n\n${input.task.subject}${input.task.due ? ` (due ${input.task.due})` : ""}\n\nOpen Task AI: ${input.appUrl}`;
   return { subject, html, text };
 }
 
