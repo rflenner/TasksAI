@@ -20,9 +20,9 @@ export async function GET(request: Request) {
   if (!Number.isInteger(taskId)) return Response.json({ error: "taskId is required" }, { status: 400 });
   const [task] = await getDb().select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
   if (!task || !canSeeTask(task, actor)) return Response.json({ error: "Task not found" }, { status: 404 });
-  const people = await notifyCandidates([task.owner, ...task.collaborators, ...task.recipients], actor.name);
+  const { people, unregistered } = await notifyCandidates([task.owner, ...task.collaborators, ...task.recipients]);
   const [me] = actor.id ? await getDb().select({ notificationPrefs: users.notificationPrefs }).from(users).where(eq(users.id, actor.id)).limit(1) : [];
-  return Response.json({ people, defaultChannel: resolvePrefs(me?.notificationPrefs).lastNotifyChannel ?? null });
+  return Response.json({ people, unregistered, defaultChannel: resolvePrefs(me?.notificationPrefs).lastNotifyChannel ?? null });
 }
 
 // Sends to every selected person right now (one DM/email each, same

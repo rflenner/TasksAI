@@ -99,22 +99,32 @@ export async function sendSlackDigest(user: { name: string; email: string }, int
 export type NotifyChannel = "email" | "slack";
 export type NotifyCandidate = { name: string; email: string; channels: NotifyChannel[] };
 
+export type NotifyCandidates = { people: NotifyCandidate[]; unregistered: string[] };
+
 // Who could be notified about this task — its owner, coworkers and
-// recipients, minus the actor themself, restricted to people who are
-// actually registered users (an unregistered plain-text name has no
-// email to send to at all — see unregisteredNames/invite-strip in
-// TaskApp.js for the existing "not yet invited" treatment of those).
-// Channel availability is per person: email whenever they have one on
-// file (always, for a registered user), Slack only if a live
-// users.lookupByEmail resolves for their address — same check
-// notifySlackOnTaskChange already relies on, so "connected" here means
-// exactly what it means everywhere else in this app.
-export async function notifyCandidates(names: string[], actorName: string | null): Promise<NotifyCandidate[]> {
-  const wanted = [...new Set(names.filter(name => name && name !== actorName))];
-  if (!wanted.length) return [];
+// recipients. Used to exclude the actor themself here; dropped that
+// 2026-09-15 ("I might want to send it even to myself!") — a self-DM/
+// self-email is a completely ordinary send, no reason to special-case
+// it out. Split into people (registered users, restricted to who's
+// actually reachable — an unregistered plain-text name has no email to
+// send to at all) and unregistered (task-connected names with no
+// matching account), so the picker can explain *why* someone's missing
+// instead of just silently not listing them — see unregisteredNames/
+// invite-strip in TaskApp.js for the same "not yet invited" concept,
+// reused here rather than reinvented. Channel availability is per
+// person: email whenever they have one on file (always, for a
+// registered user), Slack only if a live users.lookupByEmail resolves
+// for their address — same check notifySlackOnTaskChange already
+// relies on, so "connected" here means exactly what it means
+// everywhere else in this app.
+export async function notifyCandidates(names: string[]): Promise<NotifyCandidates> {
+  const wanted = [...new Set(names.filter(Boolean))];
+  if (!wanted.length) return { people: [], unregistered: [] };
   const rows = await getDb().select({ email: users.email, name: users.name }).from(users).where(inArray(users.name, wanted));
+  const registeredNames = new Set(rows.map(row => row.name));
+  const unregistered = wanted.filter(name => !registeredNames.has(name));
   const token = process.env.SLACK_BOT_TOKEN;
-  return Promise.all(rows.map(async person => {
+  const people = await Promise.all(rows.map(async person => {
     const channels: NotifyChannel[] = ["email"];
     if (token) {
       try { if (await lookupSlackUserByEmail(token, person.email)) channels.push("slack"); }
@@ -122,6 +132,7 @@ export async function notifyCandidates(names: string[], actorName: string | null
     }
     return { name: person.name, email: person.email, channels };
   }));
+  return { people, unregistered };
 }
 
 // Fires one message right now, on the channel the sender picked — email
