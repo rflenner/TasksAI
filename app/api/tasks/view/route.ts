@@ -13,5 +13,11 @@ export async function POST(request:Request){
  const[task]=await getDb().select().from(tasks).where(eq(tasks.id,input.taskId)).limit(1);
  if(!task||!canSeeTask(task,actor))return Response.json({error:"Task not found"},{status:404});
  await recordView(task.id,actor.name);
- return Response.json({ok:true});
+ // Returning the just-fetched row lets the drawer refresh itself with
+ // whatever's actually current — requested 2026-09-14, after a Slack
+ // edit landed correctly in the database but the already-open browser
+ // tab kept showing pre-edit values until a full page reload. Reuses
+ // this same round-trip (already fired on every drawer open) rather
+ // than adding a second fetch just for this.
+ return Response.json({ok:true,task});
 }
