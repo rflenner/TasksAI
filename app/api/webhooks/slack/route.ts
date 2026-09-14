@@ -56,7 +56,8 @@ export async function POST(request: Request) {
     if (!token) return Response.json({ ok: true });
     let payload: {
       type?: string; trigger_id?: string; response_url?: string;
-      user?: { id?: string }; actions?: Array<{ action_id?: string; value?: string }>;
+      user?: { id?: string };
+      actions?: Array<{ action_id?: string; value?: string; block_id?: string; selected_options?: Array<{ value?: string }> }>;
       view?: {
         callback_id?: string; private_metadata?: string;
         state?: {
@@ -71,7 +72,13 @@ export async function POST(request: Request) {
 
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
-      const taskId = Number(action?.value);
+      // The checkbox's task id rides on its section's block_id, not the
+      // option's value — see doneCheckbox's comment in app/lib/slack.ts
+      // for why: unchecking reports an empty selected_options, leaving
+      // no value to read at all on that direction of the toggle.
+      const taskId = action?.action_id === "task_toggle_done"
+        ? Number(action.block_id?.replace("task_toggle_", ""))
+        : Number(action?.value);
       const actor = await resolveActor(payload.user?.id, token);
       if (!Number.isInteger(taskId) || !actor) return Response.json({ ok: true });
       const [existing] = await getDb().select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
@@ -79,13 +86,17 @@ export async function POST(request: Request) {
         if (payload.response_url) await respondToInteraction(payload.response_url, { text: "You don't have permission to change that task." });
         return Response.json({ ok: true });
       }
-      if (action?.action_id === "task_close") {
-        const closedAt = existing.status === "Closed" ? existing.closedAt : new Date();
-        const [updated] = await getDb().update(tasks).set({ status: "Closed", closedAt }).where(eq(tasks.id, taskId)).returning();
+      if (action?.action_id === "task_toggle_done") {
+        const checked = Boolean(action.selected_options?.length);
+        const newStatus = checked ? "Closed" : "Open";
+        const closedAt = newStatus === "Closed" ? (existing.status === "Closed" ? existing.closedAt : new Date()) : null;
+        const [updated] = await getDb().update(tasks).set({ status: newStatus, closedAt }).where(eq(tasks.id, taskId)).returning();
         await recordActivity(updated.id, actor.name, describeChanges(existing, updated));
-        if (payload.response_url) await respondToInteraction(payload.response_url, { text: `✅ Closed by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
+        if (payload.response_url) await respondToInteraction(payload.response_url, { text: checked ? `✅ Closed by ${actor.name}` : `↩️ Reopened by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
         // Not the actor — they just saw this refreshed in place above.
-        await notifySlackOnTaskChange(updated, actor.name, "closed");
+        // Reopening isn't a notify trigger anywhere else in the app
+        // either (see notifySlackOnTaskChange's callers) — only closing is.
+        if (checked) await notifySlackOnTaskChange(updated, actor.name, "closed");
       } else if (action?.action_id === "task_edit" && payload.trigger_id && payload.response_url) {
         await openView(token, payload.trigger_id, buildEditTaskModal(existing, payload.response_url, "card"));
       } else if (action?.action_id === "task_edit_from_digest" && payload.trigger_id && payload.response_url) {

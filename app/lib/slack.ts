@@ -72,24 +72,35 @@ export async function openDirectMessage(token: string, slackUserId: string): Pro
   return result.channel?.id || null;
 }
 
+// A single-option checkbox standing in for the web app's own "check to
+// close" card control — checked means Closed, unchecked means Open,
+// toggleable either way, added 2026-09-14 to replace the one-way "Close"
+// button. The task id rides on the SECTION's block_id, not the option's
+// value: unchecking reports an empty selected_options (nothing to read
+// a value off), so block_id is the only place the id survives both
+// directions — see the task_toggle_done handler in the webhook route.
+function doneCheckbox(task: { id: number; status: string }) {
+  const option = { text: { type: "plain_text", text: "Done" }, value: "done" };
+  return { type: "checkboxes", action_id: "task_toggle_done", options: [option], ...(task.status === "Closed" ? { initial_options: [option] } : {}) };
+}
+
 // The reminder/task card — one shared builder for both the on-demand
 // "/task list" command and the automatic reminder crons/real-time
 // notify, so a task always looks the same in Slack regardless of what
-// triggered it. Close stays its own one-click button (the fastest path
-// for the single most common action); everything else — status, due
-// date, reassigning the owner, posting a note — lives behind "Edit",
-// see buildEditTaskModal below.
+// triggered it. The checkbox is the fastest path for the single most
+// common action (and, unlike the button it replaced, also reopens);
+// everything else — status, due date, reassigning the owner, posting a
+// note — lives behind "Edit", see buildEditTaskModal below.
 export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string }): unknown[] {
   const dueLine = task.due ? `Due ${task.due}` : "No due date";
   return [
-    { type: "section", text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*\n${task.description || "_No description_"}` } },
+    { type: "section", block_id: `task_toggle_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*\n${task.description || "_No description_"}` }, accessory: doneCheckbox(task) },
     { type: "context", elements: [{ type: "mrkdwn", text: `${task.status} · ${dueLine} · Owner: ${task.owner}` }] },
     {
       type: "actions",
       block_id: `task_actions_${task.id}`,
       elements: [
         { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },
-        { type: "button", text: { type: "plain_text", text: "Close" }, style: "primary", action_id: "task_close", value: String(task.id) },
       ],
     },
   ];
