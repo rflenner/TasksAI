@@ -1,20 +1,51 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildDigestBlocks, buildEditTaskModal, buildTaskCardBlocks, type DigestLine } from "../app/lib/slack";
+import { buildDigestBlocks, buildEditTaskModal, buildTaskCardBlocks, MAX_CHECKLIST_ITEMS_IN_SLACK, type DigestLine } from "../app/lib/slack";
 
-type CardSection = { block_id: string; text: { text: string }; accessory: { type: string; action_id: string; options?: unknown[]; initial_options?: unknown[] } };
+const baseTask = { id: 7, subject: "X", description: "", status: "Open" as const, due: null, owner: "Y" };
 
-test("buildTaskCardBlocks: the title section carries the checkbox, unchecked for an open task", () => {
-  const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Open", due: null, owner: "Y" }) as CardSection[];
-  assert.equal(title.block_id, "task_toggle_7");
-  assert.equal(title.accessory.type, "checkboxes");
-  assert.equal(title.accessory.options?.length, 1);
-  assert.equal(title.accessory.initial_options, undefined);
+test("buildTaskCardBlocks: no checklist field at all renders no checklist block", () => {
+  const blocks = buildTaskCardBlocks(baseTask) as unknown[];
+  assert.equal(blocks.length, 3);
 });
 
-test("buildTaskCardBlocks: a closed task's checkbox starts checked", () => {
-  const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Closed", due: null, owner: "Y" }) as CardSection[];
-  assert.equal(title.accessory.initial_options?.length, 1);
+test("buildTaskCardBlocks: an empty checklist array renders no checklist block either", () => {
+  const blocks = buildTaskCardBlocks({ ...baseTask, checklist: [] }) as unknown[];
+  assert.equal(blocks.length, 3);
+});
+
+test("buildTaskCardBlocks: a non-empty checklist adds one actions block with a checkboxes element, right after the description", () => {
+  const checklist = [{ id: "a", text: "Call Bernd", done: false }, { id: "b", text: "Send contract", done: true }];
+  const blocks = buildTaskCardBlocks({ ...baseTask, checklist }) as Array<{ type: string; elements?: Array<{ type: string; options: unknown[]; initial_options?: unknown[] }> }>;
+  assert.equal(blocks.length, 4);
+  const checklistBlock = blocks[2]; // title, description, checklist, context
+  assert.equal(checklistBlock.type, "actions");
+  const checkboxes = checklistBlock.elements?.[0];
+  assert.equal(checkboxes?.type, "checkboxes");
+  assert.equal(checkboxes?.options.length, 2);
+  assert.equal(checkboxes?.initial_options?.length, 1); // only "Send contract" is done
+  assert.equal(blocks[3].type, "context"); // status/due/owner comes after, not before
+});
+
+test("buildTaskCardBlocks: a checklist longer than the cap shows only the first N plus an overflow note", () => {
+  const checklist = Array.from({ length: MAX_CHECKLIST_ITEMS_IN_SLACK + 3 }, (_, i) => ({ id: String(i), text: `Item ${i}`, done: false }));
+  const blocks = buildTaskCardBlocks({ ...baseTask, checklist }) as Array<{ elements?: Array<{ options?: unknown[]; text?: string }> }>;
+  assert.equal(blocks.length, 5); // title, description, checklist actions, overflow context, real context
+  assert.equal(blocks[2].elements?.[0].options?.length, MAX_CHECKLIST_ITEMS_IN_SLACK);
+  assert.equal(blocks[3].elements?.[0].text, "+3 more checklist items — open Edit to see the rest.");
+});
+
+type CardSection = { block_id: string; text: { text: string }; accessory: { type: string; action_id: string; value?: string } };
+
+// The title's accessory was a checkbox at first, but coexisting with
+// the checklist's own checkboxes (see tests above) read as confusing —
+// reverted to a plain Close button per Rizan's follow-up feedback.
+test("buildTaskCardBlocks: the title section carries a Close button, not a checkbox", () => {
+  const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Open", due: null, owner: "Y" }) as CardSection[];
+  assert.equal(title.block_id, "task_title_7");
+  assert.equal(title.accessory.type, "button");
+  assert.equal(title.accessory.action_id, "task_close");
+  assert.equal(title.accessory.value, "7");
 });
 
 test("buildTaskCardBlocks: the description section carries the Edit button, no separate actions block", () => {

@@ -72,16 +72,33 @@ export async function openDirectMessage(token: string, slackUserId: string): Pro
   return result.channel?.id || null;
 }
 
-// A single-option checkbox standing in for the web app's own "check to
-// close" card control — checked means Closed, unchecked means Open,
-// toggleable either way, added 2026-09-14 to replace the one-way "Close"
-// button. The task id rides on the SECTION's block_id, not the option's
-// value: unchecking reports an empty selected_options (nothing to read
-// a value off), so block_id is the only place the id survives both
-// directions — see the task_toggle_done handler in the webhook route.
-function doneCheckbox(task: { id: number; status: string }) {
-  const option = { text: { type: "plain_text", text: "Done" }, value: "done" };
-  return { type: "checkboxes", action_id: "task_toggle_done", options: [option], ...(task.status === "Closed" ? { initial_options: [option] } : {}) };
+// Optional, so most cards render exactly as before — only the first
+// this-many items get a real Slack checkbox, same MAX_CARDS/MAX_
+// ACTIONABLE_DIGEST_LINES reasoning as elsewhere: Slack's own
+// checkboxes element caps out at 10 options, well short of anything
+// this app would ever need to hard-limit for block-count reasons on
+// its own. The rest are just not shown here — still fully manageable
+// from the web app or the Edit modal, never lost.
+export const MAX_CHECKLIST_ITEMS_IN_SLACK = 10;
+type ChecklistItem = { id: string; text: string; done: boolean };
+
+// Empty array (or no checklist at all — the field is optional) renders
+// nothing, not an empty checkboxes group; Slack rejects a checkboxes
+// element with zero options outright.
+function checklistBlocks(task: { id: number; checklist?: ChecklistItem[] }): unknown[] {
+  const all = task.checklist ?? [];
+  if (!all.length) return [];
+  const shown = all.slice(0, MAX_CHECKLIST_ITEMS_IN_SLACK);
+  const options = shown.map(item => ({ text: { type: "plain_text", text: item.text.slice(0, 75) }, value: item.id }));
+  const initialOptions = options.filter((_, i) => shown[i].done);
+  const overflow = all.length - shown.length;
+  return [
+    {
+      type: "actions", block_id: `task_checklist_${task.id}`,
+      elements: [{ type: "checkboxes", action_id: "task_checklist_toggle", options, ...(initialOptions.length ? { initial_options: initialOptions } : {}) }],
+    },
+    ...(overflow > 0 ? [{ type: "context", elements: [{ type: "mrkdwn", text: `+${overflow} more checklist item${overflow === 1 ? "" : "s"} — open Edit to see the rest.` }] }] : []),
+  ];
 }
 
 // The reminder/task card — one shared builder for both the on-demand
@@ -89,18 +106,27 @@ function doneCheckbox(task: { id: number; status: string }) {
 // notify, so a task always looks the same in Slack regardless of what
 // triggered it. Split into two sections (title, then description) so
 // each gets its own accessory rather than sharing one — added
-// 2026-09-14, per Rizan's design feedback: the checkbox reads better
-// right beside the title it's checking off, and Edit reads better
-// beside the description it edits, than both crowded onto one combined
-// block the way the very first version had them.
-export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string }): unknown[] {
+// 2026-09-14 per Rizan's design feedback. The title's accessory was a
+// checkbox at first, but coexisting with the new checklist's own
+// checkboxes (below) read as confusing — two different kinds of
+// checkbox, different meanings — so it's back to a plain Close button,
+// same as before the checkbox existed; reopening a closed task still
+// works, just via the Edit modal's Status field rather than a second
+// click on the same control.
+export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string; checklist?: ChecklistItem[] }): unknown[] {
   const dueLine = task.due ? `Due ${task.due}` : "No due date";
   return [
-    { type: "section", block_id: `task_toggle_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` }, accessory: doneCheckbox(task) },
+    {
+      type: "section", block_id: `task_title_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` },
+      accessory: { type: "button", text: { type: "plain_text", text: "Close" }, style: "primary", action_id: "task_close", value: String(task.id) },
+    },
     {
       type: "section", block_id: `task_desc_${task.id}`, text: { type: "mrkdwn", text: task.description || "_No description_" },
       accessory: { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },
     },
+    // Right after the description, not after the status/due/owner line —
+    // requested 2026-09-14, in both the card and the web drawer.
+    ...checklistBlocks(task),
     { type: "context", elements: [{ type: "mrkdwn", text: `${task.status} · ${dueLine} · Owner: ${task.owner}` }] },
   ];
 }

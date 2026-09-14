@@ -42,9 +42,16 @@ export const users = pgTable("users", {
   passwordFailedAttempts: integer("password_failed_attempts").notNull().default(0),
   passwordLockedUntil: timestamp("password_locked_until", { withTimezone: true }),
 }, table => [uniqueIndex("users_email_unique").on(table.email)]);
+// Optional per-task checklist — requested 2026-09-14. Each item needs a
+// stable id (not its array index) since toggling one from Slack reports
+// back a set of ids, not positions — see buildTaskCardBlocks in
+// app/lib/slack.ts and the task_checklist_toggle handler in the webhook
+// route.
+export type ChecklistItem = { id: string; text: string; done: boolean };
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(), subject: text("subject").notNull(), description: text("description").notNull().default(""), owner: text("owner").notNull(), collaborators: jsonb("collaborators").$type<string[]>().notNull().default([]), recipients: jsonb("recipients").$type<string[]>().notNull().default([]),
   due: text("due").notNull(), source: text("source").notNull(), topic: text("topic").notNull(), project: text("project").notNull(), recurringMeeting: text("recurring_meeting").notNull(), status: text("status").notNull().default("Open"), priority: text("priority").notNull().default("Low"), created: text("created").notNull(), createdBy: text("created_by"), updates: jsonb("updates").$type<Array<{ text: string; at: string; by?: string }>>().notNull().default([]),
+  checklist: jsonb("checklist").$type<ChecklistItem[]>().notNull().default([]),
   // Set automatically by the PATCH handler whenever status transitions to
   // "Closed", cleared if it's reopened. Powers the "Recently closed" section
   // of the pending-tasks digest — only tasks closed after this shipped have
