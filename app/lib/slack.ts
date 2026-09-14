@@ -73,10 +73,12 @@ export async function openDirectMessage(token: string, slackUserId: string): Pro
 }
 
 // The reminder/task card — one shared builder for both the on-demand
-// "/task list" command and (once wired) the automatic reminder crons, so
-// a task always looks the same in Slack regardless of what triggered it.
-// Delegate is deliberately not a button yet — Update + Close only for
-// this first pass, per the agreed sequencing.
+// "/task list" command and the automatic reminder crons/real-time
+// notify, so a task always looks the same in Slack regardless of what
+// triggered it. Close stays its own one-click button (the fastest path
+// for the single most common action); everything else — status, due
+// date, reassigning the owner, posting a note — lives behind "Edit",
+// see buildEditTaskModal below.
 export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string }): unknown[] {
   const dueLine = task.due ? `Due ${task.due}` : "No due date";
   return [
@@ -86,7 +88,7 @@ export function buildTaskCardBlocks(task: { id: number; subject: string; descrip
       type: "actions",
       block_id: `task_actions_${task.id}`,
       elements: [
-        { type: "button", text: { type: "plain_text", text: "Update" }, action_id: "task_update", value: String(task.id) },
+        { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },
         { type: "button", text: { type: "plain_text", text: "Close" }, style: "primary", action_id: "task_close", value: String(task.id) },
       ],
     },
@@ -105,46 +107,119 @@ function digestLineText(line: DigestLine): string {
   return `• ${label} — ${detail}`;
 }
 
+// Only the first this-many lines across a whole digest get an inline
+// "Open" button — each one costs its own section block (one line per
+// block, so its accessory attaches to just that line, not a group),
+// versus 10 lines packed into a single block for the plain-text ones
+// below. Same reasoning as MAX_CARDS in the webhook route: stays
+// comfortably clear of Slack's 50-block-per-message cap even on a
+// heavy digest, at the cost of the excess lines falling back to a
+// plain (linked, but buttonless) line like before.
+const MAX_ACTIONABLE_DIGEST_LINES = 10;
+
 // The Slack counterpart to the 3 email-cron digests (new assignment,
 // overdue, weekly) — a bulleted mrkdwn list per section (mirroring the
 // email template's own grouping: My tasks / Delegated / Recently closed,
-// or a single ungrouped section for the simpler digests), each line
-// linking to the task's own passwordless update link — the exact same
-// one the email already uses — rather than a full card per task: a
-// weekly digest can be a dozen-plus tasks, well past what stacking
-// buildTaskCardBlocks per task would fit in one message.
+// or a single ungrouped section for the simpler digests). The first
+// MAX_ACTIONABLE_DIGEST_LINES lines each get their own section with an
+// "Open" accessory button straight to buildEditTaskModal — added
+// 2026-09-14 so a digest is actionable in Slack itself, not just a
+// link out to the web app. Every line still carries its passwordless
+// update link too (the same one the email already uses) as a fallback.
 export function buildDigestBlocks(intro: string, sections: Array<{ heading?: string; lines: DigestLine[] }>): unknown[] {
   const blocks: unknown[] = [{ type: "section", text: { type: "mrkdwn", text: intro } }];
+  let actionableUsed = 0;
   for (const section of sections) {
     if (!section.lines.length) continue;
     if (section.heading) blocks.push({ type: "section", text: { type: "mrkdwn", text: `*${section.heading}*` } });
+    const rest: DigestLine[] = [];
+    for (const line of section.lines) {
+      if (actionableUsed < MAX_ACTIONABLE_DIGEST_LINES && line.taskId && line.status !== "Closed") {
+        actionableUsed++;
+        blocks.push({
+          type: "section",
+          text: { type: "mrkdwn", text: digestLineText(line) },
+          accessory: { type: "button", text: { type: "plain_text", text: "Open" }, action_id: "task_edit_from_digest", value: String(line.taskId) },
+        });
+      } else {
+        rest.push(line);
+      }
+    }
     // Slack's mrkdwn section text caps at 3000 characters — chunked
     // generously short of that rather than counted exactly, since task
     // subjects vary in length.
-    for (let i = 0; i < section.lines.length; i += 10) {
-      blocks.push({ type: "section", text: { type: "mrkdwn", text: section.lines.slice(i, i + 10).map(digestLineText).join("\n") } });
+    for (let i = 0; i < rest.length; i += 10) {
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: rest.slice(i, i + 10).map(digestLineText).join("\n") } });
     }
   }
   return blocks;
 }
 
-// The "Update" button's modal — a single text field, private_metadata
-// carries what the view_submission handler needs back (the task id and
-// this message's own response_url, so submitting it can refresh the
-// original card) since a modal has no other memory of what opened it.
-export function buildUpdateModal(taskId: number, taskSubject: string, responseUrl: string): unknown {
+const STATUS_OPTIONS = ["Open", "In progress", "Closed"] as const;
+
+// The "Edit" button's modal — status, due date, reassigning the owner,
+// and posting a note, all in one place, added 2026-09-14 to replace
+// the original single-field "post an update" modal (still the only
+// way to change any of these from Slack — the same operations the web
+// app's task drawer already offers). private_metadata carries what
+// view_submission needs back: the task id, this message's own
+// response_url, and `source` — "card" (opened from a /task or
+// real-time-notify card, where response_url can safely replace that
+// one message) vs "digest" (opened from a digest's inline button,
+// where replacing would blow away every OTHER task's line in the same
+// message — see the view_submission handler for how these two differ).
+//
+// Owner uses Slack's native people picker (users_select) rather than a
+// list of Task AI's own known names: matches the polished native UX of
+// comparable Slack apps, and the "your Slack email must match your
+// Task AI account" constraint it implies isn't new — every other part
+// of this integration already requires exactly that (see resolveActor
+// in the webhook route). Left unset means "don't change the owner",
+// same as due/status being left at their pre-filled current value.
+export function buildEditTaskModal(task: { id: number; subject: string; status: string; due: string | null; owner: string }, responseUrl: string, source: "card" | "digest"): unknown {
   return {
     type: "modal",
-    callback_id: "task_update_submit",
-    private_metadata: JSON.stringify({ taskId, responseUrl }),
-    title: { type: "plain_text", text: "Post an update" },
-    submit: { type: "plain_text", text: "Post" },
+    callback_id: "task_edit_submit",
+    private_metadata: JSON.stringify({ taskId: task.id, responseUrl, source }),
+    title: { type: "plain_text", text: "Edit task" },
+    submit: { type: "plain_text", text: "Save" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
-      { type: "section", text: { type: "mrkdwn", text: `*#${taskId} ${taskSubject}*` } },
+      { type: "section", text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` } },
+      {
+        type: "input",
+        block_id: "status_block",
+        label: { type: "plain_text", text: "Status" },
+        element: {
+          type: "static_select",
+          action_id: "status_select",
+          options: STATUS_OPTIONS.map(value => ({ text: { type: "plain_text", text: value }, value })),
+          initial_option: { text: { type: "plain_text", text: task.status }, value: task.status },
+        },
+      },
+      {
+        type: "input",
+        block_id: "due_block",
+        optional: true,
+        label: { type: "plain_text", text: "Due date" },
+        element: {
+          type: "datepicker",
+          action_id: "due_date",
+          placeholder: { type: "plain_text", text: "No due date" },
+          ...(task.due ? { initial_date: task.due } : {}),
+        },
+      },
+      {
+        type: "input",
+        block_id: "owner_block",
+        optional: true,
+        label: { type: "plain_text", text: `Reassign (currently ${task.owner})` },
+        element: { type: "users_select", action_id: "owner_select", placeholder: { type: "plain_text", text: "Leave as-is" } },
+      },
       {
         type: "input",
         block_id: "update_block",
+        optional: true,
         label: { type: "plain_text", text: "What's the update?" },
         element: { type: "plain_text_input", action_id: "update_text", multiline: true },
       },
