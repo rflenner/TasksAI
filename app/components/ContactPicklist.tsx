@@ -22,6 +22,16 @@ type Props = {
   // Project/Meeting/Topic scope pickers, which only ever offered picking
   // from an existing list — this doesn't change that.
   allowCreate?: boolean;
+  // At most one selection — added 2026-09-14 so Owner could move off its
+  // own separate plain <select> onto this same search-first component
+  // (Rizan's own "inconsistencies in how we select owners, coworkers, or
+  // recipients" feedback, after a long unsearched dropdown got hard to
+  // use). Picking an option REPLACES whatever was selected instead of
+  // adding to it, and the panel closes right after — a single-select
+  // combobox, not "multi-select capped at one". `value`/`onChange` stay
+  // arrays either way (0 or 1 items) so every other prop and internal
+  // (search, pinning, create-new) works completely unchanged.
+  single?: boolean;
 };
 
 function defaultInitials(name: string) {
@@ -75,7 +85,7 @@ function SearchIcon() {
 //    is chip content by then, not empty space.
 // 4. A search with no exact match offers "+ Add "<query>"" (allowCreate,
 //    on by default) so a genuinely new name isn't a dead end.
-export default function ContactPicklist({ label, value, options, onChange, hint, showAvatar = true, allowCreate = true }: Props) {
+export default function ContactPicklist({ label, value, options, onChange, hint, showAvatar = true, allowCreate = true, single = false }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(-1);
@@ -100,6 +110,11 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
   function openPanel() { setOpen(true); }
   function close() { setOpen(false); setQuery(""); setHi(-1); }
   function toggle(name: string) {
+    if (single) {
+      onChange(value.includes(name) ? [] : [name]);
+      close();
+      return;
+    }
     onChange(value.includes(name) ? value.filter(item => item !== name) : [...value, name]);
     setQuery(""); setHi(-1);
     inputRef.current?.focus();

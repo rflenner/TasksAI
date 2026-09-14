@@ -84,7 +84,7 @@
 .pl-row:hover,.pl-row.hi{background:#eef3fa}
 .pl-row.selected{background:#f7fafd}
 .pl-avatar{width:24px;height:24px;border-radius:50%;background:#e7eef8;color:var(--navy);display:grid;place-items:center;font:700 10px Arial,Helvetica,sans-serif;flex:none}
-.pl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-name{flex:1;min-width:0;overflow-wrap:break-word}
 .pl-check{width:16px;flex:none;color:var(--navy);font-size:12px;text-align:center}
 .pl-empty{padding:16px 10px;text-align:center;color:var(--muted);font:13px Arial,Helvetica,sans-serif}
 .picklist mark{background:#fde3ad;color:inherit;border-radius:2px;padding:0 1px}
