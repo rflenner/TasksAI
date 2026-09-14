@@ -15,10 +15,11 @@ import { getDb } from "../../../../db";
 import { tasks, users } from "../../../../db/schema";
 import { type Actor, canWriteTask } from "../../../lib/permissions";
 import {
-  buildTaskCardBlocks, buildUpdateModal, getSlackUserEmail, openView, respondToInteraction,
+  buildEditTaskModal, buildTaskCardBlocks, getSlackUserEmail, openView, respondToInteraction,
 } from "../../../lib/slack";
 import { isFreshSlackTimestamp, verifySlackSignature } from "../../../lib/slack-webhook";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../../lib/task-activity";
+import { newlyAssignedPeople, noteAssignments } from "../../../lib/task-flags";
 import { notifySlackOnTaskChange } from "../../../lib/task-notify";
 
 async function resolveActor(slackUserId: string | undefined, token: string): Promise<(Actor & { id: number }) | null> {
@@ -55,14 +56,29 @@ export async function POST(request: Request) {
     if (!token) return Response.json({ ok: true });
     let payload: {
       type?: string; trigger_id?: string; response_url?: string;
-      user?: { id?: string }; actions?: Array<{ action_id?: string; value?: string }>;
-      view?: { callback_id?: string; private_metadata?: string; state?: { values?: Record<string, Record<string, { value?: string }>> } };
+      user?: { id?: string };
+      actions?: Array<{ action_id?: string; value?: string; block_id?: string; selected_options?: Array<{ value?: string }> }>;
+      view?: {
+        callback_id?: string; private_metadata?: string;
+        state?: {
+          values?: Record<string, Record<string, {
+            value?: string; selected_date?: string | null; selected_user?: string | null;
+            selected_option?: { value?: string } | null;
+          }>>;
+        };
+      };
     };
     try { payload = JSON.parse(payloadRaw); } catch { return Response.json({ error: "Invalid payload" }, { status: 400 }); }
 
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
-      const taskId = Number(action?.value);
+      // The checkbox's task id rides on its section's block_id, not the
+      // option's value — see doneCheckbox's comment in app/lib/slack.ts
+      // for why: unchecking reports an empty selected_options, leaving
+      // no value to read at all on that direction of the toggle.
+      const taskId = action?.action_id === "task_toggle_done"
+        ? Number(action.block_id?.replace("task_toggle_", ""))
+        : Number(action?.value);
       const actor = await resolveActor(payload.user?.id, token);
       if (!Number.isInteger(taskId) || !actor) return Response.json({ ok: true });
       const [existing] = await getDb().select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
@@ -70,40 +86,96 @@ export async function POST(request: Request) {
         if (payload.response_url) await respondToInteraction(payload.response_url, { text: "You don't have permission to change that task." });
         return Response.json({ ok: true });
       }
-      if (action?.action_id === "task_close") {
-        const closedAt = existing.status === "Closed" ? existing.closedAt : new Date();
-        const [updated] = await getDb().update(tasks).set({ status: "Closed", closedAt }).where(eq(tasks.id, taskId)).returning();
+      if (action?.action_id === "task_toggle_done") {
+        const checked = Boolean(action.selected_options?.length);
+        const newStatus = checked ? "Closed" : "Open";
+        const closedAt = newStatus === "Closed" ? (existing.status === "Closed" ? existing.closedAt : new Date()) : null;
+        const [updated] = await getDb().update(tasks).set({ status: newStatus, closedAt }).where(eq(tasks.id, taskId)).returning();
         await recordActivity(updated.id, actor.name, describeChanges(existing, updated));
-        if (payload.response_url) await respondToInteraction(payload.response_url, { text: `✅ Closed by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
+        if (payload.response_url) await respondToInteraction(payload.response_url, { text: checked ? `✅ Closed by ${actor.name}` : `↩️ Reopened by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
         // Not the actor — they just saw this refreshed in place above.
-        await notifySlackOnTaskChange(updated, actor.name, "closed");
-      } else if (action?.action_id === "task_update" && payload.trigger_id && payload.response_url) {
-        await openView(token, payload.trigger_id, buildUpdateModal(taskId, existing.subject, payload.response_url));
+        // Reopening isn't a notify trigger anywhere else in the app
+        // either (see notifySlackOnTaskChange's callers) — only closing is.
+        if (checked) await notifySlackOnTaskChange(updated, actor.name, "closed");
+      } else if (action?.action_id === "task_edit" && payload.trigger_id && payload.response_url) {
+        await openView(token, payload.trigger_id, buildEditTaskModal(existing, payload.response_url, "card"));
+      } else if (action?.action_id === "task_edit_from_digest" && payload.trigger_id && payload.response_url) {
+        // Same modal, but response_url belongs to the whole digest
+        // message — see the view_submission handler below for why that
+        // means never replace_original here.
+        await openView(token, payload.trigger_id, buildEditTaskModal(existing, payload.response_url, "digest"));
       }
       return Response.json({ ok: true });
     }
 
-    if (payload.type === "view_submission" && payload.view?.callback_id === "task_update_submit") {
-      let meta: { taskId?: number; responseUrl?: string } = {};
+    if (payload.type === "view_submission" && payload.view?.callback_id === "task_edit_submit") {
+      let meta: { taskId?: number; responseUrl?: string; source?: "card" | "digest" } = {};
       try { meta = JSON.parse(payload.view.private_metadata || "{}"); } catch { /* leave meta empty — handled below */ }
-      const text = payload.view.state?.values?.update_block?.update_text?.value?.trim();
       const actor = await resolveActor(payload.user?.id, token);
-      if (actor && text && Number.isInteger(meta.taskId)) {
-        const [existing] = await getDb().select().from(tasks).where(eq(tasks.id, meta.taskId as number)).limit(1);
-        if (existing && canWriteTask(existing, actor)) {
-          // Same auto-advance rule as PATCH /api/tasks' own "Post update"
-          // path: a note bumps Open -> In progress unless a status change
-          // was also explicit — nothing here ever sets one explicitly, so
-          // this always behaves like the plain "grew updates" case.
-          const updates = [...existing.updates, { text, at: new Date().toISOString(), by: actor.name }];
-          const finalStatus = autoAdvanceStatus(existing.status, true, null);
-          const closedAt = finalStatus !== "Closed" ? null : existing.status === "Closed" ? existing.closedAt : new Date();
-          const [updated] = await getDb().update(tasks).set({ updates, status: finalStatus, closedAt }).where(eq(tasks.id, meta.taskId as number)).returning();
-          await recordActivity(updated.id, actor.name, [`posted an update: "${text.slice(0, 140)}"`]);
-          if (meta.responseUrl) await respondToInteraction(meta.responseUrl, { text: `📝 Updated by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
-          await notifySlackOnTaskChange(updated, actor.name, finalStatus === "Closed" && existing.status !== "Closed" ? "closed" : "update");
+      if (!actor || !Number.isInteger(meta.taskId)) return Response.json({ response_action: "clear" });
+
+      const [existing] = await getDb().select().from(tasks).where(eq(tasks.id, meta.taskId as number)).limit(1);
+      if (!existing || !canWriteTask(existing, actor)) return Response.json({ response_action: "clear" });
+
+      const values = payload.view.state?.values || {};
+      const text = values.update_block?.update_text?.value?.trim() || "";
+      const selectedStatus = values.status_block?.status_select?.selected_option?.value || null;
+      const selectedDate = values.due_block?.due_date?.selected_date || null;
+      const selectedSlackUserId = values.owner_block?.owner_select?.selected_user || null;
+
+      // Only a status choice that actually DIFFERS from the current one
+      // counts as "explicit" — Slack always reports the pre-filled value
+      // back even if the person never touched the dropdown, and treating
+      // that as an explicit choice would silently defeat autoAdvanceStatus's
+      // own Open -> In progress bump on every plain text-only update.
+      const explicitNewStatus = selectedStatus && selectedStatus !== existing.status ? selectedStatus : null;
+
+      let newOwner: string | null = null;
+      if (selectedSlackUserId) {
+        const email = await getSlackUserEmail(token, selectedSlackUserId);
+        const [ownerRow] = email ? await getDb().select().from(users).where(and(eq(users.email, email), eq(users.status, "active"))).limit(1) : [];
+        if (!ownerRow) {
+          return Response.json({
+            response_action: "errors",
+            errors: { owner_block: "That person doesn't have a Task AI account with a matching email — check their Slack profile email matches their Task AI account." },
+          });
         }
+        newOwner = ownerRow.name;
       }
+
+      if (!text && !explicitNewStatus && !selectedDate && !newOwner) {
+        return Response.json({ response_action: "errors", errors: { update_block: "Change something before saving." } });
+      }
+
+      const updates = text ? [...existing.updates, { text, at: new Date().toISOString(), by: actor.name }] : existing.updates;
+      const finalStatus = autoAdvanceStatus(existing.status, Boolean(text), explicitNewStatus);
+      const closedAt = finalStatus !== "Closed" ? null : existing.status === "Closed" ? existing.closedAt : new Date();
+      const [updated] = await getDb().update(tasks).set({
+        updates, status: finalStatus, closedAt,
+        ...(selectedDate ? { due: selectedDate } : {}),
+        ...(newOwner ? { owner: newOwner } : {}),
+      }).where(eq(tasks.id, meta.taskId as number)).returning();
+
+      const details = describeChanges(existing, updated);
+      if (text) details.push(`posted an update: "${text.slice(0, 140)}"`);
+      await recordActivity(updated.id, actor.name, details);
+      await noteAssignments(updated.id, newlyAssignedPeople(existing, updated));
+
+      const justClosed = existing.status !== "Closed" && finalStatus === "Closed";
+      if (meta.responseUrl) {
+        const confirmText = justClosed ? `✅ Closed by ${actor.name}` : `📝 Updated by ${actor.name}`;
+        // A card's response_url belongs to just that one task's message —
+        // safe to replace in place. A digest's response_url belongs to
+        // the WHOLE multi-task digest message — replacing it would wipe
+        // out every other task's line, so this posts a fresh confirmation
+        // alongside it instead.
+        await respondToInteraction(meta.responseUrl, { text: confirmText, blocks: buildTaskCardBlocks(updated), replace_original: meta.source === "card" });
+      }
+      // Same condition PATCH /api/tasks and the voice "act" command
+      // already use: a real-time DM for a posted update or a fresh
+      // close, not for a bare reassignment/due-date change alone.
+      if (justClosed || text) await notifySlackOnTaskChange(updated, actor.name, justClosed ? "closed" : "update");
+
       return Response.json({ response_action: "clear" });
     }
     return Response.json({ ok: true });
