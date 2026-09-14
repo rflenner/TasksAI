@@ -87,22 +87,21 @@ function doneCheckbox(task: { id: number; status: string }) {
 // The reminder/task card — one shared builder for both the on-demand
 // "/task list" command and the automatic reminder crons/real-time
 // notify, so a task always looks the same in Slack regardless of what
-// triggered it. The checkbox is the fastest path for the single most
-// common action (and, unlike the button it replaced, also reopens);
-// everything else — status, due date, reassigning the owner, posting a
-// note — lives behind "Edit", see buildEditTaskModal below.
+// triggered it. Split into two sections (title, then description) so
+// each gets its own accessory rather than sharing one — added
+// 2026-09-14, per Rizan's design feedback: the checkbox reads better
+// right beside the title it's checking off, and Edit reads better
+// beside the description it edits, than both crowded onto one combined
+// block the way the very first version had them.
 export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string }): unknown[] {
   const dueLine = task.due ? `Due ${task.due}` : "No due date";
   return [
-    { type: "section", block_id: `task_toggle_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*\n${task.description || "_No description_"}` }, accessory: doneCheckbox(task) },
-    { type: "context", elements: [{ type: "mrkdwn", text: `${task.status} · ${dueLine} · Owner: ${task.owner}` }] },
+    { type: "section", block_id: `task_toggle_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` }, accessory: doneCheckbox(task) },
     {
-      type: "actions",
-      block_id: `task_actions_${task.id}`,
-      elements: [
-        { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },
-      ],
+      type: "section", block_id: `task_desc_${task.id}`, text: { type: "mrkdwn", text: task.description || "_No description_" },
+      accessory: { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },
     },
+    { type: "context", elements: [{ type: "mrkdwn", text: `${task.status} · ${dueLine} · Owner: ${task.owner}` }] },
   ];
 }
 
