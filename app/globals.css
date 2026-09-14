@@ -69,7 +69,16 @@
    not a step that reveals a different one below it. */
 .pl-inline-search{flex:1;min-width:80px;border:0;outline:0;background:none;font:14px Arial,Helvetica,sans-serif;color:var(--ink);padding:4px 2px}
 .pl-inline-search::placeholder{color:#9aa2ac}
-.pl-search-icon{margin-left:auto;flex:none;color:#8b929d}
+/* Once there's already a chip, the input takes up NO row space at all
+   (not just "small" — a few px plus its own gap was still often enough
+   to force a second, near-empty-looking row under the chip in these
+   narrow drawer columns). The icon is the only visible affordance left
+   at that point; clicking it (or Tab, still reachable at zero width)
+   focuses the input, which is when it actually claims width again. */
+.pl-inline-search.has-value{flex:0 0 0;width:0;min-width:0;padding:0;margin:0;border:0}
+.pl-inline-search.has-value:focus{flex:1 1 80px;width:auto;min-width:80px;padding:4px 2px}
+.pl-search-icon{margin-left:auto;flex:none;border:0;background:none;color:#8b929d;width:26px;height:26px;border-radius:6px;display:grid;place-items:center;cursor:pointer}
+.pl-search-icon:hover{background:#eef3fa;color:var(--navy)}
 .chip{display:inline-flex;align-items:center;gap:6px;background:#eef3fa;color:var(--navy);border:1px solid #c9dbf2;border-radius:999px;padding:4px 6px 4px 10px;font:600 12.5px Arial,Helvetica,sans-serif;white-space:nowrap}
 .chip button{border:0;background:#d7e4f6;color:var(--navy);width:16px;height:16px;border-radius:50%;line-height:1;font-size:11px;cursor:pointer;padding:0}
 .chip button:hover{background:#c3d6ef}

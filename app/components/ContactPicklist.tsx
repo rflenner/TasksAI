@@ -148,7 +148,14 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
         <input
           id={inputId}
           ref={inputRef}
-          className="pl-inline-search"
+          // Once something's already selected, the input collapses down
+          // to just enough room for a cursor instead of claiming its own
+          // ~80px minimum — that minimum was forcing it (plus the icon)
+          // onto a second, mostly-empty-looking row under the chip.
+          // Expands back to full width on focus, when it's actually
+          // being typed into. See .pl-inline-search.has-value in
+          // globals.css for the collapsed/expanded sizing itself.
+          className={`pl-inline-search${value.length ? " has-value" : ""}`}
           role="combobox"
           aria-expanded={open}
           aria-controls={panelId}
@@ -170,7 +177,13 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
             else if (event.key === "Backspace" && !query && value.length) { toggle(value[value.length - 1]); }
           }}
         />
-        <SearchIcon className="pl-search-icon" />
+        {/* The one icon left once something's selected — clicking it
+            focuses (and so expands, via .has-value:focus) the now-
+            collapsed input right next to it, same destination as
+            clicking the input directly. */}
+        <button type="button" className="pl-search-icon" aria-label={`Search ${label.toLowerCase()}`} onClick={() => inputRef.current?.focus()}>
+          <SearchIcon />
+        </button>
       </div>
       {open && (
         <div id={panelId} className="pl-panel" role="listbox">
