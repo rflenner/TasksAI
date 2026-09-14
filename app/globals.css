@@ -90,6 +90,15 @@
 .notify-people-result{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:9px 10px;cursor:pointer;text-align:left;font-size:13px;color:var(--ink)}
 .notify-people-result:hover{background:#eef3fa}
 .notify-people-result .avatar{width:24px;height:24px;font-size:10px}
+/* Explains a name that typed-search doesn't turn into a selectable
+   result — the person IS on the task (owner/coworker/recipient) but
+   has no Task AI account yet, so there's no email to send to.
+   Confirmed 2026-09-15 this was reading as "why can't I add X" rather
+   than "X isn't set up yet" with no explanation at all. */
+.notify-unregistered-hint{margin-top:6px}
+.notify-unregistered-row{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:12.5px;color:#9299a3}
+.notify-invite-link{margin-left:auto;color:var(--navy);font-weight:700;text-decoration:none;flex:none}
+.notify-invite-link:hover{text-decoration:underline}
 .notify-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
 .notify-message{width:100%;min-height:120px;resize:vertical;border:1px solid #d9dee5;border-radius:8px;padding:12px;font:13.5px Arial,Helvetica,sans-serif;line-height:1.6;color:var(--ink);background:white}
 .notify-char-count{text-align:right;font-size:11px;color:#9299a3;margin-top:4px}
