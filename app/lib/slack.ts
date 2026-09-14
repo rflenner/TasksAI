@@ -72,18 +72,6 @@ export async function openDirectMessage(token: string, slackUserId: string): Pro
   return result.channel?.id || null;
 }
 
-// A single-option checkbox standing in for the web app's own "check to
-// close" card control — checked means Closed, unchecked means Open,
-// toggleable either way, added 2026-09-14 to replace the one-way "Close"
-// button. The task id rides on the SECTION's block_id, not the option's
-// value: unchecking reports an empty selected_options (nothing to read
-// a value off), so block_id is the only place the id survives both
-// directions — see the task_toggle_done handler in the webhook route.
-function doneCheckbox(task: { id: number; status: string }) {
-  const option = { text: { type: "plain_text", text: "Done" }, value: "done" };
-  return { type: "checkboxes", action_id: "task_toggle_done", options: [option], ...(task.status === "Closed" ? { initial_options: [option] } : {}) };
-}
-
 // Optional, so most cards render exactly as before — only the first
 // this-many items get a real Slack checkbox, same MAX_CARDS/MAX_
 // ACTIONABLE_DIGEST_LINES reasoning as elsewhere: Slack's own
@@ -118,14 +106,20 @@ function checklistBlocks(task: { id: number; checklist?: ChecklistItem[] }): unk
 // notify, so a task always looks the same in Slack regardless of what
 // triggered it. Split into two sections (title, then description) so
 // each gets its own accessory rather than sharing one — added
-// 2026-09-14, per Rizan's design feedback: the checkbox reads better
-// right beside the title it's checking off, and Edit reads better
-// beside the description it edits, than both crowded onto one combined
-// block the way the very first version had them.
+// 2026-09-14 per Rizan's design feedback. The title's accessory was a
+// checkbox at first, but coexisting with the new checklist's own
+// checkboxes (below) read as confusing — two different kinds of
+// checkbox, different meanings — so it's back to a plain Close button,
+// same as before the checkbox existed; reopening a closed task still
+// works, just via the Edit modal's Status field rather than a second
+// click on the same control.
 export function buildTaskCardBlocks(task: { id: number; subject: string; description: string; status: string; due: string | null; owner: string; checklist?: ChecklistItem[] }): unknown[] {
   const dueLine = task.due ? `Due ${task.due}` : "No due date";
   return [
-    { type: "section", block_id: `task_toggle_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` }, accessory: doneCheckbox(task) },
+    {
+      type: "section", block_id: `task_title_${task.id}`, text: { type: "mrkdwn", text: `*#${task.id} ${task.subject}*` },
+      accessory: { type: "button", text: { type: "plain_text", text: "Close" }, style: "primary", action_id: "task_close", value: String(task.id) },
+    },
     {
       type: "section", block_id: `task_desc_${task.id}`, text: { type: "mrkdwn", text: task.description || "_No description_" },
       accessory: { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "task_edit", value: String(task.id) },

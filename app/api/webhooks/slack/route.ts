@@ -73,14 +73,13 @@ export async function POST(request: Request) {
 
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
-      // Both checkboxes elements' task id rides on their block's
-      // block_id, not any option's value — see doneCheckbox's comment
-      // in app/lib/slack.ts for why: unchecking everything reports an
-      // empty selected_options, leaving no value to read at all on
-      // that direction of the toggle.
-      const taskId = action?.action_id === "task_toggle_done"
-        ? Number(action.block_id?.replace("task_toggle_", ""))
-        : action?.action_id === "task_checklist_toggle"
+      // The checklist checkboxes' task id rides on the block's block_id,
+      // not any option's value — see applyChecklistSelection's own
+      // comment for why: unchecking everything reports an empty
+      // selected_options, leaving no value to read at all on that
+      // direction of the toggle. Every other action here is a plain
+      // button, which always carries the task id as its own value.
+      const taskId = action?.action_id === "task_checklist_toggle"
         ? Number(action.block_id?.replace("task_checklist_", ""))
         : Number(action?.value);
       const actor = await resolveActor(payload.user?.id, token);
@@ -90,17 +89,13 @@ export async function POST(request: Request) {
         if (payload.response_url) await respondToInteraction(payload.response_url, { text: "You don't have permission to change that task." });
         return Response.json({ ok: true });
       }
-      if (action?.action_id === "task_toggle_done") {
-        const checked = Boolean(action.selected_options?.length);
-        const newStatus = checked ? "Closed" : "Open";
-        const closedAt = newStatus === "Closed" ? (existing.status === "Closed" ? existing.closedAt : new Date()) : null;
-        const [updated] = await getDb().update(tasks).set({ status: newStatus, closedAt }).where(eq(tasks.id, taskId)).returning();
+      if (action?.action_id === "task_close") {
+        const closedAt = existing.status === "Closed" ? existing.closedAt : new Date();
+        const [updated] = await getDb().update(tasks).set({ status: "Closed", closedAt }).where(eq(tasks.id, taskId)).returning();
         await recordActivity(updated.id, actor.name, describeChanges(existing, updated));
-        if (payload.response_url) await respondToInteraction(payload.response_url, { text: checked ? `✅ Closed by ${actor.name}` : `↩️ Reopened by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
+        if (payload.response_url) await respondToInteraction(payload.response_url, { text: `✅ Closed by ${actor.name}`, blocks: buildTaskCardBlocks(updated) });
         // Not the actor — they just saw this refreshed in place above.
-        // Reopening isn't a notify trigger anywhere else in the app
-        // either (see notifySlackOnTaskChange's callers) — only closing is.
-        if (checked) await notifySlackOnTaskChange(updated, actor.name, "closed");
+        await notifySlackOnTaskChange(updated, actor.name, "closed");
       } else if (action?.action_id === "task_checklist_toggle") {
         // Slack reports the checkbox group's whole current selection, not
         // which single item just flipped — applyChecklistSelection applies

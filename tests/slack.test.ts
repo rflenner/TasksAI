@@ -35,19 +35,17 @@ test("buildTaskCardBlocks: a checklist longer than the cap shows only the first 
   assert.equal(blocks[3].elements?.[0].text, "+3 more checklist items — open Edit to see the rest.");
 });
 
-type CardSection = { block_id: string; text: { text: string }; accessory: { type: string; action_id: string; options?: unknown[]; initial_options?: unknown[] } };
+type CardSection = { block_id: string; text: { text: string }; accessory: { type: string; action_id: string; value?: string } };
 
-test("buildTaskCardBlocks: the title section carries the checkbox, unchecked for an open task", () => {
+// The title's accessory was a checkbox at first, but coexisting with
+// the checklist's own checkboxes (see tests above) read as confusing —
+// reverted to a plain Close button per Rizan's follow-up feedback.
+test("buildTaskCardBlocks: the title section carries a Close button, not a checkbox", () => {
   const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Open", due: null, owner: "Y" }) as CardSection[];
-  assert.equal(title.block_id, "task_toggle_7");
-  assert.equal(title.accessory.type, "checkboxes");
-  assert.equal(title.accessory.options?.length, 1);
-  assert.equal(title.accessory.initial_options, undefined);
-});
-
-test("buildTaskCardBlocks: a closed task's checkbox starts checked", () => {
-  const [title] = buildTaskCardBlocks({ id: 7, subject: "X", description: "", status: "Closed", due: null, owner: "Y" }) as CardSection[];
-  assert.equal(title.accessory.initial_options?.length, 1);
+  assert.equal(title.block_id, "task_title_7");
+  assert.equal(title.accessory.type, "button");
+  assert.equal(title.accessory.action_id, "task_close");
+  assert.equal(title.accessory.value, "7");
 });
 
 test("buildTaskCardBlocks: the description section carries the Edit button, no separate actions block", () => {
