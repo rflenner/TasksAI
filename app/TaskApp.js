@@ -82,7 +82,15 @@ const GROUP_OPTIONS=[{key:`owner`,label:`Owner`},{key:`project`,label:`Project`}
 // (unlike a notice scoped to the closing panel, which would vanish
 // before anyone could read it) — cleared by its own dismiss button, or
 // by starting a fresh paste/dictation.
-[extractionWarning,setExtractionWarning]=(0,r.useState)(null);(0,r.useEffect)(()=>{let e=!0;return(async()=>{try{let n=await fetch(`/api/tasks${window.location.search}`),r=await n.json(),i=r.tasks;if(!i.length){for(let e of a)await fetch(`/api/tasks${window.location.search}`,{method:`POST`,headers:{"content-type":`application/json`},body:JSON.stringify(e)});n=await fetch(`/api/tasks${window.location.search}`),r=await n.json(),i=r.tasks}e&&(t(i),k(r.dimensions),setActorState(r.actor||null),setRegisteredPeople(r.registeredPeople||[]),N(`saved`),(viewParam=>{viewParam===`reminder`?(c(`overview`),j(`reminder`)):viewParam===`completed`?(c(`overview`),j(`completed`)):viewParam===`overdue`?(c(`mine`),setMyRoles([`owner`]),setMyStatuses([`Open`,`In progress`]),setMyDue([`Overdue`])):setMyStatuses([`Open`,`In progress`])})(new URLSearchParams(window.location.search).get(`view`)))}catch{e&&N(`error`)}})(),()=>{e=!1}},[]);
+[extractionWarning,setExtractionWarning]=(0,r.useState)(null);(0,r.useEffect)(()=>{let e=!0;return(async()=>{try{let n=await fetch(`/api/tasks${window.location.search}`),r=await n.json(),i=r.tasks;if(!i.length){for(let e of a)await fetch(`/api/tasks${window.location.search}`,{method:`POST`,headers:{"content-type":`application/json`},body:JSON.stringify(e)});n=await fetch(`/api/tasks${window.location.search}`),r=await n.json(),i=r.tasks}e&&(t(i),k(r.dimensions),setActorState(r.actor||null),setRegisteredPeople(r.registeredPeople||[]),N(`saved`),(viewParam=>{viewParam===`reminder`?(c(`overview`),j(`reminder`)):viewParam===`completed`?(c(`overview`),j(`completed`)):viewParam===`overdue`?(c(`mine`),setMyRoles([`owner`]),setMyStatuses([`Open`,`In progress`]),setMyDue([`Overdue`])):setMyStatuses([`Open`,`In progress`])})(new URLSearchParams(window.location.search).get(`view`)),
+ // A link into a specific task (the "Open Task AI" button on a manual-
+ // notify email, ?task=<id> — requested 2026-09-15 after that button
+ // just landed on the overview with nothing opened) resolves against
+ // this same fresh fetch, not the (possibly stale, definitely not-yet-
+ // committed) `e` state var — same reasoning as using `i` for the list
+ // just above. A missing/deleted/out-of-scope task id is silently a
+ // no-op, same as an unrecognized `view` value already is.
+ (taskParam=>{if(!taskParam)return;let found=i.find(x=>x.id===Number(taskParam));found&&openTask(found)})(new URLSearchParams(window.location.search).get(`task`)))}catch{e&&N(`error`)}})(),()=>{e=!1}},[]);
 // Grows with what's typed, and shrinks back down when the box clears
 // after posting — keyed on w itself so both directions are covered by
 // one effect, not just an onInput handler that only ever grows.
