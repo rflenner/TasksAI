@@ -83,3 +83,50 @@ export function addBusinessDays(referenceDateISO: string, days: number): string 
   }
   return date.toISOString().slice(0, 10);
 }
+
+// Cuts the quoted history off a reply, keeping only what the person
+// actually just typed — for app/api/webhooks/inbound-email/route.ts's
+// reply-to-update-a-task path (2026-09-15), where the *whole* email body
+// would otherwise get posted as the task update, history and all, every
+// single time someone replies. Not a full MIME/quote parser (Talon-grade
+// reply parsing is its own small industry) — just the handful of marker
+// lines that cover the clients people actually use: Gmail/Apple Mail's
+// "On <date>, <name> wrote:", Outlook's "-----Original Message-----" (or
+// its own unmarked "From: / Sent: / To: / Subject:" block), and a run of
+// "&gt;"-quoted lines, whichever comes first. No marker found at all
+// (a client that sends a clean reply with no quoting, or a top-post with
+// the quote stripped by the client already) just returns the text as-is
+// — nothing to cut.
+export function stripQuotedReply(text: string): string {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const markers = [
+    /^\s*On\s.{1,120}\swrote:\s*$/i,
+    /^\s*-{2,}\s*Original Message\s*-{2,}\s*$/i,
+    /^\s*From:\s*.+$/i,
+    /^\s*>/,
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    if (markers.some(marker => marker.test(lines[i]))) return lines.slice(0, i).join("\n").trim();
+  }
+  return text.trim();
+}
+
+// Picks the reply-token address out of an inbound email's "to" list, if
+// any of them is one — for app/api/webhooks/inbound-email/route.ts's
+// early branch between "this is a reply to a manual-notify email, apply
+// it as a task update" and "this is a fresh forward, extract a new task."
+// A manual-notify email's reply-to is exactly one address
+// (reply+{token}@..., see app/lib/task-notify.ts's sendManualNotify), but
+// a reply can carry other recipients too (anyone CC'd, or the original
+// sender's own address if their client added it back) — so this checks
+// every "to" entry rather than assuming the first or only one matters,
+// and returns the first match. Pulled out to its own testable function
+// rather than left inline in the route, same reasoning as stripQuotedReply
+// just above.
+export function findReplyToken(toAddresses: string[]): string | null {
+  for (const address of toAddresses) {
+    const match = bareEmail(address).match(/^reply\+([0-9a-f]+)@/i);
+    if (match) return match[1];
+  }
+  return null;
+}

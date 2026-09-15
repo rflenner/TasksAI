@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addBusinessDays, bareEmail, extractEmailNameHints, resolveViaEmailHint, stripHtml } from "../app/lib/inbound-email";
+import { addBusinessDays, bareEmail, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../app/lib/inbound-email";
 
 test("bareEmail extracts the address out of a \"Name <address>\" header, unchanged case-folded", () => {
   assert.equal(bareEmail("Rajat Budania <Rajat@HabileLabs.io>"), "rajat@habilelabs.io");
@@ -74,4 +74,45 @@ test("addBusinessDays still lands on a weekday even when the reference date itse
 
 test("addBusinessDays only reads the date portion, ignoring any time/offset already on the reference string", () => {
   assert.equal(addBusinessDays("2024-01-01T23:59:59.999Z", 1), "2024-01-02");
+});
+
+test("stripQuotedReply cuts at Gmail/Apple Mail's \"On ... wrote:\" line", () => {
+  const text = "Still on track, will have it by Friday.\n\nOn Mon, Sep 15, 2026 at 9:00 AM Rizan Flenner <rizan@iseeit.com> wrote:\n> Just a reminder about this task.\n> Please let me know if you're still on track.";
+  assert.equal(stripQuotedReply(text), "Still on track, will have it by Friday.");
+});
+
+test("stripQuotedReply cuts at Outlook's \"-----Original Message-----\" line", () => {
+  const text = "Done, closing this out.\n\n-----Original Message-----\nFrom: Rizan Flenner\nSent: Tuesday, September 15, 2026\nTo: Shankar Morwal\nSubject: Prepare Sales AI roadmap";
+  assert.equal(stripQuotedReply(text), "Done, closing this out.");
+});
+
+test("stripQuotedReply cuts at Outlook's unmarked \"From: / Sent: / To:\" quote block", () => {
+  const text = "I'll take a look today.\n\nFrom: Rizan Flenner\nSent: Tuesday, September 15, 2026 9:00 AM\nTo: Shankar Morwal\nSubject: Prepare Sales AI roadmap\n\nJust a reminder.";
+  assert.equal(stripQuotedReply(text), "I'll take a look today.");
+});
+
+test("stripQuotedReply cuts at a run of \">\"-quoted lines even with no header line at all", () => {
+  const text = "Sounds good.\n\n> Just a reminder about this task.\n> Please let me know.";
+  assert.equal(stripQuotedReply(text), "Sounds good.");
+});
+
+test("stripQuotedReply returns the whole trimmed text when there's nothing quoted to strip", () => {
+  assert.equal(stripQuotedReply("  Already sent it over, thanks!  "), "Already sent it over, thanks!");
+});
+
+test("findReplyToken picks the reply+{token}@ address out of a \"to\" list alongside other recipients", () => {
+  const to = ["Rizan Flenner <rizan@iseeit.com>", "reply+925dba35ca64a7f3@tasks.iseeit.ai"];
+  assert.equal(findReplyToken(to), "925dba35ca64a7f3");
+});
+
+test("findReplyToken matches a bare reply+ address with no display name, case-insensitively", () => {
+  assert.equal(findReplyToken(["REPLY+ABCDEF01@tasks.iseeit.ai"]), "abcdef01");
+});
+
+test("findReplyToken returns null when no \"to\" address is a reply+ address", () => {
+  assert.equal(findReplyToken(["tasks@tasks.iseeit.ai", "Someone Else <someone@example.com>"]), null);
+});
+
+test("findReplyToken returns null for an empty \"to\" list", () => {
+  assert.equal(findReplyToken([]), null);
 });

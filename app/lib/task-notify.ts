@@ -18,6 +18,16 @@ import { users } from "../../db/schema";
 import { renderManualNotifyEmail, sendWithResend } from "./email";
 import { resolvePrefs } from "./notification-prefs";
 import { buildDigestBlocks, buildTaskCardBlocks, type DigestLine, lookupSlackUserByEmail, openDirectMessage, postMessage } from "./slack";
+import { createTaskReplyToken } from "./task-update-tokens";
+
+// Domain the inbound webhook is actually wired to receive at (see the
+// "Forwarding an email to tasks@..." comment atop
+// app/api/webhooks/inbound-email/route.ts) — deliberately NOT
+// TASK_AI_FROM_EMAIL's domain (tasks.flenner.at by default): outbound
+// sending and inbound receiving are two different Resend-configured
+// domains in this app, and a reply-to address only works if it's on the
+// one Resend actually routes inbound mail for.
+const INBOUND_EMAIL_DOMAIN = process.env.INBOUND_EMAIL_DOMAIN || "tasks.iseeit.ai";
 
 type NotifiableTask = { id: number; subject: string; description: string; status: string; due: string | null; owner: string; collaborators: string[]; recipients: string[] };
 
@@ -180,7 +190,15 @@ export async function sendManualNotify(input: {
         project: input.task.project, topic: input.task.topic, meeting: input.task.recurringMeeting, taskId: input.task.id,
       },
     });
-    const result = await sendWithResend({ to: input.toEmail, subject, html, text });
+    // A reply lands back on this exact task, no sign-in needed — same
+    // token credential the "Add an update" digest links use (see
+    // app/lib/task-update-tokens.ts's createTaskReplyToken), just carried
+    // in the reply address instead of a clicked link. Piloting this on
+    // manual notify only (2026-09-15) — the recurring digest crons still
+    // send with no reply-to for now.
+    const replyToken = await createTaskReplyToken(input.task.id, input.toName, input.toEmail);
+    const replyTo = `reply+${replyToken}@${INBOUND_EMAIL_DOMAIN}`;
+    const result = await sendWithResend({ to: input.toEmail, subject, html, text, replyTo });
     return result.sent ? { sent: true } : { sent: false, reason: result.reason };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
