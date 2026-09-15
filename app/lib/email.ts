@@ -46,6 +46,17 @@ function truncated(text: string, max = 80) {
   return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }
 
+// Every "Open Task AI" link in this file used to just point at the bare
+// app root — landing on the overview with nothing open, even when the
+// email was clearly about one specific task. TaskApp.js reads ?task=<id>
+// on load (added 2026-09-15 alongside this) and opens that task's drawer
+// once the list arrives, same way it already reads ?view=. Falls back to
+// the bare appUrl when no id is known, same as every one of these links
+// already did before this existed — never worse, sometimes better.
+function taskDeepLink(appUrl: string, taskId?: number): string {
+  return taskId ? `${appUrl}/?task=${taskId}` : appUrl;
+}
+
 function taskCard(task: Omit<DigestTask, "status"> & { status?: DigestTask["status"] | "Closed"; closedAt?: string }) {
   const status = task.status || "Open";
   const closed = status === "Closed" || status === "Completed";
@@ -167,7 +178,7 @@ function section(title: string, tasks: PendingTaskLine[], key: keyof typeof SECT
   if (!tasks.length) return { html: "", text: "" };
   const cap = SECTION_CAP[key];
   const shown = tasks.slice(0, cap);
-  const rows = shown.map(task => taskCard({ ...task, url: task.url || linkUrl })).join("");
+  const rows = shown.map(task => taskCard({ ...task, url: task.url || taskDeepLink(linkUrl, task.taskId) })).join("");
   const more = tasks.length > shown.length ? `<p style="margin:8px 0 0;color:#9299a3;font-size:12px">+${tasks.length - shown.length} more in Task AI.</p>` : "";
   const html = `<h2 style="margin:24px 0 12px;color:#102f59;font-size:16px">${esc(title)}</h2><table role="presentation" width="100%" style="border-collapse:collapse">${rows}</table>${more}`;
   const text = `${title.toUpperCase()}\n${shown.map(task => `- ${task.subject}${task.status === "Closed" ? task.closedAt ? ` (closed ${task.closedAt})` : " (closed)" : task.overdue ? " (overdue)" : task.due ? ` (due ${task.due})` : ""}`).join("\n")}${more ? `\n+${tasks.length - shown.length} more in Task AI.` : ""}`;
@@ -285,11 +296,24 @@ export function renderLoginEmail(input: { name: string; code: string; link: stri
 // description), with the personal note sitting above it as the reason
 // this email exists, same "Hi {name}," open every other template here
 // uses.
-export function renderManualNotifyEmail(input: { toFirstName: string; fromName: string; message: string; appUrl: string; task: PendingTaskLine }) {
+export function renderManualNotifyEmail(input: { toFirstName: string; fromName: string; message: string; appUrl: string; task: PendingTaskLine; replyTo?: string }) {
   const subject = `${input.fromName} sent you a note on "${input.task.subject}"`;
-  const card = taskCard({ ...input.task, url: input.task.url || input.appUrl });
-  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(input.toFirstName)},</div><div style="margin-top:8px;color:#4a5160;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(input.message)}</div><div style="margin-top:6px;color:#9299a3;font-size:12px">— ${esc(input.fromName)}</div><table role="presentation" width="100%" style="border-collapse:collapse;margin-top:22px">${card}</table><a href="${esc(input.appUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a></td></tr></table></td></tr></table></body></html>`;
-  const text = `Hi ${input.toFirstName},\n\n${input.message}\n\n— ${input.fromName}\n\n${input.task.subject}${input.task.due ? ` (due ${input.task.due})` : ""}\n\nOpen Task AI: ${input.appUrl}`;
+  const taskUrl = input.task.url || taskDeepLink(input.appUrl, input.task.taskId);
+  const card = taskCard({ ...input.task, url: taskUrl });
+  // "Reply via Email" is a mailto: link straight to the reply-to address
+  // (minted in app/lib/task-notify.ts's sendManualNotify) — opens
+  // whatever mail client actually handles mailto on the recipient's
+  // device, pre-addressed and pre-subjected, so someone can type their
+  // update and hit send without first hunting for the Reply button.
+  // Requested 2026-09-15 alongside the fix above, plus a plain-text
+  // fallback right under it: mailto doesn't fire reliably from every
+  // webmail client, but a normal reply always works regardless, since
+  // the email's own reply-to is already this same address either way.
+  const mailto = input.replyTo ? `mailto:${input.replyTo}?subject=${encodeURIComponent(`Re: ${input.task.subject}`)}` : null;
+  const replyButton = mailto ? `<a href="${esc(mailto)}" style="display:inline-block;margin-top:24px;margin-left:10px;padding:14px 22px;border-radius:8px;background:#fff;color:#173f76;font-weight:700;text-decoration:none;border:2px solid #173f76">Reply via Email</a>` : "";
+  const replyHint = mailto ? `<div style="margin-top:14px;color:#9299a3;font-size:12px">Or simply hit reply on this email to send your update.</div>` : "";
+  const html = `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span></td></tr><tr><td style="padding:38px 34px"><div style="color:#102f59;font-size:14px;font-weight:700">Hi ${esc(input.toFirstName)},</div><div style="margin-top:8px;color:#4a5160;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(input.message)}</div><div style="margin-top:6px;color:#9299a3;font-size:12px">— ${esc(input.fromName)}</div><table role="presentation" width="100%" style="border-collapse:collapse;margin-top:22px">${card}</table><a href="${esc(taskUrl)}" style="display:inline-block;margin-top:24px;padding:14px 22px;border-radius:8px;background:#173f76;color:#fff;font-weight:700;text-decoration:none">Open Task AI</a>${replyButton}${replyHint}</td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${input.toFirstName},\n\n${input.message}\n\n— ${input.fromName}\n\n${input.task.subject}${input.task.due ? ` (due ${input.task.due})` : ""}\n\nOpen Task AI: ${taskUrl}${mailto ? `\n\nJust reply to this email (or write to ${input.replyTo}) to send an update.` : ""}`;
   return { subject, html, text };
 }
 

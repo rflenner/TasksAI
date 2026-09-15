@@ -181,23 +181,25 @@ export async function sendManualNotify(input: {
   }
   try {
     const today = new Date().toISOString().slice(0, 10);
+    // Minted before rendering, not after — the template needs the
+    // address itself to build the "Reply via Email" mailto: button
+    // (2026-09-15), not just Resend's reply_to header. A reply lands back
+    // on this exact task, no sign-in needed — same token credential the
+    // "Add an update" digest links use (see app/lib/task-update-tokens.ts's
+    // createTaskReplyToken), just carried in the reply address instead of
+    // a clicked link. Piloting this on manual notify only — the recurring
+    // digest crons still send with no reply-to for now.
+    const replyToken = await createTaskReplyToken(input.task.id, input.toName, input.toEmail);
+    const replyTo = `reply+${replyToken}@${INBOUND_EMAIL_DOMAIN}`;
     const { subject, html, text } = renderManualNotifyEmail({
       toFirstName: input.toName.split(" ")[0] || input.toName,
-      fromName: input.fromName, message: input.message, appUrl: input.appUrl,
+      fromName: input.fromName, message: input.message, appUrl: input.appUrl, replyTo,
       task: {
         subject: input.task.subject, description: input.task.description, due: input.task.due || undefined,
         status: input.task.status as "Open" | "In progress" | "Closed", overdue: Boolean(input.task.due && input.task.due < today && input.task.status !== "Closed"),
         project: input.task.project, topic: input.task.topic, meeting: input.task.recurringMeeting, taskId: input.task.id,
       },
     });
-    // A reply lands back on this exact task, no sign-in needed — same
-    // token credential the "Add an update" digest links use (see
-    // app/lib/task-update-tokens.ts's createTaskReplyToken), just carried
-    // in the reply address instead of a clicked link. Piloting this on
-    // manual notify only (2026-09-15) — the recurring digest crons still
-    // send with no reply-to for now.
-    const replyToken = await createTaskReplyToken(input.task.id, input.toName, input.toEmail);
-    const replyTo = `reply+${replyToken}@${INBOUND_EMAIL_DOMAIN}`;
     const result = await sendWithResend({ to: input.toEmail, subject, html, text, replyTo });
     return result.sent ? { sent: true } : { sent: false, reason: result.reason };
   } catch (error) {
