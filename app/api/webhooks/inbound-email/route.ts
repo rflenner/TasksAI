@@ -2,15 +2,23 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { contacts, dimensionValues, tasks, users } from "../../../../db/schema";
 import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../../lib/dictate-intent";
-import { addBusinessDays, bareEmail, extractEmailNameHints, resolveViaEmailHint, stripHtml } from "../../../lib/inbound-email";
+import { addBusinessDays, bareEmail, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
 import { getKnownPersonNames } from "../../../lib/known-people";
 import { canCreateTask, type Actor } from "../../../lib/permissions";
 import { resolveTaskNames } from "../../../lib/name-resolution";
 import { isFreshTimestamp, verifyResendSignature } from "../../../lib/resend-webhook";
 import { callTaskExtractionAI } from "../../../lib/task-extraction";
+import { applyTaskUpdateViaToken } from "../../../lib/task-update-tokens";
 
 type DimensionType = "project" | "meeting" | "topic" | "person";
-type InboundEvent = { type?: string; data?: { email_id?: string; from?: string; subject?: string } };
+// `to` is a best-effort guess at Resend's inbound `email.received` shape
+// (an array of recipient address strings, same "Name <addr>" or bare
+// format `from` can carry) — NOT verified against live Resend traffic or
+// current docs as of writing this (2026-09-15), only inferred from how
+// `from` behaves. Read defensively below (bareEmail on every entry,
+// tolerate a single string too) so a shape that's slightly off just
+// fails to match rather than throwing.
+type InboundEvent = { type?: string; data?: { email_id?: string; from?: string; to?: string[] | string; subject?: string } };
 
 // Forwarding an email to tasks@tasks.iseeit.ai (or any address at the
 // receiving subdomain — see the DNS setup) creates tasks the same way
@@ -33,6 +41,37 @@ export async function POST(request: Request) {
   if (event.type !== "email.received") return Response.json({ ok: true });
   const emailId = event.data?.email_id, fromHeader = event.data?.from;
   if (!emailId || !fromHeader) return Response.json({ ok: true });
+
+  // Reply-to-update-a-task path (piloted on manual notify only,
+  // 2026-09-15): checked before anything else below, including the
+  // "sender must be a registered user" gate a few lines down — the whole
+  // point of a reply token is that whoever it was issued to (see
+  // createTaskReplyToken's recipientName/recipientEmail) doesn't need a
+  // Task AI account at all. A reply from someone the token wasn't issued
+  // to still works too, same as clicking someone else's "Add an update"
+  // link would — the token itself is the credential, not the sender
+  // address, matching the security model /api/tasks/quick-update already
+  // uses for the click-through link.
+  const toAddresses = Array.isArray(event.data?.to) ? event.data.to : event.data?.to ? [event.data.to] : [];
+  const replyToken = findReplyToken(toAddresses);
+  if (replyToken) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) { console.error("RESEND_API_KEY is not configured; cannot fetch inbound email content"); return Response.json({ ok: true }); }
+    const emailRes = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!emailRes.ok) { console.error(`Could not fetch inbound email ${emailId} from Resend: ${emailRes.status}`); return new Response(null, { status: 502 }); }
+    const email = await emailRes.json() as { text?: string; html?: string };
+    const bodyText = email.text?.trim() || (email.html ? stripHtml(email.html) : "");
+    if (!bodyText) { console.warn(`Reply email ${emailId} has no readable body — no update applied`); return Response.json({ ok: true }); }
+    const strippedText = stripQuotedReply(bodyText);
+    const result = await applyTaskUpdateViaToken(replyToken, strippedText, undefined);
+    // Every outcome here responds 200/ok:true — an expired/unknown token
+    // or an empty-after-quote-stripping reply are both permanent, not
+    // something a Resend webhook retry could fix (same "log and move on"
+    // reasoning the no-readable-body case above already uses).
+    if (!result.ok) { console.warn(`Reply email ${emailId}: could not apply update via token (${result.error})`); return Response.json({ ok: true }); }
+    console.log(`Reply email ${emailId} from ${bareEmail(fromHeader)}: applied update to "${result.task.subject}"`);
+    return Response.json({ ok: true });
+  }
 
   // Idempotency: every task minted from this email carries an externalId
   // of `${emailId}:${index}` (tasks_external_unique in db/schema.ts
