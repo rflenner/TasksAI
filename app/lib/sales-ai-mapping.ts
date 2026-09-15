@@ -3,6 +3,7 @@
 // this was written. Kept separate from sales-ai-sync.ts (the DB/network
 // orchestration) the same way every other sync piece this session split
 // pure decision logic from I/O (data-hygiene.ts, activity-meter.ts, etc.).
+import { resolveDueDate } from "./task-defaults";
 
 // Sales AI's `end_date` filter is exclusive — confirmed live on
 // 2026-09-02: start_date=end_date=2026-09-02 (meant as "just today")
@@ -148,7 +149,7 @@ export function mapActionItemToTask(item: SalesAIActionItem, lookup: NameResolut
     owner,
     recipients,
     collaborators: [], // no Sales AI equivalent — confirmed live, only owner + recipients exist
-    due: item.due_date ? item.due_date.slice(0, 10) : "",
+    due: resolveDueDate(item.due_date ? item.due_date.slice(0, 10) : "", item.created_at),
     status: item.status === "completed" ? "Closed" : "Open",
     source: "Sales AI",
     created: item.created_at,

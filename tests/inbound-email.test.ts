@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addBusinessDays, bareEmail, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../app/lib/inbound-email";
+import { bareEmail, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../app/lib/inbound-email";
 
 test("bareEmail extracts the address out of a \"Name <address>\" header, unchanged case-folded", () => {
   assert.equal(bareEmail("Rajat Budania <Rajat@HabileLabs.io>"), "rajat@habilelabs.io");
@@ -53,27 +53,6 @@ test("resolveViaEmailHint returns null for a name with no matching hint, and for
   const hints = new Map([["xenofon kanarios", "Xenofon Kanarios"]]);
   assert.equal(resolveViaEmailHint("Someone Else", hints), null);
   assert.equal(resolveViaEmailHint("", hints), null);
-});
-
-// 2024-01-01 is a known Monday — used as a fixed anchor so these tests
-// don't depend on what "today" happens to be when they run.
-test("addBusinessDays counts only Mon-Fri, from a Monday reference", () => {
-  assert.equal(addBusinessDays("2024-01-01", 1), "2024-01-02"); // Tue
-  assert.equal(addBusinessDays("2024-01-01", 3), "2024-01-04"); // Thu
-  assert.equal(addBusinessDays("2024-01-01", 5), "2024-01-08"); // following Mon — skips the weekend
-});
-
-test("addBusinessDays skips the weekend when it falls in the middle of the count, from a Friday reference", () => {
-  assert.equal(addBusinessDays("2024-01-05", 1), "2024-01-08"); // Fri -> Mon, not Sat
-  assert.equal(addBusinessDays("2024-01-05", 3), "2024-01-10"); // Mon, Tue, Wed
-});
-
-test("addBusinessDays still lands on a weekday even when the reference date itself is a weekend", () => {
-  assert.equal(addBusinessDays("2024-01-06", 1), "2024-01-08"); // Sat reference -> first business day is Mon, skipping Sunday too
-});
-
-test("addBusinessDays only reads the date portion, ignoring any time/offset already on the reference string", () => {
-  assert.equal(addBusinessDays("2024-01-01T23:59:59.999Z", 1), "2024-01-02");
 });
 
 test("stripQuotedReply cuts at Gmail/Apple Mail's \"On ... wrote:\" line", () => {

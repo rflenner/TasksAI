@@ -2,12 +2,13 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { contacts, dimensionValues, tasks, users } from "../../../../db/schema";
 import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../../lib/dictate-intent";
-import { addBusinessDays, bareEmail, classifyReplyStatus, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
+import { bareEmail, classifyReplyStatus, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
 import { getKnownPersonNames } from "../../../lib/known-people";
 import { canCreateTask, type Actor } from "../../../lib/permissions";
 import { resolveTaskNames } from "../../../lib/name-resolution";
 import { isFreshTimestamp, verifyResendSignature } from "../../../lib/resend-webhook";
 import { callTaskExtractionAI } from "../../../lib/task-extraction";
+import { resolveDueDate } from "../../../lib/task-defaults";
 import { applyTaskUpdateViaToken, resolveTaskUpdateToken } from "../../../lib/task-update-tokens";
 
 type DimensionType = "project" | "meeting" | "topic" | "person";
@@ -205,10 +206,12 @@ Today's date, for resolving any relative time expression in this email, is ${ref
     // app/api/extract/route.ts.
     const resolved = resolveTaskNames(hinted, registeredNames, actor.name);
     // A due date the model didn't actually resolve to a real calendar
-    // date (null, or anything not matching YYYY-MM-DD) falls back to 3
-    // business days after the email arrived — never an empty string,
-    // which used to sort as "overdue" the instant the task was created.
-    const due = resolved.due && /^\d{4}-\d{2}-\d{2}$/.test(resolved.due) ? resolved.due : addBusinessDays(referenceDate, 3);
+    // date (null, or anything not matching YYYY-MM-DD) falls back to the
+    // same app-wide default every other creation path uses now — see
+    // app/lib/task-defaults.ts — 7 calendar days after the email
+    // arrived, never an empty string, which used to sort as "overdue"
+    // the instant the task was created.
+    const due = resolveDueDate(resolved.due, referenceDate);
     const task = {
       subject: (resolved.subject || "").slice(0, 140) || "Forwarded email", description: resolved.description || "",
       owner: resolved.owner || actor.name, collaborators: resolved.collaborators || [], recipients: resolved.recipients || [],
