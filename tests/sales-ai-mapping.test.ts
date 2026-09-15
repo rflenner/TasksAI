@@ -130,9 +130,10 @@ test("mapActionItemToTask: status completed maps to Closed, open/overdue both ma
   assert.equal(mapActionItemToTask(baseItem({ status: "overdue" }), lookup).status, "Open");
 });
 
-test("mapActionItemToTask: a missing due_date leaves due blank rather than crashing", () => {
+test("mapActionItemToTask: a missing due_date defaults to 7 days after created_at, rather than leaving due blank", () => {
   const lookup = { registeredNameByEmail: new Map(), accountNameById: new Map(), opportunityNameById: new Map(), canonicalNameByContactId: new Map() };
-  assert.equal(mapActionItemToTask(baseItem({ due_date: null }), lookup).due, "");
+  // baseItem's created_at is 2026-09-02 — see app/lib/task-defaults.ts.
+  assert.equal(mapActionItemToTask(baseItem({ due_date: null }), lookup).due, "2026-09-09");
 });
 
 test("mapActionItemToTask: unresolvable account/opportunity ids still get stored, just with a null name", () => {

@@ -69,20 +69,10 @@ export function resolveViaEmailHint(spoken: string, hints: Map<string, string>):
 // A task with due:"" used to read as overdue immediately — an empty
 // string sorts before any real YYYY-MM-DD, so the dashboard's
 // `due < TODAY` overdue check was silently true for every task with no
-// due date mentioned at all. This gives an email-forwarded task with no
-// timing signal a real, sensible deadline instead: `days` business days
-// (Mon-Fri, no weekends) after the reference date, which is the email's
-// own received date, not "whenever this happens to be processed."
-export function addBusinessDays(referenceDateISO: string, days: number): string {
-  const date = new Date(`${referenceDateISO.slice(0, 10)}T12:00:00Z`);
-  let remaining = days;
-  while (remaining > 0) {
-    date.setUTCDate(date.getUTCDate() + 1);
-    const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
-    if (day !== 0 && day !== 6) remaining--;
-  }
-  return date.toISOString().slice(0, 10);
-}
+// due date mentioned at all. Superseded 2026-09-15 by the app-wide
+// resolveDueDate/defaultDueDate (app/lib/task-defaults.ts) — every
+// creation path gets the same 7-calendar-day-out fallback now, not just
+// this one with its own narrower 3-business-day rule.
 
 // Cuts the quoted history off a reply, keeping only what the person
 // actually just typed — for app/api/webhooks/inbound-email/route.ts's

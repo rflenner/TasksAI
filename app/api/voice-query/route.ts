@@ -8,6 +8,7 @@ import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
+import { resolveDueDate } from "../../lib/task-defaults";
 import { hasUnseenUpdateFor, isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 import { callTaskExtractionAI } from "../../lib/task-extraction";
 import { notifySlackOnTaskChange } from "../../lib/task-notify";
@@ -392,19 +393,20 @@ This is a spoken request to create ONE new task right now, not a written meeting
     // Task — a spoken creation request is almost always either a
     // personal reminder or a direct assignment to someone else.
     const owner = resolved.owner || actor.name;
+    const createdAt = new Date().toISOString();
     const values = {
       subject: String(resolved.subject || resolved.description || "New task").slice(0, 140),
       description: String(resolved.description || resolved.subject || ""),
       owner,
       collaborators: Array.isArray(resolved.collaborators) ? resolved.collaborators : [],
       recipients: Array.isArray(resolved.recipients) ? resolved.recipients : [],
-      due: /^\d{4}-\d{2}-\d{2}$/.test(String(resolved.due || "")) ? String(resolved.due) : "",
+      due: resolveDueDate(resolved.due, createdAt),
       source: "Voice dictation",
       topic: String(resolved.topic || ""),
       project: String(resolved.project || ""),
       recurringMeeting: String(resolved.recurringMeeting || ""),
       status: "Open" as const,
-      created: new Date().toISOString(),
+      created: createdAt,
       updates: [] as Array<{ text: string; at: string; by?: string }>,
       createdBy: actor.name,
       closedAt: null,
