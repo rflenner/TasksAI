@@ -2,13 +2,13 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { contacts, dimensionValues, tasks, users } from "../../../../db/schema";
 import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../../lib/dictate-intent";
-import { addBusinessDays, bareEmail, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
+import { addBusinessDays, bareEmail, classifyReplyStatus, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
 import { getKnownPersonNames } from "../../../lib/known-people";
 import { canCreateTask, type Actor } from "../../../lib/permissions";
 import { resolveTaskNames } from "../../../lib/name-resolution";
 import { isFreshTimestamp, verifyResendSignature } from "../../../lib/resend-webhook";
 import { callTaskExtractionAI } from "../../../lib/task-extraction";
-import { applyTaskUpdateViaToken } from "../../../lib/task-update-tokens";
+import { applyTaskUpdateViaToken, resolveTaskUpdateToken } from "../../../lib/task-update-tokens";
 
 type DimensionType = "project" | "meeting" | "topic" | "person";
 // `to` is a best-effort guess at Resend's inbound `email.received` shape
@@ -63,13 +63,22 @@ export async function POST(request: Request) {
     const bodyText = email.text?.trim() || (email.html ? stripHtml(email.html) : "");
     if (!bodyText) { console.warn(`Reply email ${emailId} has no readable body — no update applied`); return Response.json({ ok: true }); }
     const strippedText = stripQuotedReply(bodyText);
-    const result = await applyTaskUpdateViaToken(replyToken, strippedText, undefined);
+    // Resolved once here (in addition to applyTaskUpdateViaToken's own
+    // internal resolve just below) purely to hand classifyReplyStatus the
+    // task's current status for context ("in progress" said about an
+    // already-in-progress task should stay a no-op, not a redundant
+    // status write) — a second cheap indexed lookup, not worth threading
+    // an already-resolved task through the shared applier just to save it.
+    const preResolve = await resolveTaskUpdateToken(replyToken);
+    if (!preResolve) { console.warn(`Reply email ${emailId}: could not apply update via token (expired)`); return Response.json({ ok: true }); }
+    const classifiedStatus = await classifyReplyStatus(strippedText, preResolve.task.status);
+    const result = await applyTaskUpdateViaToken(replyToken, strippedText, classifiedStatus ?? undefined);
     // Every outcome here responds 200/ok:true — an expired/unknown token
     // or an empty-after-quote-stripping reply are both permanent, not
     // something a Resend webhook retry could fix (same "log and move on"
     // reasoning the no-readable-body case above already uses).
     if (!result.ok) { console.warn(`Reply email ${emailId}: could not apply update via token (${result.error})`); return Response.json({ ok: true }); }
-    console.log(`Reply email ${emailId} from ${bareEmail(fromHeader)}: applied update to "${result.task.subject}"`);
+    console.log(`Reply email ${emailId} from ${bareEmail(fromHeader)}: applied update to "${result.task.subject}"${classifiedStatus ? ` (status -> ${classifiedStatus})` : ""}`);
     return Response.json({ ok: true });
   }
 

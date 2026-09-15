@@ -111,6 +111,57 @@ export function stripQuotedReply(text: string): string {
   return text.trim();
 }
 
+const REPLY_STATUS_SCHEMA = {
+  type: "object" as const,
+  additionalProperties: false,
+  required: ["status"],
+  properties: { status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] } },
+};
+
+// Does a reply's own words say anything about the task's status? Requested
+// 2026-09-15 after a live test: a reply reading "Yes, I'm working on it"
+// posted correctly as an update but left status untouched, since a reply
+// was only ever wired to add text, never to infer intent from it — this
+// closes that gap using the same phrasing convention voice mode's "act"
+// set_status already uses (see app/api/voice-query/route.ts), so a status
+// spoken to the assistant and a status typed in a reply read the same way
+// across the app. Deliberately narrower than that route's full action
+// classifier: a reply can only ever move status, nothing else (no
+// rewriting the subject, no adding/removing people) — those stay
+// intentional, in-app actions, not something free text in an inbox should
+// silently trigger.
+// Best-effort like every other optional AI feature here: no key configured,
+// a failed call, or an unparseable result all just mean "no status
+// change," never an error that blocks the update itself from posting.
+export async function classifyReplyStatus(text: string, currentStatus: string): Promise<string | null> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key || !text.trim()) return null;
+  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+  const isGpt5 = model.startsWith("gpt-5");
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        input: [
+          { role: "system", content: `A task is currently "${currentStatus}". The user just replied to an email about it. Does their reply itself say or clearly imply a new status for the task? "mark done"/"closing this out"/"finished"/"complete" -> Closed. "reopening this"/"not actually done" -> Open. "starting on it"/"in progress"/"working on it now" -> In progress. If the reply doesn't say anything about the task's status one way or the other (just a comment, a question, a blocker note, a "thanks", an unrelated remark), return null — never guess.` },
+          { role: "user", content: text },
+        ],
+        ...(isGpt5 ? { reasoning: { effort: "minimal" } } : {}),
+        text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "reply_status", strict: true, schema: REPLY_STATUS_SCHEMA } },
+      }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
+    const outputText = result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "";
+    const parsed = JSON.parse(outputText) as { status?: string | null };
+    return parsed.status && parsed.status !== currentStatus ? parsed.status : null;
+  } catch {
+    return null;
+  }
+}
+
 // Picks the reply-token address out of an inbound email's "to" list, if
 // any of them is one — for app/api/webhooks/inbound-email/route.ts's
 // early branch between "this is a reply to a manual-notify email, apply
