@@ -56,13 +56,42 @@ How Close Plan uses it:
 
 ## Adding and ordering tasks
 
-- **Add** at the end of a phase creates the task with the typed name, or a
-  "New task" opened with its title selected when the field is empty. "New
-  task" at the top does the same in the current phase.
+- **+ Add a task** at the end of a phase opens an inline task card with the name
+  field focused. Enter adds the task and starts the next one, Esc cancels. The
+  task gets the creator as owner and the phase end as due date; clicking it opens
+  the details. "New task" at the top opens the same inline row in the current phase.
 - **Order**: drag a task card by its grip (shown on hover) above or below another
   task, or onto another phase to move it there (subtasks travel with it);
   keyboard: focus the grip and use the up and down arrow keys. Available to the
   selling team and to customer contacts with "All tasks" access.
+
+## Task details layout
+
+Same structure as Task AI's task drawer, cleaned up for a plan: title and tags
+(phase, milestone, internal, added by the customer), then **Status · Phase · Due
+date**, the **description**, then **subtasks directly under the description** (so
+they are seen), then **Owner · Coworkers · Requested by**, sharing and milestone
+switches, who hears about the task, and status updates.
+
+People fields are chips in an input-like box. "+ Add" (or "Change" for the owner)
+opens a small panel with a search box, results grouped by team, and, for plan
+owners, Task AI users not yet on the plan. Typing filters, Enter picks the first
+match, arrow keys move through the list, Esc closes. This replaces the plain
+dropdowns Task AI uses for coworkers and recipients today; worth bringing back to
+Task AI.
+
+## Recent activity
+
+The activity panel opens with a **summary of the last 7 days** instead of every
+single change. Inside Task AI it is written by AI (`POST
+/api/close-plans/activity-summary`, signed-in users, same OpenAI Responses API
+and model as Task AI's extraction, minimal reasoning; input is the activity
+lines only, bounded to 80 lines of 300 characters, and treated as data). It is
+requested once changes stop for 1.5 s and cached per state of the activity.
+Without AI (stand-alone demo, AI not configured, or an error) a rule-based
+summary counts closed tasks, updates, new tasks and subtasks, moved milestones
+and dates, people changes and edits. **Show all activity (N)** opens the full
+list grouped by day, with identical entries in a row merged ("×2").
 
 ## Status: work started means In progress
 
