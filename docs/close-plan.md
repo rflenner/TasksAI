@@ -234,32 +234,48 @@ removal time (default: that side's plan owner). They're taken off coworker and
 recipient lists, and their personal link stops working. A plan owner can't be removed
 until another plan owner is set.
 
-## Data model
+## Data model: built on Task AI's existing database
 
-New tables:
+Plan tasks are ordinary `tasks` rows, so most of what a close plan needs already
+exists. One **additive** migration (`0021_close_plan.sql`) adds what's missing.
+Nothing is renamed or removed; every existing task leaves the new columns empty,
+so My tasks, digests, the Sales AI sync and reply-by-email keep working unchanged.
+Migrations already run automatically at startup on Render (`scripts/init-db.ts`).
 
-- `workspaces` — one row ("default") in V1.
-- `close_plans` — `workspace_id`, `name`, `account_id/name`, `opportunity_id/name`
-  (Sales AI ids, same shape as on `tasks`), `target_close_date`,
-  `owner` (seller), `status` (Active / Won / Lost / Archived), `created_by`, timestamps.
-- `close_plan_phases` — `plan_id`, `name`, `position`, `color`, optional `target_date`.
-- `close_plan_templates` + `close_plan_template_phases` (+ optional template tasks) —
-  the editable defaults copied into a new plan.
-- `close_plan_members` — the people on a plan: internal users and external buyer
-  contacts (`name`, `email`, `side` seller/buyer, optional `contact_id`).
-- `close_plan_access_tokens` — per buyer member, hashed + expiring, same model as
-  `task_update_tokens`. Identifies *who* the buyer is so their edits are attributed.
+**Reused as is**
 
-Additions to `tasks`:
+| Close Plan needs | Existing structure |
+|---|---|
+| Tasks: title, description, owner, due, status, updates | `tasks` |
+| Owner / Coworker / Requested by | `owner`, `collaborators`, `recipients` (plain names; people without an account already work) |
+| Link to the Sales AI deal | `tasks.account_id/name`, `opportunity_id/name` |
+| History, incl. "milestone moved from X to Y" | `task_activity` |
+| Buyer contacts with email | `contacts` (Sales AI sync) |
+| Selling team | `users` |
+| Update without signing in, reply by email | `task_update_tokens` |
+| Simple tick-boxes inside a task | `tasks.checklist` |
 
-- `plan_id`, `phase_id` — null for every ordinary Task AI task (unchanged behavior).
-- `parent_task_id` — subtasks; only one level allowed (enforced in app code).
-- `position` — ordering within a phase / parent.
-- `shared_with_buyer` boolean — internal-only steps (discount approval, legal review)
-  stay hidden from the buyer view. Buyer-created tasks are always shared.
+Reusing `project` as the plan, `topic` as the phase and `checklist` as subtasks was
+considered and rejected: subtasks would lose owner and date, and a buyer scoped to a
+project would also see internal tasks.
 
-Plan tasks are real Task AI tasks, so seller-side items automatically appear in
-My tasks, digests, overdue nudges, Slack, Task History and reply-by-email.
+**New tables**
+
+- `close_plans`: `title`, `account_id/name`, `opportunity_id/name`, `status`
+  (draft / active / won / lost / archived), `seller_owner` (user), `buyer_owner`
+  (member), `template_id`, `setup` (getting-started checklist state, jsonb), timestamps.
+  A `workspace_id` can be added with the later multi-workspace work.
+- `close_plan_phases`: `plan_id`, `name`, `goal`, `start_date`, `end_date`, `position`.
+- `close_plan_members`: `plan_id`, `name` (as used on tasks), `email`, `side`
+  (seller / buyer), `user_id` or `contact_id`, `plan_role`, `access_level`
+  (view / own / all), `can_create`, `invite_status` (none / invited / active),
+  `invited_at`, plus Resend delivery status like `users` has.
+- `close_plan_access_tokens`: one personal, hashed, expiring link per buyer member,
+  same model as `task_update_tokens`.
+- Templates ship in code first; `close_plan_templates` only when "save as template" is built.
+
+**New nullable columns on `tasks`**: `plan_id`, `phase_id`, `parent_task_id` (one level
+deep), `position`, `shared_with_buyer` (default true), `is_milestone` (default false).
 
 ## Access
 
@@ -281,12 +297,35 @@ My tasks, digests, overdue nudges, Slack, Task History and reply-by-email.
    "your tasks" first, add task/subtask, post update.
 4. **Templates** (`/plans/templates`) — edit default phases and starter tasks.
 
-## Notifications
+## Notifications and email: reuse from Task AI
 
-- Buyer adds/updates a task → seller owner gets Slack/email (reuse `task-notify`).
-- Buyer-owned tasks: weekly plan digest email to each buyer with their open
-  items + link back to `/p/<token>` (new cron, or folded into the weekly job).
-- Overdue buyer tasks are nudged to the *seller* owner, not the buyer, in V1.
+Every scheduled Task AI email and Slack message starts from `users` (active
+accounts). Buyers have no account, so the no-spam rule mostly comes for free.
+
+**Selling team, unchanged**: plan tasks are Task AI tasks, so they get the Slack
+message on update/close (`notifySlackOnTaskChange`), the weekly digest, overdue
+reminders and new-assignment notices (`scripts/send-*.ts`), with their own
+notification preferences.
+
+**Buyers, reused as is** (these take a plain name and email, not an account):
+- "Add an update" links: `createTaskUpdateToken` / `applyTaskUpdateViaToken`. The
+  update is credited "Name (via email)" and the selling owner gets the Slack message.
+- "Ask for an update" email with reply-by-email and status from the reply:
+  `sendManualNotify` + the inbound-email webhook.
+- Sending, layout and task cards: `sendWithResend`, `app/lib/email.ts`.
+
+**Buyers automatically excluded** from real-time Slack, overdue reminders and
+new-assignment notices (all iterate `users`), as agreed.
+
+**To build or extend**
+- Weekly plan job: Monday email per buyer member (My tasks, Requested by you) and the
+  plan overview for both plan owners; iterates `close_plan_members`, reuses the
+  existing email sections; only the overview block is new.
+- `notifyCandidates`: also list plan members, so "Ask for an update" can pick buyers.
+- Filter `shared_with_buyer` in every buyer-facing path.
+- Buyer invitation email with the personal plan link (Task AI invite layout, no account).
+- Resend delivery webhook: also update `close_plan_members`.
+- Reply-by-email from the weekly email: deferred.
 
 ## Build order
 
