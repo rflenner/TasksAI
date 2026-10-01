@@ -183,9 +183,15 @@ button { cursor: pointer; }
 .checklist-add-btn { display: flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--muted); font-size: 13px; padding: 6px 4px; border-radius: 5px; }
 .checklist-add-btn:hover { color: var(--navy); background: #f6f8fa; }
 .checklist-add-btn .i { width: 15px; height: 15px; }
-.add-card { border: 1px dashed #cfd7e2; background: transparent; border-radius: 10px; padding: 12px 16px; display: flex; gap: 10px; align-items: center; }
-.add-card input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; font-size: 14px; }
-.add-card .i { color: var(--hint); width: 18px; height: 18px; }
+.add-task-btn { display: inline-flex; align-items: center; gap: 6px; align-self: start; justify-self: start; border: 0; background: none; color: var(--muted); font-size: 14px; padding: 8px 10px; margin-left: 10px; border-radius: 8px; }
+.add-task-btn:hover { color: var(--navy); background: #fff; }
+.add-task-btn .i { width: 16px; height: 16px; }
+.inline-new { cursor: default; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(23, 63, 118, .08); }
+.inline-new .card-check { opacity: .5; }
+.inline-title { width: 100%; border: 0; outline: 0; background: transparent; font-size: 17px; color: var(--navy); padding: 0; line-height: 1.35; }
+.inline-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-top: 8px; }
+.inline-btns { display: flex; gap: 8px; }
+.card.just-added { border-color: var(--green); box-shadow: 0 0 0 3px #25784b22; transition: box-shadow 1s, border-color 1s; }
 .empty { color: var(--hint); font-size: 13px; padding: 6px 5px; }
 
 /* Right rail */
@@ -857,6 +863,7 @@ function growAll(root = document) { root.querySelectorAll("textarea[data-grow]")
 
 function render() {
   if (!state && !ui.wizard) ui.mode = "seller";
+  clearTimeout(render.flash); if (ui.justAdded) render.flash = setTimeout(() => { ui.justAdded = null; document.querySelector(".just-added")?.classList.remove("just-added"); }, 1600);
   if (state) checkSetup();
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
   $("#mode-buyer").className = ui.mode === "buyer" ? "on" : "";
@@ -1136,7 +1143,11 @@ function phasesBlock() {
       ${editing ? phaseEditForm(ph) : ""}
       <div class="cards" data-phase="${ph.id}">
         ${tops.map(cardHtml).join("") || `<div class="empty">No tasks in this phase match the filter.</div>`}
-        ${canCreate() ? `<form class="add-card" data-add="${ph.id}"><span class="i i-plus"></span><input id="add-${ph.id}" placeholder="Add a task to ${esc(ph.name)}" autocomplete="off" aria-label="New task in ${esc(ph.name)}"><button class="btn sm primary" type="submit">Add</button></form>` : ""}
+        ${!canCreate() ? "" : ui.inlineAdd === ph.id ? `<form class="card inline-new" data-inline="${ph.id}">
+            <input type="checkbox" class="card-check" disabled aria-hidden="true" tabindex="-1">
+            <div class="card-body"><input class="inline-title" id="inline-${ph.id}" placeholder="Task name" autocomplete="off" aria-label="Name of the new task in ${esc(ph.name)}">
+              <div class="inline-foot"><span class="hint" style="margin:0">Enter adds it and starts the next one · Esc cancels</span><span class="inline-btns"><button type="button" class="btn sm" data-inline-cancel>Cancel</button><button type="submit" class="btn sm primary">Add task</button></span></div></div>
+          </form>` : `<button type="button" class="add-task-btn" data-inline-open="${ph.id}"><span class="i i-plus"></span>Add a task</button>`}
       </div>
     </section>`;
   }).join("") + (owner ? (ui.editPhase === "new" ? `<section class="group"><div class="group-title"><span class="avatar">${n + 1}</span><div><h2>New phase</h2></div></div>${phaseEditForm(null)}</section>` : `<button type="button" class="add-phase" data-phedit="new"><span class="i i-plus"></span>Add phase</button>`) : "");
@@ -1191,7 +1202,7 @@ function cardHtml(t) {
   const owner = person(t.owner);
   const last = t.updates[t.updates.length - 1];
   const desc = t.desc || (last ? `${person(last.by).name.split(" ")[0]}: ${last.text}` : "");
-  const card = `<div class="card ${t.status === "Closed" ? "done" : ""} ${ui.open === t.id ? "active" : ""}" role="button" tabindex="0" data-open="${t.id}">
+  const card = `<div class="card ${t.status === "Closed" ? "done" : ""} ${ui.open === t.id ? "active" : ""} ${ui.justAdded === t.id ? "just-added" : ""}" role="button" tabindex="0" data-open="${t.id}">
     ${canReorder() ? `<button type="button" class="grip" data-grip="${t.id}" aria-label="Move “${esc(t.title)}”: drag, or use the up and down arrow keys" title="Drag to reorder">⠿</button>` : ""}
     <input type="checkbox" class="card-check ${t.status === "In progress" ? "half" : ""}" data-check="${t.id}" ${t.status === "Closed" ? "checked" : ""} ${canEdit(t) ? "" : "disabled"} aria-label="Close “${esc(t.title)}”" title="${t.status === "Closed" ? "Reopen" : "Close task"}">
     <div class="card-body">
@@ -1738,7 +1749,14 @@ function wirePage() {
   app.querySelectorAll("[data-cycle]").forEach(b => b.onclick = e => { e.stopPropagation(); const t = state.tasks.find(x => x.id === b.dataset.cycle); setStatus(t, { "Open": "In progress", "In progress": "Closed", "Closed": "Open" }[t.status]); });
   app.querySelectorAll("[data-exp]").forEach(b => b.onclick = e => { e.stopPropagation(); const id = b.dataset.exp; ui.expanded.has(id) ? ui.expanded.delete(id) : ui.expanded.add(id); render(); });
   app.querySelectorAll("[data-check]").forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => setStatus(state.tasks.find(x => x.id === c.dataset.check), c.checked ? "Closed" : "Open"); });
-  app.querySelectorAll("[data-add]").forEach(f => f.onsubmit = e => { e.preventDefault(); const v = f.querySelector("input").value.trim(); addTask(f.dataset.add, null, v || "New task", !v); });
+  // Inline add: "+ Add a task" opens an empty card at the end of the phase; Enter adds and starts the next one.
+  app.querySelectorAll("[data-inline-open]").forEach(b => b.onclick = () => openInlineAdd(b.dataset.inlineOpen));
+  app.querySelectorAll("form[data-inline]").forEach(f => {
+    const inp = f.querySelector(".inline-title");
+    f.onsubmit = e => { e.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; } addInlineTask(f.dataset.inline, v); };
+    inp.onkeydown = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); ui.inlineAdd = null; render(); } };
+    f.querySelector("[data-inline-cancel]").onclick = () => { ui.inlineAdd = null; render(); };
+  });
   app.querySelectorAll("[data-digest]").forEach(b => b.onclick = () => { ui.digestFor = b.dataset.digest; renderDigest(); });
   ["seller", "buyer"].forEach(side => { const sel = $("#po-" + side); if (sel) sel.onchange = () => { state.planOwners[side] = sel.value; log(`made ${person(sel.value).name} the ${side === "buyer" ? B() : "iSEEit"} plan owner`, null); save(); render(); }; });
   app.querySelectorAll("[data-planmenu]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.planMenu = !ui.planMenu; render(); });
@@ -1773,7 +1791,7 @@ function wirePage() {
   app.querySelectorAll("[data-manage]").forEach(b => b.onclick = () => { ui.manage = b.dataset.manage; ui.removing = null; renderManage(); });
   app.querySelectorAll("[data-opentask]").forEach(b => b.onclick = () => { ui.open = b.dataset.opentask; render(); });
   const viewer = $("#viewer"); if (viewer) viewer.onchange = e => { ui.viewer = e.target.value; render(); };
-  const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || (state.phases[1] || state.phases[0]); if (cur) return addTask(cur.id, null, "New task", true); const inp = document.getElementById("add-" + cur.id); inp?.scrollIntoView({ behavior: "smooth", block: "center" }); inp?.focus(); };
+  const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || state.phases[0]; if (cur) openInlineAdd(cur.id, true); };
   const sa = $("#share-all"); if (sa) sa.onclick = () => toast(`In the real module this emails each ${B()} contact their personal link`);
   app.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => {
     const p = person(b.dataset.link);
@@ -2337,6 +2355,21 @@ function addTask(phase, parent, title, focusTitle = false) {
 
 // Reordering: drag a task card (or use the arrow keys on its grip) to change its place in a phase or move it
 // to another phase. The order is the order of the tasks list itself; subtasks travel with their main task.
+function openInlineAdd(phaseId, scroll = false) {
+  ui.inlineAdd = phaseId; if (ui.filter !== "all") ui.filter = "all";
+  render();
+  const inp = document.getElementById("inline-" + phaseId);
+  if (inp) { if (scroll) inp.scrollIntoView({ behavior: "smooth", block: "center" }); inp.focus({ preventScroll: scroll }); }
+}
+function addInlineTask(phaseId, title) {
+  const id = "t" + (++state.seq), ph = state.phases.find(x => x.id === phaseId);
+  state.tasks.push({ id, phase: phaseId, parent: null, title, owner: me(), due: ph.end, status: "Open", shared: true, createdBy: me(), updates: [], coworkers: [], recipients: [] });
+  log(`added “${title}”`, id); save();
+  ui.justAdded = id; render();
+  document.getElementById("inline-" + phaseId)?.focus();
+  toast("Task added. Click it to set the owner and due date");
+}
+
 function canReorder() { return ui.mode === "seller" || acc().level === "all"; }
 function moveTask(id, targetId, after, phaseId) {
   const t = state.tasks.find(x => x.id === id); if (!t || id === targetId) return;

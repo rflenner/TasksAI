@@ -56,9 +56,10 @@ How Close Plan uses it:
 
 ## Adding and ordering tasks
 
-- **Add** at the end of a phase creates the task with the typed name, or a
-  "New task" opened with its title selected when the field is empty. "New
-  task" at the top does the same in the current phase.
+- **+ Add a task** at the end of a phase opens an inline task card with the name
+  field focused. Enter adds the task and starts the next one, Esc cancels. The
+  task gets the creator as owner and the phase end as due date; clicking it opens
+  the details. "New task" at the top opens the same inline row in the current phase.
 - **Order**: drag a task card by its grip (shown on hover) above or below another
   task, or onto another phase to move it there (subtasks travel with it);
   keyboard: focus the grip and use the up and down arrow keys. Available to the
