@@ -1481,7 +1481,7 @@ function renderDrawer() {
   });
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
-  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); if (t.status === "Open") t.status = "In progress"; save(); render(); toast("Update posted"); };
+  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
 function chipField(t, key, label, edit) {
   const list = t[key] || [];
@@ -1664,8 +1664,8 @@ function renderAsk() {
     const text = "Working on it now, you'll have it by Friday.";
     ui.viewerBackup = null;
     t.updates.push({ by: p.id, at: new Date().toISOString().slice(0, 10), text, viaEmail: true });
-    const before = t.status; if (t.status === "Open") t.status = "In progress";
-    state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: p.id, text: `replied by email on “${t.title}”${before !== t.status ? ` (status set to ${t.status})` : ""}`, task: t.id });
+    state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: p.id, text: `replied by email on “${t.title}”`, task: t.id });
+    startWork(t, p.id);
     save(); ui.ask = null; renderAsk(); render(); toast(`${first}’s reply was posted. Status read from the reply: ${t.status}`);
   };
 }
@@ -2235,14 +2235,30 @@ function wireSetup(app) {
 }
 
 // Actions
+// Same rule as Task AI's autoAdvanceStatus: the moment someone starts working on an Open task (posts an
+// update, replies by email, or moves one of its subtasks forward) it becomes In progress. A status set by
+// hand always wins, and a closed task is never reopened by a note. Work on a subtask also starts its main task.
+// Returns the names of the tasks that moved, for the confirmation message.
+function startWork(t, by = me()) {
+  const moved = [];
+  for (let x = t; x; x = parentOf(x)) {
+    if (x.status !== "Open") continue;
+    x.status = "In progress";
+    state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by, text: `started work on “${x.title}” (status set to In progress)`, task: x.id });
+    moved.push(x.title);
+  }
+  return moved;
+}
+const movedText = moved => moved.length ? ` “${moved[0]}”${moved.length > 1 ? ` and “${moved[1]}”` : ""} moved to In progress.` : "";
+
 function setStatus(t, s) {
   if (!t || t.status === s) return;
   t.status = s;
   t.closedAt = s === "Closed" ? new Date().toISOString().slice(0, 10) : null;
   log(s === "Closed" ? `closed “${t.title}”` : `set “${t.title}” to ${s}`, t.id);
-  const p = parentOf(t);
-  if (p && s !== "Open" && p.status === "Open") p.status = "In progress";
+  const p = parentOf(t), moved = p && s !== "Open" ? startWork(p) : [];
   save(); render();
+  if (moved.length) toast(`Work started:${movedText(moved)}`);
 }
 function addTask(phase, parent, title) {
   const id = "t" + (++state.seq);
