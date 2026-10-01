@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db";
 import { taskActivity, taskViews, type tasks } from "../../db/schema";
+import { parseCreatedAt } from "./task-flags";
 
 type StoredTask = typeof tasks.$inferSelect;
 
@@ -67,13 +68,31 @@ export async function recordView(taskId: number, actorName: string) {
 
 export type ActivityEntry = { type: "created" | "edit" | "view"; detail: string; actorName: string | null; at: string };
 
+// tasks.created is the same dual-format free-form string parseCreatedAt
+// (app/lib/task-flags.ts) already exists to handle — bare YYYY-MM-DD for
+// hand-entered tasks, a full ISO timestamp for Sales AI sync/the inbound-
+// email webhook/voice-created tasks. This used to naively append
+// "T00:00:00Z" onto whatever it got, which throws RangeError: Invalid
+// time value the moment `created` already has its own time component —
+// silently crashing the whole /api/tasks/history endpoint for exactly
+// the tasks where that's true, which the client's
+// `.then(d=>setHistoryData(d.history||[]))` then rendered as a plain,
+// misleading "No activity yet." — confirmed live 2026-10-01 on a
+// Sales-AI-sourced task that visibly HAD a posted update but showed
+// empty Task History. Pulled out to its own function, same split as
+// everything else in this codebase, so the exact fix is directly
+// unit-testable without a live DB.
+export function createdHistoryEntry(created: string, createdBy: string | null): ActivityEntry {
+  return { type: "created", detail: "created this task", actorName: createdBy, at: new Date(parseCreatedAt(created)).toISOString() };
+}
+
 export async function taskHistory(taskId: number, created: string, createdBy: string | null): Promise<ActivityEntry[]> {
   const [activity, views] = await Promise.all([
     getDb().select().from(taskActivity).where(eq(taskActivity.taskId, taskId)),
     getDb().select().from(taskViews).where(eq(taskViews.taskId, taskId)),
   ]);
   const entries: ActivityEntry[] = [
-    { type: "created", detail: "created this task", actorName: createdBy, at: new Date(`${created}T00:00:00Z`).toISOString() },
+    createdHistoryEntry(created, createdBy),
     ...activity.map(row => ({ type: "edit" as const, detail: row.detail, actorName: row.actorName, at: row.createdAt.toISOString() })),
     ...views.map(row => ({ type: "view" as const, detail: "viewed this task", actorName: row.actorName, at: row.viewedAt.toISOString() })),
   ];
