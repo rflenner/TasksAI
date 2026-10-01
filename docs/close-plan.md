@@ -80,10 +80,26 @@ match, arrow keys move through the list, Esc closes. This replaces the plain
 dropdowns Task AI uses for coworkers and recipients today; worth bringing back to
 Task AI.
 
+## Next up and client PDF
+
+- **Next up** (top of the side panel): open tasks that are overdue or due in the
+  next 14 days for whoever is viewing, overdue first, six shown ("Show all N").
+- **Client PDF**: ⋮ next to the plan title → "Export PDF for <customer>" (iSEEit
+  team). Opens a print-ready report preview, then the browser's print dialog
+  ("Save as PDF", A4, vector text; the suggested file name is
+  "Close plan – <customer> – <date>"). Contents: where we stand (phase,
+  progress, next milestone, signature, go-live), key dates, a phase timeline,
+  next steps, every phase with its shared tasks and subtasks (status, owner,
+  coworkers, requested by, due), and both teams with roles. Internal tasks and
+  subtasks of internal tasks are never included. Meant for customers who are not
+  connected to the plan yet.
+
 ## Recent activity
 
-The activity panel opens with a **summary of the last 7 days** instead of every
-single change. Inside Task AI it is written by AI (`POST
+The activity panel lists only **major updates** (closed tasks, status updates
+and email replies, new tasks, moved milestones, phases added or deleted, people
+invited, added or removed), the latest six. **Show all activity (N)** opens
+everything, with a **summary of the last 7 days** on top. Inside Task AI it is written by AI (`POST
 /api/close-plans/activity-summary`, signed-in users, same OpenAI Responses API
 and model as Task AI's extraction, minimal reasoning; input is the activity
 lines only, bounded to 80 lines of 300 characters, and treated as data). It is
