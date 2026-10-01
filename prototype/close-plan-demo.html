@@ -168,6 +168,8 @@ button { cursor: pointer; }
 
 /* Avatars by side */
 .avatar.buyer { background: var(--buyer-soft); color: var(--buyer); }
+.meta .avatar, .avatar { justify-content: center; align-items: center; }
+.meta span.avatar { display: inline-grid; place-items: center; }
 .av-sm { width: 24px !important; height: 24px !important; font-size: 10px !important; }
 
 /* Subtasks (nested, like nav-children) */
@@ -555,6 +557,33 @@ button.wz-card { font: inherit; text-align: left; }
 .setup-act { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .ext-empty { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 26px; color: var(--muted); }
 @media (max-width: 800px) { .wz-cols, .wz-grid, .wz-grid-3, .wz-grid-d { grid-template-columns: 1fr; } .wz-preview > div { grid-template-columns: 24px minmax(0, 1fr); } .wz-preview small { grid-column: 2; } .wz-task { grid-template-columns: 20px minmax(0, 1fr) 60px; } .wz-flags, .wz-who { display: none; } .setup li { grid-template-columns: 24px minmax(0, 1fr); } .setup-act { grid-column: 2; justify-content: flex-start; } .wz-body { padding: 18px 16px; } }
+.d-tags { margin: -10px 0 20px; }
+.d-tags span.b { background: var(--buyer-soft); color: var(--buyer); border-color: #b9dfe1; }
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.d-sec-label { margin-top: 22px; letter-spacing: .6px; }
+.save-hint { margin: 6px 0 0; color: var(--hint); font-size: 11.5px; }
+.d-subs h3 { margin-bottom: 6px; }
+.people3 { align-items: start; }
+.d-switches { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 14px; }
+.pfield { position: relative; font-weight: 400; }
+.pf-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 44px; border: 1px solid var(--field); border-radius: 8px; padding: 6px 8px; background: #fff; }
+.pfield.ro .pf-box { background: #f6f8fa; }
+.pfield.open .pf-box { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(23, 63, 118, .08); }
+.pf-box .chip { font-size: 12px; padding: 3px 5px 3px 9px; }
+.pf-box .chip:not(:has(button)) { padding-right: 9px; }
+.pf-add { border: 0; background: none; color: var(--navy); font-size: 12.5px; font-weight: 700; padding: 4px 6px; border-radius: 6px; }
+.pf-add:hover { background: #eef3fa; }
+.pfield[data-pfield="recipients"] .pf-pop { left: auto; right: 0; }
+.pf-pop { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; width: max(100%, 260px); background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 34px #17223428; padding: 8px; }
+.pf-search { width: 100%; border: 1px solid var(--field) !important; border-radius: 8px !important; padding: 8px 10px !important; font-size: 13.5px !important; }
+.pf-list { max-height: 260px; overflow-y: auto; margin-top: 6px; }
+.pf-group { font-size: 10.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #8a919c; padding: 8px 6px 4px; }
+.pf-opt { display: flex; gap: 8px; align-items: center; width: 100%; border: 0; background: none; text-align: left; padding: 6px; border-radius: 6px; font-size: 13px; color: var(--ink); }
+.pf-opt:hover, .pf-opt:focus-visible { background: #f1f5fb; outline: 0; }
+.pf-name { min-width: 0; display: grid; }
+.pf-name small { color: var(--hint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-empty { color: var(--hint); font-size: 12.5px; margin: 8px 6px; }
+@media (max-width: 620px) { .three { grid-template-columns: 1fr; } }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
@@ -1469,35 +1498,51 @@ function renderDrawer() {
   const ph = state.phases.find(p => p.id === t.phase);
   const parent = parentOf(t);
   const edit = canEdit(t);
-  const ownerOpts = side => state.people.filter(p => p.side === side).map(p => `<option value="${p.id}" ${p.id === t.owner ? "selected" : ""}>${esc(p.name)}</option>`).join("");
   const kids = children(t.id).filter(visible);
+  const owner = person(t.owner);
+  const tags = [
+    `<span>${esc(ph.name)}</span>`,
+    t.milestone ? `<span class="mile"><span class="i i-star"></span>Milestone</span>` : "",
+    ui.mode === "seller" && !t.shared ? `<span class="internal">Internal · hidden from ${esc(B())}</span>` : "",
+    ui.mode === "seller" && byBuyer(t) ? `<span class="b">Added by ${esc(B())}</span>` : "",
+  ].join("");
   root.innerHTML = `<div class="overlay" data-close-bg>
   <aside class="drawer" role="dialog" aria-modal="true" aria-label="Task details">
     <button type="button" class="x" data-close aria-label="Close">×</button>
-    <label>${parent ? "SUBTASK" : "ACTION ITEM"} · ${esc(ph.name.toUpperCase())}</label>
+    <label>${parent ? "SUBTASK" : "ACTION ITEM"}</label>
     ${parent ? `<div class="crumb">Part of <button type="button" class="sub-toggle" data-open="${parent.id}">${esc(parent.title)}</button></div>` : ""}
     <h2><textarea class="d-title" id="d-title" rows="1" data-grow ${edit ? "" : "disabled"} aria-label="Task title">${esc(t.title)}</textarea></h2>
+    <div class="tags d-tags">${tags}</div>
     ${edit ? "" : `<div class="perm">${canUpdate(t) ? "You're on this task, so you can post updates. Only its owner and coworkers can change it." : acc().level === "view" ? "You have view-only access to this plan." : "You can view this task. Only its owner and coworkers can change it."}</div>`}
-    <label class="field" style="margin-bottom:14px">Description<textarea id="d-desc" data-grow ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
-    <div class="two">
+
+    <div class="three">
       <label class="field">Status<select id="d-status" ${edit ? "" : "disabled"}>${["Open", "In progress", "Closed"].map(s => `<option ${s === t.status ? "selected" : ""}>${s}</option>`).join("")}</select></label>
-      <label class="field">Due date<input type="date" id="d-due" value="${esc(t.due || "")}" ${edit ? "" : "disabled"}></label>
-      <label class="field">Owner<select id="d-owner" ${edit ? "" : "disabled"}><optgroup label="${esc(B())}">${ownerOpts("buyer")}</optgroup><optgroup label="iSEEit">${ownerOpts("seller")}</optgroup></select></label>
-      <div class="field" style="grid-column:1/-1">Coworkers${chipField(t, "coworkers", "Coworkers", edit)}</div>
-      <div class="field" style="grid-column:1/-1">Requested by${chipField(t, "recipients", "Requested by", edit)}</div>
       <label class="field">Phase<select id="d-phase" ${edit && !parent ? "" : "disabled"}>${state.phases.map(p => `<option value="${p.id}" ${p.id === t.phase ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
-      ${ui.mode === "seller" ? `<div class="field">Visibility<label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "checked" : ""}>Shared with ${esc(B())}</label></div>
-      <div class="field">Milestone<label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Mark as milestone</label></div>` : ""}
+      <label class="field">Due date<input type="date" id="d-due" value="${esc(t.due || "")}" ${edit ? "" : "disabled"}></label>
     </div>
-    ${!parent ? `<div class="section"><h3>Subtasks ${kids.length ? `<small>${kids.filter(k => k.status === "Closed").length} of ${kids.length} closed</small>` : ""}</h3>
-      ${kids.map(k => `<div class="checklist-item ${k.status === "Closed" ? "done" : ""}"><input type="checkbox" data-check="${k.id}" ${k.status === "Closed" ? "checked" : ""} aria-label="Close “${esc(k.title)}”"><button type="button" class="st" data-open="${k.id}">${esc(k.title)}</button>
+
+    <label class="field d-sec-label">DESCRIPTION<textarea id="d-desc" data-grow ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
+    ${edit ? `<p class="save-hint">Changes save when you leave this field</p>` : ""}
+
+    ${!parent && (kids.length || canCreate()) ? `<div class="section d-subs"><h3>Subtasks ${kids.length ? `<small>${kids.filter(k => k.status === "Closed").length} of ${kids.length} closed</small>` : ""}</h3>
+      ${kids.map(k => `<div class="checklist-item ${k.status === "Closed" ? "done" : ""}"><input type="checkbox" data-check="${k.id}" ${k.status === "Closed" ? "checked" : ""} ${canEdit(k) ? "" : "disabled"} aria-label="Close “${esc(k.title)}”"><button type="button" class="st" data-open="${k.id}">${esc(k.title)}</button>
         <div class="meta">${ui.mode === "seller" && !k.shared ? `<span class="tags" style="margin:0"><span class="internal">Internal</span></span>` : ""}${statusPill(k)}<span class="${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div></div>`).join("")}
       ${!canCreate() ? "" : ui.addSub ? `<form class="sub-add" id="d-addsub"><input id="d-subtitle" placeholder="Subtask name" autocomplete="off" aria-label="New subtask"><button class="btn sm primary" type="submit">Add</button></form>` : `<button type="button" class="checklist-add-btn" id="d-addsub-btn"><span class="i i-plus"></span>Add a subtask</button>`}
     </div>` : ""}
+
+    <div class="section">
+      <div class="three people3">
+        <div class="field">Owner${peopleField(t, "owner", edit)}</div>
+        <div class="field">Coworkers${peopleField(t, "coworkers", edit)}</div>
+        <div class="field">Requested by${peopleField(t, "recipients", edit)}</div>
+      </div>
+      ${ui.mode === "seller" ? `<div class="d-switches"><label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "checked" : ""}>Shared with ${esc(B())}</label><label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Milestone</label></div>` : ""}
+    </div>
+
     ${ui.mode === "seller" ? notifySection(t) : ""}
     <div class="section updates"><h3>Status updates</h3>
       ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><p>${esc(u.text)}</p></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
-      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" data-grow placeholder="Share an update with ${ui.mode === "seller" ? "everyone on this task" : "the iSEEit team"}…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
+      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" data-grow placeholder="Share progress, a blocker, or a decision…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
     </div>
   </aside></div>`;
   root.querySelector("[data-close]").onclick = closeDrawer;
@@ -1510,7 +1555,7 @@ function renderDrawer() {
   title.onchange = () => { const v = title.value.replace(/\s+/g, " ").trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
   $("#d-status").onchange = e => setStatus(t, e.target.value);
   $("#d-desc").onchange = e => { t.desc = e.target.value.trim(); log(`edited the description of “${t.title}”`, t.id); save(); render(); };
-  $("#d-owner").onchange = e => { t.owner = e.target.value; log(`assigned “${t.title}” to ${person(t.owner).name}`, t.id); save(); render(); };
+  wirePicker(root, t);
   $("#d-due").onchange = e => {
     const from = t.due, to = e.target.value;
     if (from && to && from !== to) t.dateChanges = [...(t.dateChanges || []), { from, to, at: new Date().toISOString().slice(0, 10), by: me() }];
@@ -1524,23 +1569,58 @@ function renderDrawer() {
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
   root.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [key, id] = b.dataset.rm.split(":"); t[key] = t[key].filter(x => x !== id); log(`removed ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
-  root.querySelectorAll("[data-addp]").forEach(sel => sel.onchange = () => {
-    const key = sel.dataset.addp; let id = sel.value; if (!id) return;
-    const fresh = id.startsWith("add:"); if (fresh) { id = addUserToPlan(id.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return render(); } }
-    t[key] = [...(t[key] || []), id];
-    log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render();
-    if (fresh) toast(`${person(id).name} added to the plan and to this task`);
-  });
+
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
   if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
-function chipField(t, key, label, edit) {
-  const list = t[key] || [];
-  const taken = new Set([t.owner, ...(t.coworkers || []), ...(t.recipients || [])]);
-  const opts = side => state.people.filter(p => p.side === side && !taken.has(p.id)).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
-  return `<div class="chips">${list.map(id => `<span class="chip ${person(id).side === "buyer" ? "chip-b" : ""}">${esc(person(id).name)}${edit ? `<button type="button" data-rm="${key}:${id}" aria-label="Remove ${esc(person(id).name)}">×</button>` : ""}</span>`).join("")}
-    ${edit ? `<select class="chip-add" data-addp="${key}" aria-label="Add to ${label}"><option value="">+ Add</option><optgroup label="${esc(B())}">${opts("buyer")}</optgroup><optgroup label="iSEEit">${opts("seller")}</optgroup>${notOnPlanOpts()}</select>` : (list.length ? "" : `<span class="none">None</span>`)}</div>`;
+// People fields (Owner, Coworkers, Requested by): chips in an input-like box. "+ Add" / "Change" opens a small
+// panel with a search box; results are grouped by team, and plan owners also see Task AI users not yet on the plan.
+// This replaces the plain dropdowns, which Task AI also uses and which get hard to scan as lists grow.
+const PF_LABEL = { owner: "Owner", coworkers: "Coworkers", recipients: "Requested by" };
+function peopleField(t, key, edit) {
+  const ids = key === "owner" ? [t.owner] : (t[key] || []);
+  const chip = id => { const p = person(id); return `<span class="chip ${p.side === "buyer" ? "chip-b" : ""}">${esc(p.name)}${edit && key !== "owner" ? `<button type="button" data-rm="${key}:${id}" aria-label="Remove ${esc(p.name)}">×</button>` : ""}</span>`; };
+  const open = ui.picker && ui.picker.key === key;
+  return `<div class="pfield ${edit ? "" : "ro"} ${open ? "open" : ""}" data-pfield="${key}">
+    <div class="pf-box">${ids.map(chip).join("")}${!ids.length && !edit ? `<span class="none">None</span>` : ""}
+      ${edit ? `<button type="button" class="pf-add" data-pf-open="${key}" aria-expanded="${open}" aria-label="${key === "owner" ? "Change owner" : `Add to ${PF_LABEL[key]}`}">${key === "owner" ? "Change" : ids.length ? "+ Add" : "+ Add someone"}</button>` : ""}</div>
+    ${open ? `<div class="pf-pop" role="dialog" aria-label="${PF_LABEL[key]}"><input class="pf-search" id="pf-q" placeholder="Search by name, title or email" autocomplete="off" value="${esc(ui.picker.q || "")}"><div class="pf-list" id="pf-list" role="listbox">${pickerList(t, key, ui.picker.q || "")}</div></div>` : ""}
+  </div>`;
+}
+function pickerList(t, key, q) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (name, extra) => words.every(w => `${name} ${extra}`.toLowerCase().includes(w));
+  const taken = new Set(key === "owner" ? [t.owner] : [t.owner, ...(t.coworkers || []), ...(t.recipients || [])]);
+  const row = (val, name, sub, side) => `<button type="button" class="pf-opt" role="option" data-pf-pick="${esc(val)}"><span class="avatar av-sm ${side === "buyer" ? "buyer" : ""}">${esc(initials(name))}</span><span class="pf-name">${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></button>`;
+  const group = (label, items) => items.length ? `<div class="pf-group">${esc(label)}</div>${items.join("")}` : "";
+  const side = sd => state.people.filter(p => p.side === sd && !taken.has(p.id) && hit(p.name, `${p.title} ${p.email || ""} ${p.role || ""}`)).map(p => row(p.id, p.name, p.role || p.title, sd));
+  const others = (canManage("seller") || canManage("buyer")) ? notOnPlan().filter(o => hit(o.name, `${o.email || ""} ${o.title || ""}`)).map(o => row("add:" + o.key, o.name, o.email || o.title, "seller")) : [];
+  const html = group(B(), side("buyer")) + group("iSEEit", side("seller")) + group("Other Task AI users · adds them to the plan", others);
+  return html || `<p class="pf-empty">${q ? `No one matches “${esc(q)}”.` : "Everyone on the plan is already on this task."}</p>`;
+}
+function pickPerson(t, key, val) {
+  let id = val;
+  if (val.startsWith("add:")) { id = addUserToPlan(val.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return; } toast(`${person(id).name} added to the plan`); }
+  if (key === "owner") { t.owner = id; t.coworkers = (t.coworkers || []).filter(x => x !== id); log(`assigned “${t.title}” to ${person(id).name}`, t.id); ui.picker = null; }
+  else { t[key] = [...(t[key] || []), id]; log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); ui.picker = { key, q: "" }; }
+  save(); render();
+}
+function wirePicker(root, t) {
+  root.querySelectorAll("[data-pf-open]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pfOpen; ui.picker = ui.picker && ui.picker.key === k ? null : { key: k, q: "" }; render(); });
+  const q = root.querySelector("#pf-q"); if (!q) return;
+  const key = ui.picker.key, list = root.querySelector("#pf-list");
+  const wireOpts = () => list.querySelectorAll("[data-pf-pick]").forEach(o => o.onclick = e => { e.stopPropagation(); pickPerson(t, key, o.dataset.pfPick); });
+  wireOpts();
+  q.oninput = () => { ui.picker.q = q.value; list.innerHTML = pickerList(t, key, q.value); wireOpts(); };
+  q.onkeydown = e => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); ui.picker = null; render(); }
+    if (e.key === "Enter") { e.preventDefault(); const first = list.querySelector("[data-pf-pick]"); if (first) pickPerson(t, key, first.dataset.pfPick); }
+    if (e.key === "ArrowDown") { e.preventDefault(); list.querySelector("[data-pf-pick]")?.focus(); }
+  };
+  list.onkeydown = e => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const opts = [...list.querySelectorAll("[data-pf-pick]")], i = opts.indexOf(document.activeElement); (opts[i + (e.key === "ArrowDown" ? 1 : -1)] || (e.key === "ArrowUp" ? q : null))?.focus(); } if (e.key === "Escape") { ui.picker = null; render(); } };
+  root.querySelector(".pf-pop").onclick = e => e.stopPropagation();
+  setTimeout(() => { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 0);
 }
 // Active Task AI users who aren't on this plan yet. Only plan owners can add people, so only they get this group;
 // picking one adds them to the plan and to the task in one go.
@@ -1735,7 +1815,7 @@ function showTip(m) {
 function hideTip() { const tip = document.getElementById("float-tip"); if (tip) tip.hidden = true; }
 window.addEventListener("scroll", hideTip, { passive: true });
 
-function closeDrawer() { ui.open = null; ui.addSub = false; render(); }
+function closeDrawer() { ui.open = null; ui.addSub = false; ui.picker = null; render(); }
 
 function wirePage() {
   const app = $("#app");
@@ -2414,7 +2494,10 @@ function wireReorder(app) {
 $("#mode-seller").onclick = () => { ui.mode = "seller"; ui.open = null; ui.filter = "all"; try { localStorage.setItem(STORE_KEY + ":mode", "seller"); } catch (e) {} render(); };
 $("#mode-buyer").onclick = () => { ui.mode = "buyer"; ui.open = null; ui.filter = "all"; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":mode", "buyer"); } catch (e) {} render(); };
 $("#reset").onclick = () => { store = freshStore(); state = store.plans[0]; ui.wizard = null; ui.open = null; ui.expanded = new Set(); save(); render(); toast("Demo data reset"); };
-document.addEventListener("click", e => { if ((ui.phaseMenu || ui.planMenu) && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; ui.planMenu = false; render(); } });
+document.addEventListener("click", e => {
+  if ((ui.phaseMenu || ui.planMenu) && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; ui.planMenu = false; render(); }
+  if (ui.picker && !e.target.closest(".pfield")) { ui.picker = null; render(); }
+});
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();

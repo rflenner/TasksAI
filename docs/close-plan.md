@@ -65,6 +65,21 @@ How Close Plan uses it:
   keyboard: focus the grip and use the up and down arrow keys. Available to the
   selling team and to customer contacts with "All tasks" access.
 
+## Task details layout
+
+Same structure as Task AI's task drawer, cleaned up for a plan: title and tags
+(phase, milestone, internal, added by the customer), then **Status · Phase · Due
+date**, the **description**, then **subtasks directly under the description** (so
+they are seen), then **Owner · Coworkers · Requested by**, sharing and milestone
+switches, who hears about the task, and status updates.
+
+People fields are chips in an input-like box. "+ Add" (or "Change" for the owner)
+opens a small panel with a search box, results grouped by team, and, for plan
+owners, Task AI users not yet on the plan. Typing filters, Enter picks the first
+match, arrow keys move through the list, Esc closes. This replaces the plain
+dropdowns Task AI uses for coworkers and recipients today; worth bringing back to
+Task AI.
+
 ## Status: work started means In progress
 
 Same rule as Task AI's `autoAdvanceStatus` (`app/lib/task-activity.ts`): an
