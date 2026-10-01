@@ -586,6 +586,14 @@ button.wz-card { font: inherit; text-align: left; }
 .pf-name small { color: var(--hint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-empty { color: var(--hint); font-size: 12.5px; margin: 8px 6px; }
 @media (max-width: 620px) { .three { grid-template-columns: 1fr; } }
+.nextup { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.nu-item { display: flex; gap: 10px; align-items: flex-start; width: 100%; border: 0; background: none; text-align: left; padding: 7px 6px; border-radius: 8px; }
+.nu-item:hover { background: #f3f6fa; }
+.nu-body { min-width: 0; display: grid; }
+.nu-title { font-size: 13px; color: var(--navy); font-weight: 600; }
+.nu-body small { font-size: 11.5px; color: var(--muted); }
+.nu-body small.late { color: #c0501f; font-weight: 700; }
+.act-all { margin-top: 6px; }
 .act-summary { background: #f6f8fb; border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
 .act-summary p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: #3d4654; }
 .act-label { font-size: 10px; font-weight: 800; letter-spacing: .8px; color: var(--navy); }
@@ -595,6 +603,75 @@ button.wz-card { font: inherit; text-align: left; }
 .act-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
 .feed .act-day { font-size: 10.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #8a919c; padding-top: 6px; }
 .act-n { font-size: 11px; font-weight: 700; color: var(--muted); background: #eef1f5; border-radius: 10px; padding: 1px 6px; }
+.report-overlay { z-index: 45; }
+.report-wrap { width: 100%; max-width: 860px; }
+.report-bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; box-shadow: 0 6px 20px #17223418; flex-wrap: wrap; }
+.report { background: #fff; border-radius: 6px; padding: 44px 48px; color: #202735; font-size: 12.5px; line-height: 1.45; box-shadow: 0 10px 30px #1722341f; }
+.report h1 { font-size: 26px; color: #102f59; margin: 18px 0 4px; line-height: 1.2; }
+.report h2 { font-size: 15px; color: #102f59; margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #eef3fa; }
+.report h3 { font-size: 13.5px; color: #173f76; margin: 18px 0 6px; display: flex; gap: 10px; align-items: baseline; }
+.report h3 span { font-size: 11.5px; color: #7a8492; font-weight: 400; }
+.r-head { display: flex; justify-content: space-between; align-items: center; padding-bottom: 14px; border-bottom: 1px solid #e7ebef; }
+.r-brand { display: flex; align-items: center; gap: 4px; }
+.r-logo { font-size: 20px; font-weight: 800; color: #173f76; }
+.r-ai { font-size: 13px; font-weight: 800; background: #ffa614; color: #fff; padding: 3px 4px; border-radius: 4px; }
+.r-kind { margin-left: 10px; font-size: 11px; font-weight: 800; letter-spacing: 1.4px; color: #173f76; text-transform: uppercase; }
+.r-meta { color: #7a8492; font-size: 11.5px; }
+.r-sub-head { color: #5b6577; margin: 0; }
+.r-box { background: #f5f8fc; border: 1px solid #e3eaf3; border-radius: 10px; padding: 4px 18px 16px; margin-top: 20px; }
+.r-box h2 { border: 0; margin-bottom: 4px; }
+.r-box p { margin: 0 0 12px; font-size: 13px; }
+.r-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.r-kpis div { background: #fff; border: 1px solid #e3eaf3; border-radius: 8px; padding: 8px 10px; }
+.r-kpis span { display: block; font-size: 10px; font-weight: 700; color: #7a8492; text-transform: uppercase; letter-spacing: .4px; }
+.r-kpis b { display: block; color: #173f76; font-size: 13px; margin-top: 2px; }
+.r-table { width: 100%; border-collapse: collapse; font-size: inherit; }
+.report table, .report td, .report th { font-family: inherit; }
+.r-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #7a8492; padding: 6px 8px; border-bottom: 1px solid #dfe5ec; }
+.r-table td { padding: 7px 8px; border-bottom: 1px solid #eef1f5; vertical-align: top; }
+.r-table.r-compact td { padding: 5px 8px; }
+.r-task td { border-top: 1px solid #e3e8ef; }
+.r-subtask td { color: #4a5160; font-size: .95em; padding-top: 4px; padding-bottom: 4px; border-bottom: 1px dashed #eef1f5; }
+.r-subtask td:nth-child(2) { padding-left: 22px; }
+.r-desc { color: #6f7885; font-size: .92em; margin-top: 2px; }
+.r-sub { color: #8a919c; font-size: .88em; }
+.r-phase .r-table { table-layout: fixed; }
+.r-phase .r-table th:nth-child(1) { width: 82px; }
+.r-phase .r-table th:nth-child(3), .r-phase .r-table th:nth-child(4) { width: 130px; }
+.r-phase .r-table th:nth-child(5) { width: 92px; }
+.r-due { white-space: nowrap; }
+.r-late { color: #c0501f; }
+.r-status { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 10px; padding: 2px 7px; white-space: nowrap; background: #f2f4f7; color: #3d4654; }
+.r-status.r-in-progress { background: #fff1d6; color: #9b5d00; }
+.r-status.r-closed { background: #e4f4eb; color: #25784b; }
+.r-ms { font-size: 10px; font-weight: 700; color: #5b3fa8; }
+.r-owner { font-size: 9.5px; font-weight: 800; color: #fff; background: #ffa614; border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
+.r-goal { color: #5b6577; margin: 0 0 6px; }
+.r-tl { position: relative; display: grid; gap: 6px; }
+.r-tl-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 120px; gap: 0; align-items: center; }
+.r-tl-name { font-weight: 700; color: #102f59; font-size: 12px; }
+.r-tl-lane { position: relative; height: 16px; background: #f3f5f8; border-radius: 4px; }
+.r-tl-lane i { position: absolute; top: 2px; bottom: 2px; background: #dbe6f4; border: 1px solid #b9cce4; border-radius: 4px; overflow: hidden; }
+.r-tl-lane i b { position: absolute; inset: 0 auto 0 0; background: #b9dfc8; }
+.r-tl-dates { font-size: 11px; color: #7a8492; text-align: right; }
+.r-tl-today { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #ffa614; }
+.r-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.r-cols h3 { margin-top: 0; }
+.r-foot { margin-top: 30px; padding-top: 10px; border-top: 1px solid #e7ebef; color: #8a919c; font-size: 10.5px; }
+@media (max-width: 700px) { .report { padding: 24px 18px; } .r-kpis, .r-cols { grid-template-columns: 1fr 1fr; } .r-tl-row { grid-template-columns: 90px minmax(0, 1fr); } .r-tl-dates { display: none; } }
+@media print {
+  @page { size: A4; margin: 14mm 12mm 16mm; }
+  body { background: #fff !important; }
+  body > *:not(#report-root), .report-bar, #toast-root { display: none !important; }
+  #report-root .overlay { position: static; background: none; display: block; padding: 0; overflow: visible; }
+  .report-wrap { max-width: none; }
+  .report { box-shadow: none; padding: 0; border-radius: 0; font-size: 11px; }
+  .r-box, .r-team, .r-tl, .r-table tr { break-inside: avoid; }
+  .report h2, .report h3, .r-goal { break-after: avoid; }
+  .r-table thead { display: table-header-group; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
@@ -628,6 +705,7 @@ button.wz-card { font: inherit; text-align: left; }
 <div id="app"></div>
 <div id="drawer-root"></div>
 <div id="digest-root"></div>
+<div id="report-root"></div>
 <div id="toast-root"></div>
 
 <script>
@@ -995,8 +1073,8 @@ function titleBlock() {
     <div class="title-actions">
       ${ui.mode === "seller" ? `<button type="button" class="btn" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : ""}
       ${canCreate() && ui.tab === "plan" ? `<button type="button" class="btn primary" id="new-task"><span class="i i-plus" style="width:16px;height:16px"></span>New task</button>` : ""}
-      ${ui.mode === "seller" && me() === state.planOwners.seller ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
-        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" class="danger-item" data-plandelete style="border-top:0;margin-top:0;padding-top:8px"><span class="mi">×</span>Delete close plan</button></div>` : ""}</div>` : ""}
+      ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
+        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${me() === state.planOwners.seller ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
   </div>
   ${ui.deletePlan ? deletePlanBox() : ""}`;
@@ -1550,23 +1628,128 @@ function summaryHtml(items) {
   const waiting = location.pathname.startsWith("/close-plans") && ui.aiSum && ui.aiSum.key === aiSummaryKey(items) && ui.aiSum.text === null;
   return `<span class="act-label">${ai ? "AI SUMMARY" : "SUMMARY"} · LAST 7 DAYS${waiting ? ` <i class="act-wait">updating…</i>` : ""}</span><p>${esc(ai || ruleSummary(items))}</p>`;
 }
-function activityPanel() {
-  const all = activityItems(), week = lastWeek(all);
-  requestAiSummary(week);
-  // Group by day; identical entries in a row (same person, same text, same day) collapse into one "×n".
+// Next up: what needs attention first, overdue before due soon (next 14 days), for whoever is viewing.
+function nextUpPanel() {
+  const today = isoOf(TODAY), soon = addDays(today, 14);
+  const open = state.tasks.filter(t => visible(t) && t.status !== "Closed" && t.due && t.due <= soon).sort((a, b) => a.due.localeCompare(b.due));
+  const shown = ui.nextAll ? open : open.slice(0, 6);
+  const rel = due => { const n = daysBetween(today, due); return n < 0 ? `Overdue · ${fmt(due)}` : n === 0 ? "Due today" : n === 1 ? "Due tomorrow" : `Due ${fmt(due)} · in ${n} days`; };
+  return `<section class="panel"><h3>Next up</h3>
+    ${shown.length ? `<ul class="nextup">${shown.map(t => `<li><button type="button" class="nu-item" data-nu="${t.id}">${avatar(t.owner, "av-sm")}<span class="nu-body"><span class="nu-title">${esc(t.title)}</span><small class="${t.due < today ? "late" : ""}">${rel(t.due)} · ${esc(person(t.owner).name)}${parentOf(t) ? ` · in ${esc(parentOf(t).title)}` : ""}</small></span></button></li>`).join("")}</ul>` : `<p class="hint" style="margin:6px 0 0">Nothing overdue or due in the next two weeks.</p>`}
+    ${open.length > 6 ? `<button type="button" class="act-toggle" data-nu-all aria-expanded="${Boolean(ui.nextAll)}"><span class="i i-chev chev"></span>${ui.nextAll ? "Show fewer" : `Show all ${open.length}`}</button>` : ""}
+  </section>`;
+}
+// Major updates only in the default list; everything else (edits, assignments, small date moves) behind "Show all activity".
+const MAJOR = /^closed “|^posted an update|^replied by email|^added “|^moved milestone|^added phase|^deleted phase|^invited |^re-sent the invitation|^added .+ to the .+ team|^removed .+ from the plan|^created this plan|^made .+ plan owner/;
+function activityList(items) {
   const merged = [];
-  for (const a of all) { const last = merged[merged.length - 1]; if (last && last.by === a.by && last.text === a.text && last.at === a.at) last.n++; else merged.push({ ...a, n: 1 }); }
+  for (const a of items) { const last = merged[merged.length - 1]; if (last && last.by === a.by && last.text === a.text && last.at === a.at) last.n++; else merged.push({ ...a, n: 1 }); }
   const dayLabel = at => at === isoOf(TODAY) ? "Today" : at === addDays(isoOf(TODAY), -1) ? "Yesterday" : fmtY(at);
   let list = "", lastDay = "";
   for (const a of merged) {
     if (a.at !== lastDay) { list += `<li class="act-day">${esc(dayLabel(a.at))}</li>`; lastDay = a.at; }
     list += `<li>${avatar(a.by)}<div><b>${esc(person(a.by).name)}</b> ${esc(a.text)}${a.n > 1 ? ` <span class="act-n">×${a.n}</span>` : ""}</div></li>`;
   }
-  return `<section class="panel"><h3>Recent activity</h3>
-    <div class="act-summary" id="act-summary">${summaryHtml(week)}</div>
-    ${all.length ? `<button type="button" class="act-toggle" data-act-toggle aria-expanded="${Boolean(ui.actOpen)}"><span class="i i-chev chev"></span>${ui.actOpen ? "Hide activity" : `Show all activity (${all.length})`}</button>` : ""}
-    ${ui.actOpen ? `<ul class="feed">${list}</ul>` : ""}
+  return `<ul class="feed">${list}</ul>`;
+}
+function activityPanel() {
+  const all = activityItems(), major = all.filter(a => MAJOR.test(a.text)).slice(0, 6), week = lastWeek(all);
+  if (ui.actOpen) requestAiSummary(week);
+  return `${nextUpPanel()}<section class="panel"><h3>Recent activity</h3>
+    ${major.length ? activityList(major) : `<p class="hint" style="margin:6px 0 0">No major updates yet.</p>`}
+    ${all.length ? `<button type="button" class="act-toggle" data-act-toggle aria-expanded="${Boolean(ui.actOpen)}"><span class="i i-chev chev"></span>${ui.actOpen ? "Hide all activity" : `Show all activity (${all.length})`}</button>` : ""}
+    ${ui.actOpen ? `<div class="act-all"><div class="act-summary" id="act-summary">${summaryHtml(week)}</div>${activityList(all)}</div>` : ""}
     ${ui.mode === "seller" ? `<p class="hint">When ${esc(B())} changes something, the task owner gets a Slack message or email, the same as any Task AI update.</p>` : ""}</section>`;
+}
+// ---------- Client PDF: a print-ready report of what the customer is allowed to see ----------
+// Shown as a preview first; "Print / Save as PDF" uses the browser's print dialog (vector text, real page breaks).
+// Only shared tasks are included: a task is left out when it, or its main task, is internal.
+const sharedTask = t => t.shared && (!parentOf(t) || parentOf(t).shared);
+function reportHtml() {
+  const tasks = state.tasks.filter(sharedTask);
+  const today = isoOf(TODAY);
+  const closed = tasks.filter(t => t.status === "Closed").length;
+  const sign = tasks.find(t => t.key === "sign"), live = tasks.find(t => t.key === "live");
+  const current = state.phases.filter(ph => today >= ph.start && today <= ph.end);
+  const ms = tasks.filter(t => t.milestone && t.due).sort((a, b) => a.due.localeCompare(b.due));
+  const nextMs = ms.find(t => t.status !== "Closed");
+  const soon = addDays(today, 14);
+  const next = tasks.filter(t => t.status !== "Closed" && t.due && t.due <= soon).sort((a, b) => a.due.localeCompare(b.due));
+  const sellerOwner = person(state.planOwners.seller), buyerOwner = state.planOwners.buyer ? person(state.planOwners.buyer) : null;
+  const statusTag = t => `<span class="r-status r-${statusClass(t.status) || "open"}">${esc(t.status)}</span>`;
+  const dueTxt = t => t.status === "Closed" ? (t.closedAt ? `Done ${fmt(t.closedAt)}` : "Done") : !t.due ? "–" : t.due < today ? `<b class="r-late">Overdue · ${fmt(t.due)}</b>` : fmt(t.due);
+  const who = ids => (ids || []).map(id => esc(person(id).name)).join(", ");
+  const where = [
+    current.length ? `We are in the ${current.map(p => p.name).join(" and ")} phase${current.length > 1 ? "s" : ""}.` : "",
+    `${closed} of ${tasks.length} steps are done (${tasks.length ? Math.round(closed / tasks.length * 100) : 0}%).`,
+    nextMs ? `The next milestone is ${nextMs.title} on ${fmtY(nextMs.due)}.` : "",
+    sign ? `Signature is planned for ${fmtY(sign.due)}${live ? ` and go-live for ${fmtY(live.due)}` : ""}.` : "",
+  ].filter(Boolean).join(" ");
+  // Simple timeline: each phase as a bar on one shared date axis.
+  const t0 = Math.min(...state.phases.map(p => d(p.start).getTime())), t1 = Math.max(...state.phases.map(p => d(p.end).getTime() + 864e5));
+  const pos = iso => (d(iso).getTime() - t0) / (t1 - t0) * 100;
+  const phaseRows = state.phases.map((p, i) => {
+    const pt = tasks.filter(t => t.phase === p.id), pd = pt.filter(t => t.status === "Closed").length;
+    return `<div class="r-tl-row"><span class="r-tl-name">${i + 1}. ${esc(p.name)}</span><span class="r-tl-lane"><i style="left:${pos(p.start)}%;width:${Math.max(pos(addDays(p.end, 1)) - pos(p.start), 1.5)}%"><b style="width:${pt.length ? pd / pt.length * 100 : 0}%"></b></i>${today >= p.start && today <= p.end ? "" : ""}</span><span class="r-tl-dates">${fmt(p.start)} – ${fmtY(p.end)}</span></div>`;
+  }).join("");
+  const todayMark = today >= isoOf(new Date(t0)) && today <= isoOf(new Date(t1)) ? `<span class="r-tl-today" style="left:calc(140px + (100% - 140px - 120px) * ${pos(today) / 100})"></span>` : "";
+  const phaseSections = state.phases.map((p, i) => {
+    const tops = tasks.filter(t => t.phase === p.id && !t.parent);
+    if (!tops.length) return "";
+    const rows = tops.map(t => {
+      const subs = tasks.filter(k => k.parent === t.id);
+      return `<tr class="r-task"><td>${statusTag(t)}</td><td><b>${esc(t.title)}</b>${t.milestone ? ` <span class="r-ms">◆ Milestone</span>` : ""}${t.desc ? `<div class="r-desc">${esc(t.desc)}</div>` : ""}</td><td>${esc(person(t.owner).name)}${(t.coworkers || []).length ? `<div class="r-sub">with ${who(t.coworkers)}</div>` : ""}</td><td>${(t.recipients || []).length ? who(t.recipients) : "–"}</td><td class="r-due">${dueTxt(t)}</td></tr>`
+        + subs.map(k => `<tr class="r-subtask"><td>${statusTag(k)}</td><td>↳ ${esc(k.title)}</td><td>${esc(person(k.owner).name)}</td><td></td><td class="r-due">${dueTxt(k)}</td></tr>`).join("");
+    }).join("");
+    return `<section class="r-phase"><h3>${i + 1}. ${esc(p.name)} <span>${fmt(p.start)} – ${fmtY(p.end)}</span></h3>${p.goal ? `<p class="r-goal">${esc(p.goal)}</p>` : ""}
+      <table class="r-table"><thead><tr><th>Status</th><th>Step</th><th>Owner</th><th>Requested by</th><th>Due</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+  }).join("");
+  const team = side => state.people.filter(p => p.side === side && !/Shared mailbox/.test(p.title || "")).map(p => `<tr><td><b>${esc(p.name)}</b>${state.planOwners[side] === p.id ? ` <span class="r-owner">Plan owner</span>` : ""}</td><td>${esc(p.title && !/Placeholder|No title/.test(p.title) ? p.title : "")}</td><td>${esc(p.role || "")}</td></tr>`).join("");
+  return `<article class="report">
+    <header class="r-head">
+      <div class="r-brand"><span class="r-logo">Task</span><span class="r-ai">AI</span><span class="r-kind">Close plan</span></div>
+      <div class="r-meta">Prepared for ${esc(B())} · ${fmtY(today)}</div>
+    </header>
+    <h1>${esc(state.title)}</h1>
+    <p class="r-sub-head">${esc(B())} × iSEEit · Plan owners: ${esc(sellerOwner.name)} (iSEEit)${buyerOwner ? ` and ${esc(buyerOwner.name)} (${esc(B())})` : ""}</p>
+
+    <section class="r-box"><h2>Where we stand</h2><p>${esc(where)}</p>
+      <div class="r-kpis"><div><span>Progress</span><b>${tasks.length ? Math.round(closed / tasks.length * 100) : 0}%</b></div><div><span>Target signature</span><b>${sign ? fmtY(sign.due) : "–"}</b></div><div><span>Target go-live</span><b>${live ? fmtY(live.due) : "–"}</b></div><div><span>Next milestone</span><b>${nextMs ? `${esc(nextMs.title)}, ${fmt(nextMs.due)}` : "–"}</b></div></div>
+    </section>
+
+    ${ms.length ? `<section><h2>Key dates</h2><table class="r-table r-compact"><thead><tr><th>Milestone</th><th>Date</th><th>Status</th></tr></thead><tbody>${ms.map(t => `<tr><td>◆ ${esc(t.title)}</td><td>${fmtY(t.due)}</td><td>${statusTag(t)}</td></tr>`).join("")}</tbody></table></section>` : ""}
+
+    <section><h2>Phases</h2><div class="r-tl">${phaseRows}${todayMark}</div></section>
+
+    <section><h2>Next steps</h2>${next.length ? `<table class="r-table r-compact"><thead><tr><th>Step</th><th>Owner</th><th>Due</th></tr></thead><tbody>${next.map(t => `<tr><td>${esc(t.title)}${parentOf(t) ? `<div class="r-sub">in ${esc(parentOf(t).title)}</div>` : ""}</td><td>${esc(person(t.owner).name)}</td><td class="r-due">${dueTxt(t)}</td></tr>`).join("")}</tbody></table>` : `<p class="r-goal">Nothing is due in the next two weeks.</p>`}</section>
+
+    <h2 class="r-break">The plan, step by step</h2>
+    ${phaseSections}
+
+    <section class="r-team"><h2>Who is involved</h2>
+      <div class="r-cols"><div><h3>${esc(B())}</h3><table class="r-table r-compact"><tbody>${team("buyer")}</tbody></table></div><div><h3>iSEEit</h3><table class="r-table r-compact"><tbody>${team("seller")}</tbody></table></div></div>
+    </section>
+    <footer class="r-foot">Generated from Task AI on ${fmtY(today)}. This report shows the shared plan; it is a snapshot and does not update.</footer>
+  </article>`;
+}
+function openReport() {
+  ui.planMenu = false; render();
+  const root = $("#report-root");
+  root.innerHTML = `<div class="overlay em-overlay report-overlay" data-rclose-bg><div class="report-wrap">
+    <div class="report-bar"><b>Client PDF preview</b><span class="hint" style="margin:0">Shared tasks only · internal tasks are left out</span><span style="flex:1"></span><button type="button" class="btn sm" data-rclose>Close</button><button type="button" class="btn sm primary" data-rprint>Print / Save as PDF</button></div>
+    ${reportHtml()}
+  </div></div>`;
+  const close = () => { root.innerHTML = ""; };
+  root.querySelector("[data-rclose]").onclick = close;
+  root.querySelector("[data-rclose-bg]").onclick = e => { if (e.target === e.currentTarget) close(); };
+  root.querySelector("[data-rprint]").onclick = () => {
+    // The page title becomes the suggested PDF file name.
+    const old = document.title;
+    document.title = `Close plan – ${B()} – ${isoOf(TODAY)}`;
+    window.addEventListener("afterprint", () => { document.title = old; }, { once: true });
+    try { window.print(); } catch (e) {}
+    setTimeout(() => { if (document.title !== old) toast("If no print dialog opened, export from inside Task AI. This preview blocks printing."); }, 1500);
+  };
 }
 
 function renderDrawer() {
@@ -1920,10 +2103,13 @@ function wirePage() {
   ["seller", "buyer"].forEach(side => { const sel = $("#po-" + side); if (sel) sel.onchange = () => { state.planOwners[side] = sel.value; log(`made ${person(sel.value).name} the ${side === "buyer" ? B() : "iSEEit"} plan owner`, null); save(); render(); }; });
   app.querySelectorAll("[data-planmenu]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.planMenu = !ui.planMenu; render(); });
   app.querySelectorAll("[data-plandelete]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.deletePlan = true; render(); });
+  app.querySelectorAll("[data-report]").forEach(b => b.onclick = openReport);
   app.querySelectorAll("[data-plandelete-cancel]").forEach(b => b.onclick = () => { ui.deletePlan = false; render(); });
   app.querySelectorAll("[data-plandelete-confirm]").forEach(b => b.onclick = deletePlanNow);
   if (!state) { wireSetup(app); wireWizard(app); return; }
   app.querySelectorAll("[data-act-toggle]").forEach(b => b.onclick = () => { ui.actOpen = !ui.actOpen; render(); });
+  app.querySelectorAll("[data-nu]").forEach(b => b.onclick = () => { ui.open = b.dataset.nu; render(); });
+  app.querySelectorAll("[data-nu-all]").forEach(b => b.onclick = () => { ui.nextAll = !ui.nextAll; render(); });
   wirePhases(app);
   wireReorder(app);
   // Inside the Task AI app (served at /close-plans) the sidebar leads back to the task list; in the stand-alone demo it explains instead.
