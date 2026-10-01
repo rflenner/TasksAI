@@ -238,6 +238,10 @@ button { cursor: pointer; }
 .update small { color: var(--hint); font-weight: 400; }
 .update p { margin: 5px 0; color: #5f6772; white-space: pre-wrap; overflow-wrap: break-word; }
 .drawer textarea { width: 100%; min-height: 86px; resize: vertical; margin-top: 6px; }
+textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
+.drawer textarea.d-title { min-height: 0; margin-top: 0; resize: none; line-height: 1.25; font-family: inherit; display: block; }
+.sub-status { margin-left: 0; }
+.sub .meta .sub-status, .checklist-item .meta .sub-status { font-size: 9.5px; padding: 3px 7px; }
 .upd-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 400; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: #eef3fa; color: var(--navy); border: 1px solid #c9dbf2; border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
@@ -481,6 +485,14 @@ button { cursor: pointer; }
 .wz-card:has(input:focus-visible) { outline: 2px solid var(--navy); outline-offset: 2px; }
 .wz-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .wz-chips i { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--navy); background: #eef4fc; border: 1px solid #dce7f5; border-radius: 12px; padding: 2px 7px; }
+.wz-search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--field); border-radius: 10px; padding: 0 12px; margin-bottom: 12px; background: #fff; }
+.wz-search:focus-within { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(23, 63, 118, .08); }
+.wz-search .i { color: var(--hint); width: 18px; height: 18px; }
+.wz-body .wz-search input { border: 0 !important; box-shadow: none !important; flex: 1; padding: 12px 0 !important; font-size: 15px !important; outline: 0; }
+button.wz-card { font: inherit; text-align: left; }
+.wz-hit.closed { opacity: .7; }
+.wz-manual { margin-top: 10px; max-width: 520px; }
+.wz-picked { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #eef4fc; color: var(--navy); font-size: 13px; }
 .wz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 .wz-grid-3 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
 .wz-body input:not([type=radio]):not([type=checkbox]), .wz-body select { border: 1px solid var(--field); border-radius: 8px; padding: 10px 11px; font-size: 14px; font-weight: 400; color: var(--ink); background: #fff; min-width: 0; }
@@ -819,6 +831,18 @@ function toast(msg) { const root = $("#toast-root"); root.innerHTML = `<div clas
 function avatar(id, cls = "") { const p = person(id); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}</span>`; }
 
 // Render
+// Text boxes grow with their content up to 20 lines, then scroll.
+const GROW_MAX_LINES = 20;
+function growBox(el) {
+  const cs = getComputedStyle(el), line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
+  const extra = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+  const max = line * GROW_MAX_LINES + extra;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth), max) + "px";
+  el.style.overflowY = el.scrollHeight + 1 > max ? "auto" : "hidden";
+}
+function growAll(root = document) { root.querySelectorAll("textarea[data-grow]").forEach(el => { growBox(el); if (!el.dataset.growWired) { el.dataset.growWired = "1"; el.addEventListener("input", () => growBox(el)); } }); }
+
 function render() {
   checkSetup();
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
@@ -826,6 +850,7 @@ function render() {
   $("#app").innerHTML = ui.mode === "seller" ? sellerShell() : buyerShell();
   wirePage();
   renderDrawer();
+  growAll();
 }
 
 function sellerShell() {
@@ -898,7 +923,7 @@ function titleBlock() {
       <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}</label>
       <h1>${esc(state.title)}</h1>
       <p><span>Target signature <b>${sign ? fmtY(sign.due) : "–"}</b></span><span>Target go-live <b>${live ? fmtY(live.due) : "–"}</b></span><span>Plan owners <b>${esc(person(state.planOwners.seller).name)}</b> · <b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></span>
-      ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)} · ${Number(o.amount).toLocaleString("en-US")}</span>` : ""}</p>
+      ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}</p>
     </div>
     <div class="title-actions">
       ${ui.mode === "seller" ? `<button type="button" class="btn" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : ""}
@@ -1005,7 +1030,7 @@ function phaseEditForm(ph) {
       <label class="field">Phase name<input id="pe-name" required value="${esc(p.name)}" placeholder="e.g. Pilot"></label>
       <label class="field">Starts<input type="date" id="pe-start" required value="${esc(p.start)}"></label>
       <label class="field">Ends<input type="date" id="pe-end" required value="${esc(p.end)}"></label>
-      <label class="field pe-wide">What we accomplish together<textarea id="pe-goal" rows="2" placeholder="One sentence both sides agree on">${esc(p.goal)}</textarea></label>
+      <label class="field pe-wide">What we accomplish together<textarea id="pe-goal" rows="2" data-grow placeholder="One sentence both sides agree on">${esc(p.goal)}</textarea></label>
     </div>
     <p class="hint pe-err" id="pe-err" hidden>The end date can't be before the start date.</p>
     <p class="hint" style="margin:6px 0 0">Phases can overlap. Their order on the plan is set with the arrows, not by date.</p>
@@ -1152,13 +1177,15 @@ function cardHtml(t) {
   return card + subs;
 }
 
+// Task AI's status pill (Open / In progress / Closed), shown on subtasks just before the due date.
+function statusPill(t) { return `<span class="status sub-status ${statusClass(t.status)}">${esc(t.status)}</span>`; }
+
 function subHtml(k) {
   return `<div class="sub ${k.status === "Closed" ? "done" : ""}">
     <input type="checkbox" data-check="${k.id}" ${k.status === "Closed" ? "checked" : ""} ${canEdit(k) ? "" : "disabled"} aria-label="Close “${esc(k.title)}”">
     <button type="button" class="st" data-open="${k.id}">${esc(k.title)}</button>
     ${k.milestone || (ui.mode === "seller" && !k.shared) ? `<div class="tags">${k.milestone ? `<span class="mile">Milestone</span>` : ""}${ui.mode === "seller" && !k.shared ? `<span class="internal">Internal</span>` : ""}</div>` : ""}
-    ${k.status === "In progress" ? `<span class="status in-progress" style="margin-left:0">In progress</span>` : ""}
-    <div class="meta"><span class="dt ${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div>
+    <div class="meta">${statusPill(k)}<span class="dt ${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div>
   </div>`;
 }
 
@@ -1203,16 +1230,17 @@ function teamSection(side) {
 
 function addPersonForm(side) {
   if (side === "seller") {
-    const pool = SELLER_POOL.filter(c => !state.people.some(p => p.name === c.name));
+    const pool = SELLER_OPTIONS().filter(c => c.key !== "rf" && !state.people.some(p => p.name === c.name || (c.email && p.email === c.email)));
     return `<form class="add-person" id="add-person-form" data-side="seller">
-      <label class="field">Task AI user<select id="ap-pick" required>${pool.map(c => `<option>${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="field">${usingAppUsers() ? "Active Task AI user" : "Task AI user (demo examples)"}<select id="ap-pick" required>${pool.map(c => `<option value="${esc(c.key)}">${esc(c.name)}${c.email ? ` · ${esc(c.email)}` : ""}</option>`).join("")}</select></label>
       <label class="field">Role on this plan<input id="ap-role" placeholder="e.g. Solutions Engineer"></label>
       <button class="btn primary" type="submit" ${pool.length ? "" : "disabled"}>Add to iSEEit team</button>
-      <p class="hint" style="grid-column:1/-1;margin:0">Only existing Task AI users can join the iSEEit team. By default they can edit every task.</p>
+      <p class="hint" style="grid-column:1/-1;margin:0">${pool.length ? "Only active Task AI users can join the iSEEit team. By default they can edit every task." : "Every active Task AI user is already on this plan."}</p>
     </form>`;
   }
   return `<form class="add-person" id="add-person-form" data-side="buyer">
     <p class="hint" style="grid-column:1/-1;margin:0 0 2px">All ${esc(B())} contacts from Sales AI are already on this plan. Add someone new here; they'll be added to Sales AI too once the sync exists.</p>
+    ${usingAppUsers() ? `<label class="field" style="grid-column:1/-1">Already a Task AI user? (optional)<select id="ap-user"><option value="">Pick an active Task AI user to fill in the details</option>${APP_USERS.filter(u => !state.people.some(p => p.email && p.email === u.email)).map(u => `<option value="${esc(u.key)}">${esc(u.name)} · ${esc(u.email)}${u.title !== "Task AI user" ? ` · ${esc(u.title.replace(" · Task AI user", ""))}` : ""}</option>`).join("")}</select></label>` : ""}
     <label class="field">Name<input id="ap-name" required placeholder="First and last name"></label>
     <label class="field">Email<input id="ap-email" type="email" placeholder="name@${esc(state.domain || "company.com")}"></label>
     <label class="field">Title<input id="ap-title" placeholder="Job title"></label>
@@ -1397,9 +1425,9 @@ function renderDrawer() {
     <button type="button" class="x" data-close aria-label="Close">×</button>
     <label>${parent ? "SUBTASK" : "ACTION ITEM"} · ${esc(ph.name.toUpperCase())}</label>
     ${parent ? `<div class="crumb">Part of <button type="button" class="sub-toggle" data-open="${parent.id}">${esc(parent.title)}</button></div>` : ""}
-    <h2><input class="d-title" id="d-title" value="${esc(t.title)}" ${edit ? "" : "disabled"} aria-label="Task title"></h2>
+    <h2><textarea class="d-title" id="d-title" rows="1" data-grow ${edit ? "" : "disabled"} aria-label="Task title">${esc(t.title)}</textarea></h2>
     ${edit ? "" : `<div class="perm">${canUpdate(t) ? "You're on this task, so you can post updates. Only its owner and coworkers can change it." : acc().level === "view" ? "You have view-only access to this plan." : "You can view this task. Only its owner and coworkers can change it."}</div>`}
-    <label class="field" style="margin-bottom:14px">Description<textarea id="d-desc" ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
+    <label class="field" style="margin-bottom:14px">Description<textarea id="d-desc" data-grow ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
     <div class="two">
       <label class="field">Status<select id="d-status" ${edit ? "" : "disabled"}>${["Open", "In progress", "Closed"].map(s => `<option ${s === t.status ? "selected" : ""}>${s}</option>`).join("")}</select></label>
       <label class="field">Due date<input type="date" id="d-due" value="${esc(t.due || "")}" ${edit ? "" : "disabled"}></label>
@@ -1412,13 +1440,13 @@ function renderDrawer() {
     </div>
     ${!parent ? `<div class="section"><h3>Subtasks ${kids.length ? `<small>${kids.filter(k => k.status === "Closed").length} of ${kids.length} closed</small>` : ""}</h3>
       ${kids.map(k => `<div class="checklist-item ${k.status === "Closed" ? "done" : ""}"><input type="checkbox" data-check="${k.id}" ${k.status === "Closed" ? "checked" : ""} aria-label="Close “${esc(k.title)}”"><button type="button" class="st" data-open="${k.id}">${esc(k.title)}</button>
-        <div class="meta">${ui.mode === "seller" && !k.shared ? `<span class="tags" style="margin:0"><span class="internal">Internal</span></span>` : ""}<span class="${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div></div>`).join("")}
+        <div class="meta">${ui.mode === "seller" && !k.shared ? `<span class="tags" style="margin:0"><span class="internal">Internal</span></span>` : ""}${statusPill(k)}<span class="${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div></div>`).join("")}
       ${!canCreate() ? "" : ui.addSub ? `<form class="sub-add" id="d-addsub"><input id="d-subtitle" placeholder="Subtask name" autocomplete="off" aria-label="New subtask"><button class="btn sm primary" type="submit">Add</button></form>` : `<button type="button" class="checklist-add-btn" id="d-addsub-btn"><span class="i i-plus"></span>Add a subtask</button>`}
     </div>` : ""}
     ${ui.mode === "seller" ? notifySection(t) : ""}
     <div class="section updates"><h3>Status updates</h3>
       ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><p>${esc(u.text)}</p></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
-      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" placeholder="Share an update with ${ui.mode === "seller" ? "everyone on this task" : "the iSEEit team"}…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
+      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" data-grow placeholder="Share an update with ${ui.mode === "seller" ? "everyone on this task" : "the iSEEit team"}…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
     </div>
   </aside></div>`;
   root.querySelector("[data-close]").onclick = closeDrawer;
@@ -1426,7 +1454,8 @@ function renderDrawer() {
   root.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { ui.open = b.dataset.open; ui.addSub = false; render(); });
   root.querySelectorAll("[data-check]").forEach(c => c.onchange = () => setStatus(state.tasks.find(x => x.id === c.dataset.check), c.checked ? "Closed" : "Open"));
   const title = $("#d-title");
-  title.onchange = () => { const v = title.value.trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
+  title.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); title.blur(); } };
+  title.onchange = () => { const v = title.value.replace(/\s+/g, " ").trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
   $("#d-status").onchange = e => setStatus(t, e.target.value);
   $("#d-desc").onchange = e => { t.desc = e.target.value.trim(); log(`edited the description of “${t.title}”`, t.id); save(); render(); };
   $("#d-owner").onchange = e => { t.owner = e.target.value; log(`assigned “${t.title}” to ${person(t.owner).name}`, t.id); save(); render(); };
@@ -1443,17 +1472,42 @@ function renderDrawer() {
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
   root.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [key, id] = b.dataset.rm.split(":"); t[key] = t[key].filter(x => x !== id); log(`removed ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
-  root.querySelectorAll("[data-addp]").forEach(sel => sel.onchange = () => { const key = sel.dataset.addp, id = sel.value; if (!id) return; t[key] = [...(t[key] || []), id]; log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
+  root.querySelectorAll("[data-addp]").forEach(sel => sel.onchange = () => {
+    const key = sel.dataset.addp; let id = sel.value; if (!id) return;
+    const fresh = id.startsWith("add:"); if (fresh) { id = addUserToPlan(id.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return render(); } }
+    t[key] = [...(t[key] || []), id];
+    log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render();
+    if (fresh) toast(`${person(id).name} added to the plan and to this task`);
+  });
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
-  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); if (t.status === "Open") t.status = "In progress"; save(); render(); toast("Update posted"); };
+  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
 function chipField(t, key, label, edit) {
   const list = t[key] || [];
   const taken = new Set([t.owner, ...(t.coworkers || []), ...(t.recipients || [])]);
   const opts = side => state.people.filter(p => p.side === side && !taken.has(p.id)).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   return `<div class="chips">${list.map(id => `<span class="chip ${person(id).side === "buyer" ? "chip-b" : ""}">${esc(person(id).name)}${edit ? `<button type="button" data-rm="${key}:${id}" aria-label="Remove ${esc(person(id).name)}">×</button>` : ""}</span>`).join("")}
-    ${edit ? `<select class="chip-add" data-addp="${key}" aria-label="Add to ${label}"><option value="">+ Add</option><optgroup label="${esc(B())}">${opts("buyer")}</optgroup><optgroup label="iSEEit">${opts("seller")}</optgroup></select>` : (list.length ? "" : `<span class="none">None</span>`)}</div>`;
+    ${edit ? `<select class="chip-add" data-addp="${key}" aria-label="Add to ${label}"><option value="">+ Add</option><optgroup label="${esc(B())}">${opts("buyer")}</optgroup><optgroup label="iSEEit">${opts("seller")}</optgroup>${notOnPlanOpts()}</select>` : (list.length ? "" : `<span class="none">None</span>`)}</div>`;
+}
+// Active Task AI users who aren't on this plan yet. Only plan owners can add people, so only they get this group;
+// picking one adds them to the plan and to the task in one go.
+function notOnPlan() { return SELLER_OPTIONS().filter(o => !state.people.some(p => p.name === o.name || (o.email && p.email === o.email))); }
+function notOnPlanOpts() {
+  if (!canManage("seller") && !canManage("buyer")) return "";
+  const list = notOnPlan(); if (!list.length) return "";
+  return `<optgroup label="${usingAppUsers() ? "Other Task AI users (adds them to the plan)" : "Other Task AI users, demo examples (adds them to the plan)"}">${list.map(o => `<option value="add:${esc(o.key)}">${esc(o.name)}${o.email ? ` · ${esc(o.email)}` : ""}</option>`).join("")}</optgroup>`;
+}
+// Adds a Task AI user to the plan. Someone whose email domain is the customer's joins the customer team, everyone else the iSEEit team.
+function addUserToPlan(key) {
+  const o = SELLER_OPTIONS().find(x => x.key === key); if (!o) return null;
+  const buyer = Boolean(state.domain && o.email && o.email.toLowerCase().endsWith("@" + state.domain.toLowerCase()));
+  if (buyer && !canManage("buyer")) return null;
+  if (!buyer && !canManage("seller")) return null;
+  const side = buyer ? "buyer" : "seller", id = "p" + (++state.seq);
+  state.people.push({ id, name: o.name, email: o.email || "", title: (o.title || "Task AI user").replace(" · Task AI user", ""), role: "", side, access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
+  log(`added ${o.name} to the ${side === "buyer" ? B() : "iSEEit"} team`, null);
+  return id;
 }
 
 // Prototype of the notification rules: Task AI's existing rules for iSEEit users,
@@ -1585,7 +1639,7 @@ function renderAsk() {
   const replyTo = `reply+${(t.id + p.id + "7f3a9c").replace(/[^a-z0-9]/gi, "").toLowerCase()}@tasks.iseeit.ai`;
   root.innerHTML = `<div class="overlay em-overlay" data-aclose-bg><div class="em-modal" role="dialog" aria-modal="true" aria-label="Ask for an update">
     <div class="em-meta"><div><b>To</b> ${esc(p.name)} &lt;${esc(p.email)}&gt;</div><div><b>Reply-to</b> <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(replyTo)}</span></div><div><b>Subject</b> ${esc(from.name)} sent you a note on “${esc(t.title)}”</div><button type="button" class="x" data-aclose aria-label="Close" style="top:14px;right:14px">×</button></div>
-    <div style="padding:16px 22px;border-bottom:1px solid var(--line)"><label class="field" style="display:flex">Your note<textarea id="ask-msg" style="border:1px solid var(--field);border-radius:8px;padding:10px 12px;min-height:70px;font-weight:400;font-size:14px;resize:vertical">Hi ${esc(first)}, could you give us a quick update on this? Just reply to this email.</textarea></label>
+    <div style="padding:16px 22px;border-bottom:1px solid var(--line)"><label class="field" style="display:flex">Your note<textarea id="ask-msg" data-grow style="border:1px solid var(--field);border-radius:8px;padding:10px 12px;min-height:70px;font-weight:400;font-size:14px;resize:vertical">Hi ${esc(first)}, could you give us a quick update on this? Just reply to this email.</textarea></label>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">${ui.ask.sent ? `<button type="button" class="btn sm" id="ask-reply">Simulate ${esc(first)}’s reply</button>` : ""}<button type="button" class="btn sm primary" id="ask-send" ${ui.ask.sent ? "disabled" : ""}>${ui.ask.sent ? "Sent" : "Send email"}</button></div></div>
     <div class="em-page"><div class="em-mail">
       <div class="em-head"><span class="em-logo">Task</span> <span class="em-ai">AI</span></div>
@@ -1598,6 +1652,7 @@ function renderAsk() {
         <p class="em-foot" style="margin-top:14px">Or simply hit reply on this email to send your update.</p>
       </div></div></div>
   </div></div>`;
+  growAll(root);
   const msg = $("#ask-msg"), prev = $("#ask-preview");
   const sync = () => prev.textContent = msg.value.replace(/^Hi [^,]+,\s*/, "");
   msg.oninput = sync; sync();
@@ -1609,8 +1664,8 @@ function renderAsk() {
     const text = "Working on it now, you'll have it by Friday.";
     ui.viewerBackup = null;
     t.updates.push({ by: p.id, at: new Date().toISOString().slice(0, 10), text, viaEmail: true });
-    const before = t.status; if (t.status === "Open") t.status = "In progress";
-    state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: p.id, text: `replied by email on “${t.title}”${before !== t.status ? ` (status set to ${t.status})` : ""}`, task: t.id });
+    state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: p.id, text: `replied by email on “${t.title}”`, task: t.id });
+    startWork(t, p.id);
     save(); ui.ask = null; renderAsk(); render(); toast(`${first}’s reply was posted. Status read from the reply: ${t.status}`);
   };
 }
@@ -1654,11 +1709,12 @@ function wirePage() {
   app.querySelectorAll(".ms-mark").forEach(m => { m.onmouseenter = m.onfocus = () => showTip(m); m.onmouseleave = m.onblur = hideTip; });
   app.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ui.tab = b.dataset.tab; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":tab", ui.tab); } catch (e) {} render(); });
   app.querySelectorAll("[data-addperson]").forEach(b => b.onclick = () => { ui.addFor = ui.addFor === b.dataset.addperson ? null : b.dataset.addperson; render(); });
+  const apUser = $("#ap-user"); if (apUser) apUser.onchange = () => { const u = (APP_USERS || []).find(x => x.key === apUser.value); if (!u) return; $("#ap-name").value = u.name; $("#ap-email").value = u.email; $("#ap-title").value = u.title.replace(" · Task AI user", "").replace("Task AI user", ""); };
   const apf = $("#add-person-form"); if (apf) apf.onsubmit = e => {
     e.preventDefault();
     const side = apf.dataset.side, role = ($("#ap-role")?.value || "").trim();
     let np;
-    if (side === "seller") { const c = SELLER_POOL.find(x => x.name === $("#ap-pick").value); if (!c) return; np = { ...c }; }
+    if (side === "seller") { const c = SELLER_OPTIONS().find(x => x.key === $("#ap-pick").value); if (!c) return; np = { name: c.name, email: c.email || "", title: c.title || "Task AI user" }; }
     else { const name = $("#ap-name").value.trim(); if (!name) return; np = { name, email: $("#ap-email").value.trim(), title: $("#ap-title").value.trim() || "New contact" }; }
     const id = "p" + (++state.seq);
     state.people.push({ id, ...np, role, side, access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
@@ -1688,9 +1744,10 @@ function wirePage() {
 
 // Role placeholders used by templates. Each is filled with a real person in step 3.
 const ROLES = {
-  sponsor: { side: "buyer", label: "Executive sponsor", match: /chief|vice president|\bvp\b|head of|director/i },
-  lead: { side: "buyer", label: "Project lead", match: /lead|manager|enablement|operations|owner/i },
-  tech: { side: "buyer", label: "Technical lead", match: /\bit\b|technical|engineer|architect|salesforce|specialist|developer/i },
+  // match: job-title patterns in priority order; an earlier pattern beats a later one.
+  sponsor: { side: "buyer", label: "Executive sponsor", match: [/chief|\bc[eotcr]o\b|vice president|\bvp\b/i, /head of|director/i] },
+  lead: { side: "buyer", label: "Project lead", match: [/\blead\b|enablement|project|program|product owner/i, /manager|operations/i] },
+  tech: { side: "buyer", label: "Technical lead", match: [/\bit\b|technical|architect|engineer|developer/i, /salesforce|specialist|admin/i] },
   security: { side: "buyer", label: "IT security", match: /security/i },
   procurement: { side: "buyer", label: "Procurement", match: /procurement|purchas|buyer/i },
   legal: { side: "buyer", label: "Legal", match: /legal|counsel|privacy/i },
@@ -1868,7 +1925,25 @@ const DEMO_OPPS = [
     contacts: [{ name: "Nina Okafor", title: "Chief Operating Officer", email: "nina.okafor@brightline.example" }, { name: "Felix Brandt", title: "Product Owner", email: "felix.brandt@brightline.example" }, { name: "Sara Lindqvist", title: "Lead Developer", email: "sara.lindqvist@brightline.example" }, { name: "Tom Becker", title: "Customer Service Representative", email: "tom.becker@brightline.example" }] },
 ];
 
-const SELLER_OPTIONS = () => [{ key: "rf", name: "Rizan Flenner" }, ...SELLER_POOL.map((c, i) => ({ key: "pool" + i, name: c.name }))];
+// People who can be added from Task AI. Inside the app (/close-plans) this is the list of active Task AI users
+// (loaded once from /api/close-plans/users); in the stand-alone demo, or for non-admins, the fictional examples.
+let APP_USERS = null;
+async function loadAppUsers() {
+  if (APP_USERS !== null || !location.pathname.startsWith("/close-plans")) return;
+  APP_USERS = [];
+  try {
+    const r = await fetch("/api/close-plans/users", { credentials: "same-origin" });
+    if (!r.ok) return;
+    const data = await r.json();
+    APP_USERS = (data.users || []).map(u => ({ key: "u" + u.id, name: u.name, email: u.email || "", title: u.company ? `${u.company} · Task AI user` : "Task AI user" }));
+    render();
+  } catch (e) { APP_USERS = []; }
+}
+const usingAppUsers = () => Boolean(APP_USERS && APP_USERS.length);
+const SELLER_OPTIONS = () => [
+  { key: "rf", name: "Rizan Flenner", email: "rizan@iseeit.com", title: "Account lead" },
+  ...(usingAppUsers() ? APP_USERS.filter(u => u.email !== "rizan@iseeit.com" && u.name !== "Rizan Flenner") : SELLER_POOL.map((c, i) => ({ key: "pool" + i, name: c.name, email: c.email, title: c.title }))),
+];
 const isoOf = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 const addDays = (iso, n) => { const x = d(iso); x.setDate(x.getDate() + n); return isoOf(x); };
 const tplDate = (w, [anchor, off]) => addDays(anchor === "G" ? w.live : w.sign, off);
@@ -1887,7 +1962,84 @@ function startWizard() {
   Object.assign(ui, { open: null, tab: "plan", mode: "seller" });
   render(); window.scrollTo({ top: 0 });
 }
-function wzOpp() { const w = ui.wizard; return w.opp && w.opp !== "manual" ? DEMO_OPPS.find(o => o.id === w.opp) : null; }
+function wzOpp() {
+  const w = ui.wizard;
+  if (w.opp === "live" && w.liveOpp) { const o = w.liveOpp; return { id: o.id, account: o.account, domain: o.domain || "", opp: o.opp, stage: o.stage, amount: o.amount, close: o.close || "", contacts: o.contacts || [] }; }
+  return w.opp && w.opp !== "manual" ? DEMO_OPPS.find(o => o.id === w.opp) : null;
+}
+// Inside Task AI (/close-plans) step 1 searches Sales AI live through the server; elsewhere it searches the fictional examples.
+const LIVE_SEARCH = location.pathname.startsWith("/close-plans");
+const money = n => n == null ? "no amount" : Number(n).toLocaleString("en-US");
+function demoHits(q) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return DEMO_OPPS.filter(o => words.every(wd => `${o.opp} ${o.account}`.toLowerCase().includes(wd))).map(o => ({ src: "demo", id: o.id, account: o.account, opp: o.opp, stage: o.stage, amount: o.amount, close: o.close, open: true, contacts: o.contacts.length }));
+}
+async function runSearch() {
+  const w = ui.wizard; if (!w) return;
+  const q = (w.q || "").trim(), seq = (w.searchSeq = (w.searchSeq || 0) + 1);
+  if (LIVE_SEARCH && !w.liveOff) {
+    if (q.length < 2) { w.hits = null; return paintHits(); }
+    w.searching = true; paintHits();
+    try {
+      const r = await fetch(`/api/close-plans/opportunities?q=${encodeURIComponent(q)}`, { credentials: "same-origin" });
+      const data = await r.json().catch(() => ({}));
+      if (seq !== w.searchSeq) return;
+      if (r.status === 401 || r.status === 403) { w.liveOff = data.error || "Live Sales AI search isn't available for your account."; }
+      else if (!r.ok) { w.searchErr = data.error || "Sales AI is not reachable right now."; w.hits = []; }
+      else { w.searchErr = ""; w.hits = (data.opportunities || []).map(o => ({ src: "live", id: o.id, account: o.accountName || "Unknown account", accountId: o.accountId, opp: o.name, stage: o.stage, amount: o.amount, close: o.closeDate, open: o.open })); }
+    } catch (e) { if (seq === w.searchSeq) { w.searchErr = "Sales AI is not reachable right now."; w.hits = []; } }
+    w.searching = false;
+    if (!w.liveOff) return paintHits();
+  }
+  w.hits = q ? demoHits(q) : demoHits("");
+  paintHits();
+}
+function hitsHtml() {
+  const w = ui.wizard, live = LIVE_SEARCH && !w.liveOff;
+  if (w.searching && !w.hits) return `<p class="hint">Searching Sales AI…</p>`;
+  if (w.searchErr) return `<p class="perm">${esc(w.searchErr)} You can still enter the deal by hand.</p>`;
+  if (!w.hits) return live ? `<p class="hint">Type at least two letters of the customer or the opportunity name.</p>` : "";
+  if (!w.hits.length) return `<p class="hint">No opportunity matches “${esc(w.q)}”. Check the spelling or enter the deal by hand.</p>`;
+  return w.hits.map(h => {
+    const on = (w.opp === "live" && w.liveOpp && w.liveOpp.id === h.id) || w.opp === h.id;
+    return `<button type="button" class="wz-card wz-hit ${on ? "on" : ""} ${h.open ? "" : "closed"}" data-hit="${esc(h.id)}">
+      <b>${esc(h.account)}</b><span>${esc(h.opp)}</span><small>${esc(h.stage || "No stage")} · ${money(h.amount)}${h.close ? ` · close ${fmtY(h.close)}` : ""}${h.src === "demo" ? ` · ${h.contacts} contacts` : ""}${h.open ? "" : " · closed"}</small></button>`;
+  }).join("");
+}
+// Repaints only the results, so the search box keeps focus and caret while typing.
+function paintHits() {
+  const box = document.getElementById("wz-hits"); if (!box) return;
+  box.innerHTML = hitsHtml();
+  const note = document.getElementById("wz-src"); if (note) note.innerHTML = srcNote();
+  box.querySelectorAll("[data-hit]").forEach(b => b.onclick = () => pickHit(ui.wizard.hits.find(h => h.id === b.dataset.hit)));
+}
+function srcNote() {
+  const w = ui.wizard;
+  if (LIVE_SEARCH && !w.liveOff) return "Searching all opportunities in Sales AI.";
+  if (LIVE_SEARCH && w.liveOff) return `${esc(w.liveOff)} Showing the fictional demo examples instead.`;
+  return "All accounts and people in this demo are fictional.";
+}
+async function pickHit(h) {
+  const w = ui.wizard; if (!h) return;
+  w.map = {}; w.buyerOwner = null;
+  if (h.src === "demo") { w.opp = h.id; w.liveOpp = null; applyOppDefaults(); return render(); }
+  w.opp = "live"; w.liveOpp = { ...h, contacts: null, domain: "" }; applyOppDefaults(); w.loadingContacts = true; render();
+  try {
+    const r = await fetch(`/api/close-plans/contacts?account_id=${encodeURIComponent(h.accountId || "")}`, { credentials: "same-origin" });
+    const data = await r.json().catch(() => ({}));
+    const contacts = r.ok ? (data.contacts || []).map(c => ({ name: c.name, title: c.title || "", email: c.email || "" })) : [];
+    if (ui.wizard !== w || w.liveOpp?.id !== h.id) return;
+    w.liveOpp.contacts = contacts; w.liveOpp.contactsErr = r.ok ? "" : (data.error || "Contacts could not be loaded.");
+    const domains = contacts.map(c => c.email.split("@")[1]).filter(Boolean);
+    w.liveOpp.domain = domains.sort((a, b) => domains.filter(x => x === b).length - domains.filter(x => x === a).length)[0] || "";
+  } catch (e) { if (w.liveOpp) w.liveOpp.contacts = [], w.liveOpp.contactsErr = "Contacts could not be loaded."; }
+  w.loadingContacts = false; render();
+}
+function applyOppDefaults() {
+  const w = ui.wizard, o = wzOpp(); if (!o) return;
+  if (!w.titleTouched) w.title = o.opp.trim().toLowerCase() === o.account.trim().toLowerCase() ? `Close plan – ${o.account}` : `${o.opp} – ${o.account}`;
+  if (o.close && o.close >= addDays(isoOf(TODAY), 21)) { w.sign = o.close; w.live = addDays(o.close, 45); }
+}
 function wzContacts() { const o = wzOpp(); return o ? o.contacts : []; }
 function wzAccount() { const w = ui.wizard, o = wzOpp(); return o ? o.account : (w.manual.account || "").trim(); }
 // Suggest a contact for each buyer role from job titles; seller roles default to the person creating the plan.
@@ -1898,8 +2050,10 @@ function wzSuggest() {
     if (w.map[role] !== undefined) return;
     const R = ROLES[role];
     if (R.side === "seller") { w.map[role] = "rf"; return; }
-    let i = contacts.findIndex((c, idx) => !taken.has(idx) && R.match.test(c.title || ""));
-    if (i < 0) i = contacts.findIndex((c, idx) => R.match.test(c.title || ""));
+    const pats = Array.isArray(R.match) ? R.match : [R.match];
+    let i = -1;
+    for (const re of pats) { i = contacts.findIndex((c, idx) => !taken.has(idx) && re.test(c.title || "")); if (i >= 0) break; }
+    if (i < 0) for (const re of pats) { i = contacts.findIndex(c => re.test(c.title || "")); if (i >= 0) break; }
     w.map[role] = i >= 0 ? "c" + i : "";
     if (i >= 0) taken.add(i);
   });
@@ -1907,7 +2061,7 @@ function wzSuggest() {
 }
 function wzValid(step) {
   const w = ui.wizard;
-  if (step === 1) return Boolean(wzAccount() && w.title.trim() && w.sign && w.live && w.live >= w.sign);
+  if (step === 1) return Boolean(wzAccount() && w.title.trim() && w.sign && w.live && w.live >= w.sign && !w.loadingContacts);
   if (step === 2) return Boolean(w.tpl);
   return true;
 }
@@ -1926,21 +2080,21 @@ function wizardView() {
 }
 
 function wzStep1() {
-  const w = ui.wizard;
+  const w = ui.wizard, o = wzOpp();
+  if (w.hits === undefined) { w.hits = LIVE_SEARCH ? null : demoHits(""); }
   return `<h2 class="wz-h">Which deal is this plan for?</h2>
-    <p class="hint" style="margin:0 0 12px">Open opportunities from Sales AI. All accounts and people in this demo are fictional.</p>
-    <div class="wz-opps" role="radiogroup" aria-label="Opportunity">
-      ${DEMO_OPPS.map(o => `<label class="wz-card ${w.opp === o.id ? "on" : ""}"><input type="radio" name="wz-opp" value="${o.id}" ${w.opp === o.id ? "checked" : ""}>
-        <b>${esc(o.account)}</b><span>${esc(o.opp)}</span><small>${esc(o.stage)} · ${o.amount.toLocaleString("en-US")} · close ${fmtY(o.close)} · ${o.contacts.length} contacts</small></label>`).join("")}
-      <label class="wz-card ${w.opp === "manual" ? "on" : ""}"><input type="radio" name="wz-opp" value="manual" ${w.opp === "manual" ? "checked" : ""}><b>Enter by hand</b><span>A deal that isn't in Sales AI yet</span><small>Add the customer's people later in the People tab</small></label>
-    </div>
+    <p class="hint" style="margin:0 0 12px" id="wz-src">${srcNote()}</p>
+    <div class="wz-search"><span class="i i-search"></span><input id="wz-q" type="search" value="${esc(w.q || "")}" placeholder="Search by customer or opportunity name" autocomplete="off" aria-label="Search opportunities"></div>
+    <div class="wz-opps" id="wz-hits" aria-live="polite">${hitsHtml()}</div>
+    <label class="wz-card wz-manual ${w.opp === "manual" ? "on" : ""}"><input type="radio" name="wz-opp" value="manual" ${w.opp === "manual" ? "checked" : ""}><b>Enter by hand</b><span>A deal that isn't in Sales AI yet. Add the customer's people later in the People tab.</span></label>
+    ${w.opp === "live" && w.liveOpp ? `<div class="wz-picked"><b>${esc(w.liveOpp.account)}</b> · ${esc(w.liveOpp.opp)} · ${w.loadingContacts ? "loading contacts from Sales AI…" : w.liveOpp.contactsErr ? esc(w.liveOpp.contactsErr) : `${(w.liveOpp.contacts || []).length} contacts from Sales AI`}</div>` : ""}
     ${w.opp === "manual" ? `<div class="wz-grid"><label class="field">Customer name<input id="wz-acct" value="${esc(w.manual.account)}" placeholder="e.g. Acme Pharma"></label><label class="field">Email domain<input id="wz-domain" value="${esc(w.manual.domain)}" placeholder="acme.com"></label></div>` : ""}
     ${w.opp ? `<div class="wz-grid wz-grid-3">
       <label class="field wz-wide">Plan name<input id="wz-title" value="${esc(w.title)}" placeholder="e.g. Sales AI rollout for Acme Pharma"></label>
       <label class="field">Target signature<input type="date" id="wz-sign" value="${esc(w.sign)}"></label>
       <label class="field">Target go-live<input type="date" id="wz-live" value="${esc(w.live)}"></label>
     </div>
-    <p class="hint">Every phase and task in the template is dated from these two dates. You only set them once. ${w.live < w.sign ? `<b style="color:#a84235">Go-live can't be before signature.</b>` : ""}</p>` : ""}`;
+    <p class="hint">Every phase and task in the template is dated from these two dates. You only set them once. ${o && o.close && o.close < addDays(isoOf(TODAY), 21) ? `The close date in Sales AI (${fmtY(o.close)}) is too close or in the past, so a new target is suggested. ` : ""}${w.live < w.sign ? `<b style="color:#a84235">Go-live can't be before signature.</b>` : ""}</p>` : ""}`;
 }
 
 function wzStep2() {
@@ -2003,7 +2157,7 @@ function createPlanFromWizard() {
   // People: the creator, the iSEEit colleagues picked for roles, and every contact of the account.
   const roleNames = key => Object.entries(w.map).filter(([, v]) => v === key).map(([r]) => ROLES[r].label).join(", ");
   plan.people.push({ ...SEED_PEOPLE.find(p => p.id === "rf"), role: roleNames("rf") || "Account lead", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
-  SELLER_OPTIONS().filter(s => s.key !== "rf" && Object.values(w.map).includes(s.key)).forEach(s => { const c = SELLER_POOL.find(x => x.name === s.name); plan.people.push({ id: s.key, ...c, role: roleNames(s.key), side: "seller", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } }); });
+  SELLER_OPTIONS().filter(s => s.key !== "rf" && Object.values(w.map).includes(s.key)).forEach(s => plan.people.push({ id: s.key, name: s.name, email: s.email || "", title: s.title || "Task AI user", role: roleNames(s.key), side: "seller", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } }));
   contacts.forEach((c, i) => plan.people.push({ id: "c" + i, name: c.name, title: c.title || "", email: c.email || "", role: roleNames("c" + i), side: "buyer", access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } }));
   plan.planOwners.buyer = contacts.length ? (w.buyerOwner || "c0") : null;
   const ownerOfSide = side => side === "seller" ? "rf" : (plan.planOwners.buyer || "rf");
@@ -2031,12 +2185,8 @@ function wireWizard(app) {
   const back = app.querySelector("[data-wz-back]"); if (back) back.onclick = () => { w.step--; render(); window.scrollTo({ top: 0 }); };
   const next = app.querySelector("[data-wz-next]"); if (next) next.onclick = () => { if (!wzValid(w.step)) return; w.step++; render(); window.scrollTo({ top: 0 }); };
   const create = app.querySelector("[data-wz-create]"); if (create) create.onclick = createPlanFromWizard;
-  app.querySelectorAll("input[name=wz-opp]").forEach(r => r.onchange = () => {
-    w.opp = r.value; w.map = {}; w.buyerOwner = null;
-    const o = wzOpp(); if (o) { w.title = `${o.opp} – ${o.account}`; if (o.close >= addDays(isoOf(TODAY), 21)) { w.sign = o.close; w.live = addDays(o.close, 45); } }
-    else if (!w.title) w.title = "";
-    render();
-  });
+  app.querySelectorAll("input[name=wz-opp]").forEach(r => r.onchange = () => { w.opp = r.value; w.liveOpp = null; w.map = {}; w.buyerOwner = null; if (!w.titleTouched) w.title = ""; render(); });
+  const qBox = $("#wz-q"); if (qBox) { qBox.oninput = () => { w.q = qBox.value; clearTimeout(w.qTimer); w.qTimer = setTimeout(runSearch, 250); }; paintHits(); }
   const upd = (id, fn) => { const el = $(id); if (el) el.oninput = el.onchange = () => { fn(el.value); const n = app.querySelector("[data-wz-next]"); if (n) n.disabled = !wzValid(w.step); }; };
   upd("#wz-acct", v => { w.manual.account = v; if (!w.titleTouched) { w.title = v ? `Close plan – ${v}` : ""; const t = $("#wz-title"); if (t) t.value = w.title; } });
   upd("#wz-domain", v => w.manual.domain = v);
@@ -2085,14 +2235,30 @@ function wireSetup(app) {
 }
 
 // Actions
+// Same rule as Task AI's autoAdvanceStatus: the moment someone starts working on an Open task (posts an
+// update, replies by email, or moves one of its subtasks forward) it becomes In progress. A status set by
+// hand always wins, and a closed task is never reopened by a note. Work on a subtask also starts its main task.
+// Returns the names of the tasks that moved, for the confirmation message.
+function startWork(t, by = me()) {
+  const moved = [];
+  for (let x = t; x; x = parentOf(x)) {
+    if (x.status !== "Open") continue;
+    x.status = "In progress";
+    state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by, text: `started work on “${x.title}” (status set to In progress)`, task: x.id });
+    moved.push(x.title);
+  }
+  return moved;
+}
+const movedText = moved => moved.length ? ` “${moved[0]}”${moved.length > 1 ? ` and “${moved[1]}”` : ""} moved to In progress.` : "";
+
 function setStatus(t, s) {
   if (!t || t.status === s) return;
   t.status = s;
   t.closedAt = s === "Closed" ? new Date().toISOString().slice(0, 10) : null;
   log(s === "Closed" ? `closed “${t.title}”` : `set “${t.title}” to ${s}`, t.id);
-  const p = parentOf(t);
-  if (p && s !== "Open" && p.status === "Open") p.status = "In progress";
+  const p = parentOf(t), moved = p && s !== "Open" ? startWork(p) : [];
   save(); render();
+  if (moved.length) toast(`Work started:${movedText(moved)}`);
 }
 function addTask(phase, parent, title) {
   const id = "t" + (++state.seq);
@@ -2112,5 +2278,6 @@ $("#reset").onclick = () => { store = freshStore(); state = store.plans[0]; ui.w
 document.addEventListener("click", e => { if (ui.phaseMenu && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; render(); } });
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
+loadAppUsers();
 render();
 </script>

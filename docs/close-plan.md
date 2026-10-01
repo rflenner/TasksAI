@@ -54,6 +54,18 @@ How Close Plan uses it:
 - **Stage drift**: when the opportunity's `stage` or `close_date` changes in Sales AI,
   the plan shows it ("CRM close date moved to 15 Nov") rather than silently rewriting the plan.
 
+## Status: work started means In progress
+
+Same rule as Task AI's `autoAdvanceStatus` (`app/lib/task-activity.ts`): an
+**Open** task moves to **In progress** the moment someone starts working on it.
+
+- Someone posts a status update on it, including a reply by email.
+- One of its subtasks moves to In progress or Closed.
+- Work on a subtask also starts its main task (both move).
+
+A status set by hand always wins, and a closed task is never reopened by a
+note. Each automatic change is recorded in the activity ("started work on …").
+
 ## People on a task: owner, coworkers, requested by
 
 **Naming (decided 2026-10-01):** the role Task AI stores as `recipients[]` and
