@@ -1211,16 +1211,17 @@ function teamSection(side) {
 
 function addPersonForm(side) {
   if (side === "seller") {
-    const pool = SELLER_POOL.filter(c => !state.people.some(p => p.name === c.name));
+    const pool = SELLER_OPTIONS().filter(c => c.key !== "rf" && !state.people.some(p => p.name === c.name || (c.email && p.email === c.email)));
     return `<form class="add-person" id="add-person-form" data-side="seller">
-      <label class="field">Task AI user<select id="ap-pick" required>${pool.map(c => `<option>${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="field">${usingAppUsers() ? "Active Task AI user" : "Task AI user (demo examples)"}<select id="ap-pick" required>${pool.map(c => `<option value="${esc(c.key)}">${esc(c.name)}${c.email ? ` · ${esc(c.email)}` : ""}</option>`).join("")}</select></label>
       <label class="field">Role on this plan<input id="ap-role" placeholder="e.g. Solutions Engineer"></label>
       <button class="btn primary" type="submit" ${pool.length ? "" : "disabled"}>Add to iSEEit team</button>
-      <p class="hint" style="grid-column:1/-1;margin:0">Only existing Task AI users can join the iSEEit team. By default they can edit every task.</p>
+      <p class="hint" style="grid-column:1/-1;margin:0">${pool.length ? "Only active Task AI users can join the iSEEit team. By default they can edit every task." : "Every active Task AI user is already on this plan."}</p>
     </form>`;
   }
   return `<form class="add-person" id="add-person-form" data-side="buyer">
     <p class="hint" style="grid-column:1/-1;margin:0 0 2px">All ${esc(B())} contacts from Sales AI are already on this plan. Add someone new here; they'll be added to Sales AI too once the sync exists.</p>
+    ${usingAppUsers() ? `<label class="field" style="grid-column:1/-1">Already a Task AI user? (optional)<select id="ap-user"><option value="">Pick an active Task AI user to fill in the details</option>${APP_USERS.filter(u => !state.people.some(p => p.email && p.email === u.email)).map(u => `<option value="${esc(u.key)}">${esc(u.name)} · ${esc(u.email)}${u.title !== "Task AI user" ? ` · ${esc(u.title.replace(" · Task AI user", ""))}` : ""}</option>`).join("")}</select></label>` : ""}
     <label class="field">Name<input id="ap-name" required placeholder="First and last name"></label>
     <label class="field">Email<input id="ap-email" type="email" placeholder="name@${esc(state.domain || "company.com")}"></label>
     <label class="field">Title<input id="ap-title" placeholder="Job title"></label>
@@ -1451,7 +1452,13 @@ function renderDrawer() {
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
   root.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [key, id] = b.dataset.rm.split(":"); t[key] = t[key].filter(x => x !== id); log(`removed ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
-  root.querySelectorAll("[data-addp]").forEach(sel => sel.onchange = () => { const key = sel.dataset.addp, id = sel.value; if (!id) return; t[key] = [...(t[key] || []), id]; log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
+  root.querySelectorAll("[data-addp]").forEach(sel => sel.onchange = () => {
+    const key = sel.dataset.addp; let id = sel.value; if (!id) return;
+    const fresh = id.startsWith("add:"); if (fresh) { id = addUserToPlan(id.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return render(); } }
+    t[key] = [...(t[key] || []), id];
+    log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render();
+    if (fresh) toast(`${person(id).name} added to the plan and to this task`);
+  });
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
   if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); if (t.status === "Open") t.status = "In progress"; save(); render(); toast("Update posted"); };
@@ -1461,7 +1468,26 @@ function chipField(t, key, label, edit) {
   const taken = new Set([t.owner, ...(t.coworkers || []), ...(t.recipients || [])]);
   const opts = side => state.people.filter(p => p.side === side && !taken.has(p.id)).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   return `<div class="chips">${list.map(id => `<span class="chip ${person(id).side === "buyer" ? "chip-b" : ""}">${esc(person(id).name)}${edit ? `<button type="button" data-rm="${key}:${id}" aria-label="Remove ${esc(person(id).name)}">×</button>` : ""}</span>`).join("")}
-    ${edit ? `<select class="chip-add" data-addp="${key}" aria-label="Add to ${label}"><option value="">+ Add</option><optgroup label="${esc(B())}">${opts("buyer")}</optgroup><optgroup label="iSEEit">${opts("seller")}</optgroup></select>` : (list.length ? "" : `<span class="none">None</span>`)}</div>`;
+    ${edit ? `<select class="chip-add" data-addp="${key}" aria-label="Add to ${label}"><option value="">+ Add</option><optgroup label="${esc(B())}">${opts("buyer")}</optgroup><optgroup label="iSEEit">${opts("seller")}</optgroup>${notOnPlanOpts()}</select>` : (list.length ? "" : `<span class="none">None</span>`)}</div>`;
+}
+// Active Task AI users who aren't on this plan yet. Only plan owners can add people, so only they get this group;
+// picking one adds them to the plan and to the task in one go.
+function notOnPlan() { return SELLER_OPTIONS().filter(o => !state.people.some(p => p.name === o.name || (o.email && p.email === o.email))); }
+function notOnPlanOpts() {
+  if (!canManage("seller") && !canManage("buyer")) return "";
+  const list = notOnPlan(); if (!list.length) return "";
+  return `<optgroup label="${usingAppUsers() ? "Other Task AI users (adds them to the plan)" : "Other Task AI users, demo examples (adds them to the plan)"}">${list.map(o => `<option value="add:${esc(o.key)}">${esc(o.name)}${o.email ? ` · ${esc(o.email)}` : ""}</option>`).join("")}</optgroup>`;
+}
+// Adds a Task AI user to the plan. Someone whose email domain is the customer's joins the customer team, everyone else the iSEEit team.
+function addUserToPlan(key) {
+  const o = SELLER_OPTIONS().find(x => x.key === key); if (!o) return null;
+  const buyer = Boolean(state.domain && o.email && o.email.toLowerCase().endsWith("@" + state.domain.toLowerCase()));
+  if (buyer && !canManage("buyer")) return null;
+  if (!buyer && !canManage("seller")) return null;
+  const side = buyer ? "buyer" : "seller", id = "p" + (++state.seq);
+  state.people.push({ id, name: o.name, email: o.email || "", title: (o.title || "Task AI user").replace(" · Task AI user", ""), role: "", side, access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
+  log(`added ${o.name} to the ${side === "buyer" ? B() : "iSEEit"} team`, null);
+  return id;
 }
 
 // Prototype of the notification rules: Task AI's existing rules for iSEEit users,
@@ -1662,11 +1688,12 @@ function wirePage() {
   app.querySelectorAll(".ms-mark").forEach(m => { m.onmouseenter = m.onfocus = () => showTip(m); m.onmouseleave = m.onblur = hideTip; });
   app.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ui.tab = b.dataset.tab; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":tab", ui.tab); } catch (e) {} render(); });
   app.querySelectorAll("[data-addperson]").forEach(b => b.onclick = () => { ui.addFor = ui.addFor === b.dataset.addperson ? null : b.dataset.addperson; render(); });
+  const apUser = $("#ap-user"); if (apUser) apUser.onchange = () => { const u = (APP_USERS || []).find(x => x.key === apUser.value); if (!u) return; $("#ap-name").value = u.name; $("#ap-email").value = u.email; $("#ap-title").value = u.title.replace(" · Task AI user", "").replace("Task AI user", ""); };
   const apf = $("#add-person-form"); if (apf) apf.onsubmit = e => {
     e.preventDefault();
     const side = apf.dataset.side, role = ($("#ap-role")?.value || "").trim();
     let np;
-    if (side === "seller") { const c = SELLER_POOL.find(x => x.name === $("#ap-pick").value); if (!c) return; np = { ...c }; }
+    if (side === "seller") { const c = SELLER_OPTIONS().find(x => x.key === $("#ap-pick").value); if (!c) return; np = { name: c.name, email: c.email || "", title: c.title || "Task AI user" }; }
     else { const name = $("#ap-name").value.trim(); if (!name) return; np = { name, email: $("#ap-email").value.trim(), title: $("#ap-title").value.trim() || "New contact" }; }
     const id = "p" + (++state.seq);
     state.people.push({ id, ...np, role, side, access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
@@ -1877,7 +1904,25 @@ const DEMO_OPPS = [
     contacts: [{ name: "Nina Okafor", title: "Chief Operating Officer", email: "nina.okafor@brightline.example" }, { name: "Felix Brandt", title: "Product Owner", email: "felix.brandt@brightline.example" }, { name: "Sara Lindqvist", title: "Lead Developer", email: "sara.lindqvist@brightline.example" }, { name: "Tom Becker", title: "Customer Service Representative", email: "tom.becker@brightline.example" }] },
 ];
 
-const SELLER_OPTIONS = () => [{ key: "rf", name: "Rizan Flenner" }, ...SELLER_POOL.map((c, i) => ({ key: "pool" + i, name: c.name }))];
+// People who can be added from Task AI. Inside the app (/close-plans) this is the list of active Task AI users
+// (loaded once from /api/close-plans/users); in the stand-alone demo, or for non-admins, the fictional examples.
+let APP_USERS = null;
+async function loadAppUsers() {
+  if (APP_USERS !== null || !location.pathname.startsWith("/close-plans")) return;
+  APP_USERS = [];
+  try {
+    const r = await fetch("/api/close-plans/users", { credentials: "same-origin" });
+    if (!r.ok) return;
+    const data = await r.json();
+    APP_USERS = (data.users || []).map(u => ({ key: "u" + u.id, name: u.name, email: u.email || "", title: u.company ? `${u.company} · Task AI user` : "Task AI user" }));
+    render();
+  } catch (e) { APP_USERS = []; }
+}
+const usingAppUsers = () => Boolean(APP_USERS && APP_USERS.length);
+const SELLER_OPTIONS = () => [
+  { key: "rf", name: "Rizan Flenner", email: "rizan@iseeit.com", title: "Account lead" },
+  ...(usingAppUsers() ? APP_USERS.filter(u => u.email !== "rizan@iseeit.com" && u.name !== "Rizan Flenner") : SELLER_POOL.map((c, i) => ({ key: "pool" + i, name: c.name, email: c.email, title: c.title }))),
+];
 const isoOf = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 const addDays = (iso, n) => { const x = d(iso); x.setDate(x.getDate() + n); return isoOf(x); };
 const tplDate = (w, [anchor, off]) => addDays(anchor === "G" ? w.live : w.sign, off);
@@ -2091,7 +2136,7 @@ function createPlanFromWizard() {
   // People: the creator, the iSEEit colleagues picked for roles, and every contact of the account.
   const roleNames = key => Object.entries(w.map).filter(([, v]) => v === key).map(([r]) => ROLES[r].label).join(", ");
   plan.people.push({ ...SEED_PEOPLE.find(p => p.id === "rf"), role: roleNames("rf") || "Account lead", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
-  SELLER_OPTIONS().filter(s => s.key !== "rf" && Object.values(w.map).includes(s.key)).forEach(s => { const c = SELLER_POOL.find(x => x.name === s.name); plan.people.push({ id: s.key, ...c, role: roleNames(s.key), side: "seller", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } }); });
+  SELLER_OPTIONS().filter(s => s.key !== "rf" && Object.values(w.map).includes(s.key)).forEach(s => plan.people.push({ id: s.key, name: s.name, email: s.email || "", title: s.title || "Task AI user", role: roleNames(s.key), side: "seller", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } }));
   contacts.forEach((c, i) => plan.people.push({ id: "c" + i, name: c.name, title: c.title || "", email: c.email || "", role: roleNames("c" + i), side: "buyer", access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } }));
   plan.planOwners.buyer = contacts.length ? (w.buyerOwner || "c0") : null;
   const ownerOfSide = side => side === "seller" ? "rf" : (plan.planOwners.buyer || "rf");
@@ -2196,5 +2241,6 @@ $("#reset").onclick = () => { store = freshStore(); state = store.plans[0]; ui.w
 document.addEventListener("click", e => { if (ui.phaseMenu && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; render(); } });
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
+loadAppUsers();
 render();
 </script>
