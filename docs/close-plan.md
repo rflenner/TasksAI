@@ -339,6 +339,12 @@ deep), `position`, `shared_with_buyer` (default true), `is_milestone` (default f
 
 ## Access
 
+- **Task AI users who are customer contacts** (e.g. invited Collaborators): plan
+  tasks are ordinary Task AI tasks, so `canSeeTask` would show them a plan task
+  they are named on in My tasks, digests and Slack even when it is internal. The
+  real build must add a rule: a task with `shared_with_buyer = false` is never
+  visible to anyone on the buyer side of that plan, whatever their Task AI role.
+
 - Internal users: existing roles. A plan is visible to its owner/members, area
   admins whose scope matches, site admins. Plan tasks still pass `canSeeTask`.
 - Buyers: no Task AI account. Each buyer member gets a personal link
