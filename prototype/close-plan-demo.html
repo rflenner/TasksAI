@@ -238,6 +238,10 @@ button { cursor: pointer; }
 .update small { color: var(--hint); font-weight: 400; }
 .update p { margin: 5px 0; color: #5f6772; white-space: pre-wrap; overflow-wrap: break-word; }
 .drawer textarea { width: 100%; min-height: 86px; resize: vertical; margin-top: 6px; }
+textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
+.drawer textarea.d-title { min-height: 0; margin-top: 0; resize: none; line-height: 1.25; font-family: inherit; display: block; }
+.sub-status { margin-left: 0; }
+.sub .meta .sub-status, .checklist-item .meta .sub-status { font-size: 9.5px; padding: 3px 7px; }
 .upd-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 400; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: #eef3fa; color: var(--navy); border: 1px solid #c9dbf2; border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
@@ -827,6 +831,18 @@ function toast(msg) { const root = $("#toast-root"); root.innerHTML = `<div clas
 function avatar(id, cls = "") { const p = person(id); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}</span>`; }
 
 // Render
+// Text boxes grow with their content up to 20 lines, then scroll.
+const GROW_MAX_LINES = 20;
+function growBox(el) {
+  const cs = getComputedStyle(el), line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
+  const extra = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+  const max = line * GROW_MAX_LINES + extra;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth), max) + "px";
+  el.style.overflowY = el.scrollHeight + 1 > max ? "auto" : "hidden";
+}
+function growAll(root = document) { root.querySelectorAll("textarea[data-grow]").forEach(el => { growBox(el); if (!el.dataset.growWired) { el.dataset.growWired = "1"; el.addEventListener("input", () => growBox(el)); } }); }
+
 function render() {
   checkSetup();
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
@@ -834,6 +850,7 @@ function render() {
   $("#app").innerHTML = ui.mode === "seller" ? sellerShell() : buyerShell();
   wirePage();
   renderDrawer();
+  growAll();
 }
 
 function sellerShell() {
@@ -1013,7 +1030,7 @@ function phaseEditForm(ph) {
       <label class="field">Phase name<input id="pe-name" required value="${esc(p.name)}" placeholder="e.g. Pilot"></label>
       <label class="field">Starts<input type="date" id="pe-start" required value="${esc(p.start)}"></label>
       <label class="field">Ends<input type="date" id="pe-end" required value="${esc(p.end)}"></label>
-      <label class="field pe-wide">What we accomplish together<textarea id="pe-goal" rows="2" placeholder="One sentence both sides agree on">${esc(p.goal)}</textarea></label>
+      <label class="field pe-wide">What we accomplish together<textarea id="pe-goal" rows="2" data-grow placeholder="One sentence both sides agree on">${esc(p.goal)}</textarea></label>
     </div>
     <p class="hint pe-err" id="pe-err" hidden>The end date can't be before the start date.</p>
     <p class="hint" style="margin:6px 0 0">Phases can overlap. Their order on the plan is set with the arrows, not by date.</p>
@@ -1160,13 +1177,15 @@ function cardHtml(t) {
   return card + subs;
 }
 
+// Task AI's status pill (Open / In progress / Closed), shown on subtasks just before the due date.
+function statusPill(t) { return `<span class="status sub-status ${statusClass(t.status)}">${esc(t.status)}</span>`; }
+
 function subHtml(k) {
   return `<div class="sub ${k.status === "Closed" ? "done" : ""}">
     <input type="checkbox" data-check="${k.id}" ${k.status === "Closed" ? "checked" : ""} ${canEdit(k) ? "" : "disabled"} aria-label="Close “${esc(k.title)}”">
     <button type="button" class="st" data-open="${k.id}">${esc(k.title)}</button>
     ${k.milestone || (ui.mode === "seller" && !k.shared) ? `<div class="tags">${k.milestone ? `<span class="mile">Milestone</span>` : ""}${ui.mode === "seller" && !k.shared ? `<span class="internal">Internal</span>` : ""}</div>` : ""}
-    ${k.status === "In progress" ? `<span class="status in-progress" style="margin-left:0">In progress</span>` : ""}
-    <div class="meta"><span class="dt ${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div>
+    <div class="meta">${statusPill(k)}<span class="dt ${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div>
   </div>`;
 }
 
@@ -1406,9 +1425,9 @@ function renderDrawer() {
     <button type="button" class="x" data-close aria-label="Close">×</button>
     <label>${parent ? "SUBTASK" : "ACTION ITEM"} · ${esc(ph.name.toUpperCase())}</label>
     ${parent ? `<div class="crumb">Part of <button type="button" class="sub-toggle" data-open="${parent.id}">${esc(parent.title)}</button></div>` : ""}
-    <h2><input class="d-title" id="d-title" value="${esc(t.title)}" ${edit ? "" : "disabled"} aria-label="Task title"></h2>
+    <h2><textarea class="d-title" id="d-title" rows="1" data-grow ${edit ? "" : "disabled"} aria-label="Task title">${esc(t.title)}</textarea></h2>
     ${edit ? "" : `<div class="perm">${canUpdate(t) ? "You're on this task, so you can post updates. Only its owner and coworkers can change it." : acc().level === "view" ? "You have view-only access to this plan." : "You can view this task. Only its owner and coworkers can change it."}</div>`}
-    <label class="field" style="margin-bottom:14px">Description<textarea id="d-desc" ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
+    <label class="field" style="margin-bottom:14px">Description<textarea id="d-desc" data-grow ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
     <div class="two">
       <label class="field">Status<select id="d-status" ${edit ? "" : "disabled"}>${["Open", "In progress", "Closed"].map(s => `<option ${s === t.status ? "selected" : ""}>${s}</option>`).join("")}</select></label>
       <label class="field">Due date<input type="date" id="d-due" value="${esc(t.due || "")}" ${edit ? "" : "disabled"}></label>
@@ -1421,13 +1440,13 @@ function renderDrawer() {
     </div>
     ${!parent ? `<div class="section"><h3>Subtasks ${kids.length ? `<small>${kids.filter(k => k.status === "Closed").length} of ${kids.length} closed</small>` : ""}</h3>
       ${kids.map(k => `<div class="checklist-item ${k.status === "Closed" ? "done" : ""}"><input type="checkbox" data-check="${k.id}" ${k.status === "Closed" ? "checked" : ""} aria-label="Close “${esc(k.title)}”"><button type="button" class="st" data-open="${k.id}">${esc(k.title)}</button>
-        <div class="meta">${ui.mode === "seller" && !k.shared ? `<span class="tags" style="margin:0"><span class="internal">Internal</span></span>` : ""}<span class="${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div></div>`).join("")}
+        <div class="meta">${ui.mode === "seller" && !k.shared ? `<span class="tags" style="margin:0"><span class="internal">Internal</span></span>` : ""}${statusPill(k)}<span class="${isOver(k) ? "late" : ""}">${k.due ? fmt(k.due) : ""}</span>${avatar(k.owner, "av-sm")}</div></div>`).join("")}
       ${!canCreate() ? "" : ui.addSub ? `<form class="sub-add" id="d-addsub"><input id="d-subtitle" placeholder="Subtask name" autocomplete="off" aria-label="New subtask"><button class="btn sm primary" type="submit">Add</button></form>` : `<button type="button" class="checklist-add-btn" id="d-addsub-btn"><span class="i i-plus"></span>Add a subtask</button>`}
     </div>` : ""}
     ${ui.mode === "seller" ? notifySection(t) : ""}
     <div class="section updates"><h3>Status updates</h3>
       ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><p>${esc(u.text)}</p></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
-      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" placeholder="Share an update with ${ui.mode === "seller" ? "everyone on this task" : "the iSEEit team"}…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
+      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" data-grow placeholder="Share an update with ${ui.mode === "seller" ? "everyone on this task" : "the iSEEit team"}…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
     </div>
   </aside></div>`;
   root.querySelector("[data-close]").onclick = closeDrawer;
@@ -1435,7 +1454,8 @@ function renderDrawer() {
   root.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { ui.open = b.dataset.open; ui.addSub = false; render(); });
   root.querySelectorAll("[data-check]").forEach(c => c.onchange = () => setStatus(state.tasks.find(x => x.id === c.dataset.check), c.checked ? "Closed" : "Open"));
   const title = $("#d-title");
-  title.onchange = () => { const v = title.value.trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
+  title.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); title.blur(); } };
+  title.onchange = () => { const v = title.value.replace(/\s+/g, " ").trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
   $("#d-status").onchange = e => setStatus(t, e.target.value);
   $("#d-desc").onchange = e => { t.desc = e.target.value.trim(); log(`edited the description of “${t.title}”`, t.id); save(); render(); };
   $("#d-owner").onchange = e => { t.owner = e.target.value; log(`assigned “${t.title}” to ${person(t.owner).name}`, t.id); save(); render(); };
@@ -1619,7 +1639,7 @@ function renderAsk() {
   const replyTo = `reply+${(t.id + p.id + "7f3a9c").replace(/[^a-z0-9]/gi, "").toLowerCase()}@tasks.iseeit.ai`;
   root.innerHTML = `<div class="overlay em-overlay" data-aclose-bg><div class="em-modal" role="dialog" aria-modal="true" aria-label="Ask for an update">
     <div class="em-meta"><div><b>To</b> ${esc(p.name)} &lt;${esc(p.email)}&gt;</div><div><b>Reply-to</b> <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px">${esc(replyTo)}</span></div><div><b>Subject</b> ${esc(from.name)} sent you a note on “${esc(t.title)}”</div><button type="button" class="x" data-aclose aria-label="Close" style="top:14px;right:14px">×</button></div>
-    <div style="padding:16px 22px;border-bottom:1px solid var(--line)"><label class="field" style="display:flex">Your note<textarea id="ask-msg" style="border:1px solid var(--field);border-radius:8px;padding:10px 12px;min-height:70px;font-weight:400;font-size:14px;resize:vertical">Hi ${esc(first)}, could you give us a quick update on this? Just reply to this email.</textarea></label>
+    <div style="padding:16px 22px;border-bottom:1px solid var(--line)"><label class="field" style="display:flex">Your note<textarea id="ask-msg" data-grow style="border:1px solid var(--field);border-radius:8px;padding:10px 12px;min-height:70px;font-weight:400;font-size:14px;resize:vertical">Hi ${esc(first)}, could you give us a quick update on this? Just reply to this email.</textarea></label>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">${ui.ask.sent ? `<button type="button" class="btn sm" id="ask-reply">Simulate ${esc(first)}’s reply</button>` : ""}<button type="button" class="btn sm primary" id="ask-send" ${ui.ask.sent ? "disabled" : ""}>${ui.ask.sent ? "Sent" : "Send email"}</button></div></div>
     <div class="em-page"><div class="em-mail">
       <div class="em-head"><span class="em-logo">Task</span> <span class="em-ai">AI</span></div>
@@ -1632,6 +1652,7 @@ function renderAsk() {
         <p class="em-foot" style="margin-top:14px">Or simply hit reply on this email to send your update.</p>
       </div></div></div>
   </div></div>`;
+  growAll(root);
   const msg = $("#ask-msg"), prev = $("#ask-preview");
   const sync = () => prev.textContent = msg.value.replace(/^Hi [^,]+,\s*/, "");
   msg.oninput = sync; sync();
