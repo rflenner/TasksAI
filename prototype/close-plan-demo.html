@@ -584,6 +584,15 @@ button.wz-card { font: inherit; text-align: left; }
 .pf-name small { color: var(--hint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-empty { color: var(--hint); font-size: 12.5px; margin: 8px 6px; }
 @media (max-width: 620px) { .three { grid-template-columns: 1fr; } }
+.act-summary { background: #f6f8fb; border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.act-summary p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: #3d4654; }
+.act-label { font-size: 10px; font-weight: 800; letter-spacing: .8px; color: var(--navy); }
+.act-wait { font-style: normal; font-weight: 400; color: var(--hint); letter-spacing: 0; text-transform: none; }
+.act-toggle { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--navy); font-size: 12.5px; font-weight: 700; padding: 8px 2px 2px; }
+.act-toggle .i { width: 15px; height: 15px; }
+.act-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.feed .act-day { font-size: 10.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #8a919c; padding-top: 6px; }
+.act-n { font-size: 11px; font-weight: 700; color: var(--muted); background: #eef1f5; border-radius: 10px; padding: 1px 6px; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
@@ -1484,9 +1493,70 @@ function renderInvite() {
   $("#inv-send").onclick = () => { const again = p.invite?.status === "invited"; p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`${again ? "re-sent the invitation to" : "invited"} ${p.name}`, null); save(); close(); render(); toast(`Invitation sent to ${p.name}`); };
 }
 
+// Recent activity: a short summary of the last 7 days on top (AI inside Task AI, rule-based elsewhere or as
+// a fallback), and the full list behind "Show all activity", grouped by day with repeated entries merged.
+function activityItems() { return state.activity.filter(a => { if (!a.task) return true; const t = state.tasks.find(x => x.id === a.task); return !t || visible(t); }); }
+function lastWeek(items) { const since = addDays(isoOf(TODAY), -7); return items.filter(a => a.at >= since); }
+function ruleSummary(items) {
+  if (!items.length) return "No activity in the last 7 days.";
+  const count = re => items.filter(a => re.test(a.text)).length;
+  const names = [...new Set(items.map(a => person(a.by).name))];
+  const who = names.length <= 2 ? names.join(" and ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} other${names.length > 3 ? "s" : ""}`;
+  const closedTitles = items.filter(a => /^closed “/.test(a.text)).map(a => a.text.match(/“(.+?)”/)?.[1]).filter(Boolean).slice(0, 2);
+  const msMoved = items.filter(a => /^moved milestone “/.test(a.text)).map(a => a.text.match(/“(.+?)”/)?.[1]).filter(Boolean);
+  const n = (k, one, many) => k ? `${k} ${k === 1 ? one : many}` : "";
+  const parts = [
+    n(count(/^closed “/), "task closed", "tasks closed") + (closedTitles.length ? ` (${closedTitles.join(", ")})` : ""),
+    n(count(/^posted an update|^replied by email/), "status update", "status updates"),
+    n(count(/^added “/), "new task", "new tasks"),
+    n(count(/^added subtask/), "new subtask", "new subtasks"),
+    msMoved.length ? `${n(msMoved.length, "milestone moved", "milestones moved")} (${msMoved.slice(0, 2).join(", ")})` : "",
+    n(count(/^moved “.+” (from|to) \d/), "date changed", "dates changed"),
+    n(count(/^assigned |as coworker on|as requester on/), "people change on tasks", "people changes on tasks"),
+    n(count(/^edited the description|^renamed /), "description or title edited", "descriptions or titles edited"),
+  ].filter(Boolean);
+  return `In the last 7 days ${who} made ${n(items.length, "change", "changes")}${parts.length ? `: ${parts.slice(0, -1).join(", ")}${parts.length > 1 ? " and " : ""}${parts[parts.length - 1]}` : ""}.`;
+}
+// AI summary from Task AI (only when this page runs inside the app). Waits until changes stop for a moment,
+// then asks once per state of the activity; the result is kept so re-renders don't ask again.
+function aiSummaryKey(items) { return `${state.id}|${items.length}|${items[0] ? items[0].at + items[0].text : ""}`; }
+function requestAiSummary(items) {
+  if (!location.pathname.startsWith("/close-plans") || !items.length) return;
+  const key = aiSummaryKey(items);
+  if (ui.aiSum && ui.aiSum.key === key) return;
+  ui.aiSum = { key, text: null };
+  clearTimeout(requestAiSummary.t);
+  requestAiSummary.t = setTimeout(async () => {
+    try {
+      const r = await fetch("/api/close-plans/activity-summary", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ plan: state.title, items: items.map(a => ({ at: a.at, who: person(a.by).name, text: a.text })) }) });
+      const data = await r.json().catch(() => ({}));
+      if (!ui.aiSum || ui.aiSum.key !== key) return;
+      ui.aiSum.text = r.ok && data.summary ? data.summary : "";
+    } catch (e) { if (ui.aiSum && ui.aiSum.key === key) ui.aiSum.text = ""; }
+    const box = document.getElementById("act-summary"); if (box) box.innerHTML = summaryHtml(items);
+  }, 1500);
+}
+function summaryHtml(items) {
+  const ai = ui.aiSum && ui.aiSum.key === aiSummaryKey(items) && ui.aiSum.text;
+  const waiting = location.pathname.startsWith("/close-plans") && ui.aiSum && ui.aiSum.key === aiSummaryKey(items) && ui.aiSum.text === null;
+  return `<span class="act-label">${ai ? "AI SUMMARY" : "SUMMARY"} · LAST 7 DAYS${waiting ? ` <i class="act-wait">updating…</i>` : ""}</span><p>${esc(ai || ruleSummary(items))}</p>`;
+}
 function activityPanel() {
-  const items = state.activity.filter(a => { if (!a.task) return true; const t = state.tasks.find(x => x.id === a.task); return !t || visible(t); }).slice(0, 7);
-  return `<section class="panel"><h3>Recent activity</h3><ul class="feed">${items.map(a => `<li>${avatar(a.by)}<div><b>${esc(person(a.by).name)}</b> ${esc(a.text)}<small>${fmtY(a.at)}</small></div></li>`).join("") || `<li>No activity yet.</li>`}</ul>
+  const all = activityItems(), week = lastWeek(all);
+  requestAiSummary(week);
+  // Group by day; identical entries in a row (same person, same text, same day) collapse into one "×n".
+  const merged = [];
+  for (const a of all) { const last = merged[merged.length - 1]; if (last && last.by === a.by && last.text === a.text && last.at === a.at) last.n++; else merged.push({ ...a, n: 1 }); }
+  const dayLabel = at => at === isoOf(TODAY) ? "Today" : at === addDays(isoOf(TODAY), -1) ? "Yesterday" : fmtY(at);
+  let list = "", lastDay = "";
+  for (const a of merged) {
+    if (a.at !== lastDay) { list += `<li class="act-day">${esc(dayLabel(a.at))}</li>`; lastDay = a.at; }
+    list += `<li>${avatar(a.by)}<div><b>${esc(person(a.by).name)}</b> ${esc(a.text)}${a.n > 1 ? ` <span class="act-n">×${a.n}</span>` : ""}</div></li>`;
+  }
+  return `<section class="panel"><h3>Recent activity</h3>
+    <div class="act-summary" id="act-summary">${summaryHtml(week)}</div>
+    ${all.length ? `<button type="button" class="act-toggle" data-act-toggle aria-expanded="${Boolean(ui.actOpen)}"><span class="i i-chev chev"></span>${ui.actOpen ? "Hide activity" : `Show all activity (${all.length})`}</button>` : ""}
+    ${ui.actOpen ? `<ul class="feed">${list}</ul>` : ""}
     ${ui.mode === "seller" ? `<p class="hint">When ${esc(B())} changes something, the task owner gets a Slack message or email, the same as any Task AI update.</p>` : ""}</section>`;
 }
 
@@ -1844,6 +1914,7 @@ function wirePage() {
   app.querySelectorAll("[data-plandelete-cancel]").forEach(b => b.onclick = () => { ui.deletePlan = false; render(); });
   app.querySelectorAll("[data-plandelete-confirm]").forEach(b => b.onclick = deletePlanNow);
   if (!state) { wireSetup(app); wireWizard(app); return; }
+  app.querySelectorAll("[data-act-toggle]").forEach(b => b.onclick = () => { ui.actOpen = !ui.actOpen; render(); });
   wirePhases(app);
   wireReorder(app);
   // Inside the Task AI app (served at /close-plans) the sidebar leads back to the task list; in the stand-alone demo it explains instead.

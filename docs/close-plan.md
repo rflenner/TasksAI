@@ -80,6 +80,19 @@ match, arrow keys move through the list, Esc closes. This replaces the plain
 dropdowns Task AI uses for coworkers and recipients today; worth bringing back to
 Task AI.
 
+## Recent activity
+
+The activity panel opens with a **summary of the last 7 days** instead of every
+single change. Inside Task AI it is written by AI (`POST
+/api/close-plans/activity-summary`, signed-in users, same OpenAI Responses API
+and model as Task AI's extraction, minimal reasoning; input is the activity
+lines only, bounded to 80 lines of 300 characters, and treated as data). It is
+requested once changes stop for 1.5 s and cached per state of the activity.
+Without AI (stand-alone demo, AI not configured, or an error) a rule-based
+summary counts closed tasks, updates, new tasks and subtasks, moved milestones
+and dates, people changes and edits. **Show all activity (N)** opens the full
+list grouped by day, with identical entries in a row merged ("×2").
+
 ## Status: work started means In progress
 
 Same rule as Task AI's `autoAdvanceStatus` (`app/lib/task-activity.ts`): an
