@@ -831,13 +831,13 @@ function render() {
 function sellerShell() {
   return `<div class="shell">
     <aside class="side">
-      <div class="logo">Task<b>AI</b></div>
+      <div class="logo" data-applink="/" role="link" tabindex="0" style="cursor:pointer">Task<b>AI</b></div>
       <nav aria-label="Task AI">
-        <button type="button"><span class="i i-owner"></span>My tasks<em>12</em></button>
-        <button type="button"><span class="i i-list"></span>All tasks<em>148</em></button>
-        <button type="button"><span class="i i-folder"></span>Projects</button>
-        <button type="button"><span class="i i-repeat"></span>Meetings</button>
-        <button type="button"><span class="i i-people"></span>People</button>
+        <button type="button" data-applink="/"><span class="i i-grid"></span>Task Overview</button>
+        <button type="button" data-applink="/"><span class="i i-owner"></span>My tasks</button>
+        <button type="button" data-applink="/"><span class="i i-folder"></span>Projects</button>
+        <button type="button" data-applink="/"><span class="i i-repeat"></span>Recurring meetings</button>
+        <button type="button" data-applink="/"><span class="i i-people"></span>People</button>
         <button type="button" class="active"><span class="i i-star"></span>Close plans<em class="nav-new">NEW</em></button>
         <div class="nav-children">
           ${store.plans.map(pl => `<button type="button" class="${pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span>${esc(pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
@@ -1646,6 +1646,8 @@ function wirePage() {
   app.querySelectorAll("[data-digest]").forEach(b => b.onclick = () => { ui.digestFor = b.dataset.digest; renderDigest(); });
   ["seller", "buyer"].forEach(side => { const sel = $("#po-" + side); if (sel) sel.onchange = () => { state.planOwners[side] = sel.value; log(`made ${person(sel.value).name} the ${side === "buyer" ? B() : "iSEEit"} plan owner`, null); save(); render(); }; });
   wirePhases(app);
+  // Inside the Task AI app (served at /close-plans) the sidebar leads back to the task list; in the stand-alone demo it explains instead.
+  app.querySelectorAll("[data-applink]").forEach(b => b.onclick = () => { if (location.pathname.startsWith("/close-plans")) location.href = b.dataset.applink; else toast("In Task AI this opens the task list"); });
   wireSetup(app);
   wireWizard(app);
   app.querySelectorAll("[data-kd]").forEach(b => b.onclick = () => { hideTip(); ui.open = b.dataset.kd; render(); });
