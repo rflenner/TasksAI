@@ -123,6 +123,14 @@ button { cursor: pointer; }
 .card-check:checked { background: var(--navy); border-color: var(--navy); }
 .card-check:checked::after { content: ""; width: 10px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
 .card-check.half { border-color: #e0a63a; background: linear-gradient(135deg, #fff 50%, #fff1d6 50%); }
+.card { position: relative; }
+.grip { position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 14px; height: 30px; border: 0; background: none; padding: 0; color: #8a919c; font-size: 16px; line-height: 1; cursor: grab; opacity: 0; border-radius: 4px; }
+.card:hover .grip, .grip:focus-visible { opacity: 1; }
+.grip:hover { color: var(--navy); background: #eef3fa; }
+.card.dragging { opacity: .45; }
+.card.drop-before { box-shadow: 0 -3px 0 var(--navy); }
+.card.drop-after { box-shadow: 0 3px 0 var(--navy); }
+.cards.drop-end { outline: 2px dashed #b8cce4; outline-offset: 4px; border-radius: 10px; }
 .card:hover { border-color: #b8c6da; box-shadow: 0 5px 18px #173f7610; }
 .card.active { border-color: var(--navy); background: #eef3fa; }
 .card .avatar { width: 34px; height: 34px; font-size: 11px; }
@@ -1126,7 +1134,7 @@ function phasesBlock() {
         </div>` : ""}
       </div>
       ${editing ? phaseEditForm(ph) : ""}
-      <div class="cards">
+      <div class="cards" data-phase="${ph.id}">
         ${tops.map(cardHtml).join("") || `<div class="empty">No tasks in this phase match the filter.</div>`}
         ${canCreate() ? `<form class="add-card" data-add="${ph.id}"><span class="i i-plus"></span><input id="add-${ph.id}" placeholder="Add a task to ${esc(ph.name)}" autocomplete="off" aria-label="New task in ${esc(ph.name)}"><button class="btn sm primary" type="submit">Add</button></form>` : ""}
       </div>
@@ -1184,6 +1192,7 @@ function cardHtml(t) {
   const last = t.updates[t.updates.length - 1];
   const desc = t.desc || (last ? `${person(last.by).name.split(" ")[0]}: ${last.text}` : "");
   const card = `<div class="card ${t.status === "Closed" ? "done" : ""} ${ui.open === t.id ? "active" : ""}" role="button" tabindex="0" data-open="${t.id}">
+    ${canReorder() ? `<button type="button" class="grip" data-grip="${t.id}" aria-label="Move “${esc(t.title)}”: drag, or use the up and down arrow keys" title="Drag to reorder">⠿</button>` : ""}
     <input type="checkbox" class="card-check ${t.status === "In progress" ? "half" : ""}" data-check="${t.id}" ${t.status === "Closed" ? "checked" : ""} ${canEdit(t) ? "" : "disabled"} aria-label="Close “${esc(t.title)}”" title="${t.status === "Closed" ? "Reopen" : "Close task"}">
     <div class="card-body">
       <div class="card-head">
@@ -1486,6 +1495,7 @@ function renderDrawer() {
   root.querySelectorAll("[data-check]").forEach(c => c.onchange = () => setStatus(state.tasks.find(x => x.id === c.dataset.check), c.checked ? "Closed" : "Open"));
   const title = $("#d-title");
   title.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); title.blur(); } };
+  if (ui.focusTitle) { ui.focusTitle = false; setTimeout(() => { title.focus(); title.select(); }, 30); }
   title.onchange = () => { const v = title.value.replace(/\s+/g, " ").trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
   $("#d-status").onchange = e => setStatus(t, e.target.value);
   $("#d-desc").onchange = e => { t.desc = e.target.value.trim(); log(`edited the description of “${t.title}”`, t.id); save(); render(); };
@@ -1728,7 +1738,7 @@ function wirePage() {
   app.querySelectorAll("[data-cycle]").forEach(b => b.onclick = e => { e.stopPropagation(); const t = state.tasks.find(x => x.id === b.dataset.cycle); setStatus(t, { "Open": "In progress", "In progress": "Closed", "Closed": "Open" }[t.status]); });
   app.querySelectorAll("[data-exp]").forEach(b => b.onclick = e => { e.stopPropagation(); const id = b.dataset.exp; ui.expanded.has(id) ? ui.expanded.delete(id) : ui.expanded.add(id); render(); });
   app.querySelectorAll("[data-check]").forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => setStatus(state.tasks.find(x => x.id === c.dataset.check), c.checked ? "Closed" : "Open"); });
-  app.querySelectorAll("[data-add]").forEach(f => f.onsubmit = e => { e.preventDefault(); const v = f.querySelector("input").value.trim(); if (v) addTask(f.dataset.add, null, v); });
+  app.querySelectorAll("[data-add]").forEach(f => f.onsubmit = e => { e.preventDefault(); const v = f.querySelector("input").value.trim(); addTask(f.dataset.add, null, v || "New task", !v); });
   app.querySelectorAll("[data-digest]").forEach(b => b.onclick = () => { ui.digestFor = b.dataset.digest; renderDigest(); });
   ["seller", "buyer"].forEach(side => { const sel = $("#po-" + side); if (sel) sel.onchange = () => { state.planOwners[side] = sel.value; log(`made ${person(sel.value).name} the ${side === "buyer" ? B() : "iSEEit"} plan owner`, null); save(); render(); }; });
   app.querySelectorAll("[data-planmenu]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.planMenu = !ui.planMenu; render(); });
@@ -1737,6 +1747,7 @@ function wirePage() {
   app.querySelectorAll("[data-plandelete-confirm]").forEach(b => b.onclick = deletePlanNow);
   if (!state) { wireSetup(app); wireWizard(app); return; }
   wirePhases(app);
+  wireReorder(app);
   // Inside the Task AI app (served at /close-plans) the sidebar leads back to the task list; in the stand-alone demo it explains instead.
   app.querySelectorAll("[data-applink]").forEach(b => b.onclick = () => { if (location.pathname.startsWith("/close-plans")) location.href = b.dataset.applink; else toast("In Task AI this opens the task list"); });
   wireSetup(app);
@@ -1762,7 +1773,7 @@ function wirePage() {
   app.querySelectorAll("[data-manage]").forEach(b => b.onclick = () => { ui.manage = b.dataset.manage; ui.removing = null; renderManage(); });
   app.querySelectorAll("[data-opentask]").forEach(b => b.onclick = () => { ui.open = b.dataset.opentask; render(); });
   const viewer = $("#viewer"); if (viewer) viewer.onchange = e => { ui.viewer = e.target.value; render(); };
-  const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || (state.phases[1] || state.phases[0]); const inp = document.getElementById("add-" + cur.id); inp?.scrollIntoView({ behavior: "smooth", block: "center" }); inp?.focus(); };
+  const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || (state.phases[1] || state.phases[0]); if (cur) return addTask(cur.id, null, "New task", true); const inp = document.getElementById("add-" + cur.id); inp?.scrollIntoView({ behavior: "smooth", block: "center" }); inp?.focus(); };
   const sa = $("#share-all"); if (sa) sa.onclick = () => toast(`In the real module this emails each ${B()} contact their personal link`);
   app.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => {
     const p = person(b.dataset.link);
@@ -2312,7 +2323,7 @@ function setStatus(t, s) {
   save(); render();
   if (moved.length) toast(`Work started:${movedText(moved)}`);
 }
-function addTask(phase, parent, title) {
+function addTask(phase, parent, title, focusTitle = false) {
   const id = "t" + (++state.seq);
   const p = parent && state.tasks.find(x => x.id === parent);
   const due = (p && p.due) || state.phases.find(x => x.id === phase).end;
@@ -2320,8 +2331,51 @@ function addTask(phase, parent, title) {
   if (parent) ui.expanded.add(parent);
   log(parent ? `added subtask “${title}” to “${p.title}”` : `added “${title}”`, id);
   save();
-  if (!parent) { ui.open = id; toast("Task added. Set the owner and due date"); } else toast("Subtask added");
+  if (!parent) { ui.open = id; ui.focusTitle = focusTitle; toast(focusTitle ? "New task added. Type its name" : "Task added. Set the owner and due date"); } else toast("Subtask added");
   render();
+}
+
+// Reordering: drag a task card (or use the arrow keys on its grip) to change its place in a phase or move it
+// to another phase. The order is the order of the tasks list itself; subtasks travel with their main task.
+function canReorder() { return ui.mode === "seller" || acc().level === "all"; }
+function moveTask(id, targetId, after, phaseId) {
+  const t = state.tasks.find(x => x.id === id); if (!t || id === targetId) return;
+  const target = targetId && state.tasks.find(x => x.id === targetId);
+  const phase = target ? target.phase : phaseId;
+  const fromPhase = t.phase;
+  state.tasks = state.tasks.filter(x => x.id !== id);
+  if (target) { const i = state.tasks.indexOf(target); state.tasks.splice(after ? i + 1 : i, 0, t); }
+  else { const last = state.tasks.map(x => x.phase === phase && !x.parent).lastIndexOf(true); state.tasks.splice(last + 1, 0, t); }
+  if (phase && phase !== fromPhase) { t.phase = phase; state.tasks.forEach(x => { if (x.parent === t.id) x.phase = phase; }); log(`moved “${t.title}” to ${state.phases.find(p => p.id === phase).name}`, t.id); }
+  save(); render();
+}
+// Arrow keys on a card's grip: swap with the previous / next visible task in the same phase.
+function nudgeTask(id, dir) {
+  const t = state.tasks.find(x => x.id === id);
+  const sibs = state.tasks.filter(x => x.phase === t.phase && !x.parent && visible(x));
+  const i = sibs.indexOf(t), other = sibs[i + dir]; if (!other) return;
+  moveTask(id, other.id, dir > 0);
+  document.querySelector(`[data-grip="${id}"]`)?.focus();
+}
+function wireReorder(app) {
+  if (!canReorder()) return;
+  const clear = () => app.querySelectorAll(".drop-before, .drop-after, .drop-end").forEach(x => x.classList.remove("drop-before", "drop-after", "drop-end"));
+  app.querySelectorAll(".card[data-open]").forEach(card => {
+    card.draggable = true;
+    card.ondragstart = e => { ui.dragId = card.dataset.open; e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", ui.dragId); } catch (err) {} card.classList.add("dragging"); };
+    card.ondragend = () => { card.classList.remove("dragging"); clear(); ui.dragId = null; };
+    card.ondragover = e => { if (!ui.dragId) return; e.preventDefault(); e.stopPropagation(); clear(); const r = card.getBoundingClientRect(); card.classList.add(e.clientY > r.top + r.height / 2 ? "drop-after" : "drop-before"); };
+    card.ondrop = e => { e.preventDefault(); e.stopPropagation(); const after = card.classList.contains("drop-after"); clear(); if (ui.dragId) moveTask(ui.dragId, card.dataset.open, after); };
+  });
+  app.querySelectorAll(".cards[data-phase]").forEach(box => {
+    box.ondragover = e => { if (!ui.dragId) return; e.preventDefault(); clear(); box.classList.add("drop-end"); };
+    box.ondragleave = e => { if (!box.contains(e.relatedTarget)) box.classList.remove("drop-end"); };
+    box.ondrop = e => { e.preventDefault(); clear(); if (ui.dragId) moveTask(ui.dragId, null, true, box.dataset.phase); };
+  });
+  app.querySelectorAll("[data-grip]").forEach(g => {
+    g.onclick = e => e.stopPropagation();
+    g.onkeydown = e => { if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); nudgeTask(g.dataset.grip, e.key === "ArrowUp" ? -1 : 1); } };
+  });
 }
 
 $("#mode-seller").onclick = () => { ui.mode = "seller"; ui.open = null; ui.filter = "all"; try { localStorage.setItem(STORE_KEY + ":mode", "seller"); } catch (e) {} render(); };

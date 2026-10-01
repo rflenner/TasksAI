@@ -54,6 +54,16 @@ How Close Plan uses it:
 - **Stage drift**: when the opportunity's `stage` or `close_date` changes in Sales AI,
   the plan shows it ("CRM close date moved to 15 Nov") rather than silently rewriting the plan.
 
+## Adding and ordering tasks
+
+- **Add** at the end of a phase creates the task with the typed name, or a
+  "New task" opened with its title selected when the field is empty. "New
+  task" at the top does the same in the current phase.
+- **Order**: drag a task card by its grip (shown on hover) above or below another
+  task, or onto another phase to move it there (subtasks travel with it);
+  keyboard: focus the grip and use the up and down arrow keys. Available to the
+  selling team and to customer contacts with "All tasks" access.
+
 ## Status: work started means In progress
 
 Same rule as Task AI's `autoAdvanceStatus` (`app/lib/task-activity.ts`): an
