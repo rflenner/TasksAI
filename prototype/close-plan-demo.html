@@ -452,6 +452,8 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .pe-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .del-box { margin-top: 14px; border-left: 3px solid #c0503e; background: #fdf3f1; border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 13px; color: #4a5160; }
 .del-box.confirm { background: #fbe8e4; }
+.plan-del { margin: -14px 0 22px; }
+.plan-tools .ph-btn { width: 42px; height: 42px; border: 1px solid #d7dce3; background: #fff; }
 .del-box p { margin: 6px 0 0; line-height: 1.5; }
 .del-box select { max-width: 260px; }
 .del-box .pe-actions { margin-top: 10px; }
@@ -495,6 +497,8 @@ button.wz-card { font: inherit; text-align: left; }
 .wz-picked { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #eef4fc; color: var(--navy); font-size: 13px; }
 .wz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 .wz-grid-3 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.wz-grid-1 { grid-template-columns: minmax(0, 1fr); }
+.wz-grid-d { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
 .wz-body input:not([type=radio]):not([type=checkbox]), .wz-body select { border: 1px solid var(--field); border-radius: 8px; padding: 10px 11px; font-size: 14px; font-weight: 400; color: var(--ink); background: #fff; min-width: 0; }
 .wz-body input:focus, .wz-body select:focus { border-color: var(--navy); outline: 0; box-shadow: 0 0 0 3px rgba(23, 63, 118, .08); }
 .wz-preview { display: grid; gap: 6px; }
@@ -536,7 +540,7 @@ button.wz-card { font: inherit; text-align: left; }
 .setup li.done .setup-check { background: var(--green); border-color: var(--green); }
 .setup-act { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .ext-empty { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 26px; color: var(--muted); }
-@media (max-width: 800px) { .wz-cols, .wz-grid, .wz-grid-3 { grid-template-columns: 1fr; } .wz-preview > div { grid-template-columns: 24px minmax(0, 1fr); } .wz-preview small { grid-column: 2; } .wz-task { grid-template-columns: 20px minmax(0, 1fr) 60px; } .wz-flags, .wz-who { display: none; } .setup li { grid-template-columns: 24px minmax(0, 1fr); } .setup-act { grid-column: 2; justify-content: flex-start; } .wz-body { padding: 18px 16px; } }
+@media (max-width: 800px) { .wz-cols, .wz-grid, .wz-grid-3, .wz-grid-d { grid-template-columns: 1fr; } .wz-preview > div { grid-template-columns: 24px minmax(0, 1fr); } .wz-preview small { grid-column: 2; } .wz-task { grid-template-columns: 20px minmax(0, 1fr) 60px; } .wz-flags, .wz-who { display: none; } .setup li { grid-template-columns: 24px minmax(0, 1fr); } .setup-act { grid-column: 2; justify-content: flex-start; } .wz-body { padding: 18px 16px; } }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
@@ -775,7 +779,7 @@ function seed() {
 function freshStore() { return { plans: [seed()], current: "meridian" }; }
 let store = load() || freshStore();
 let state = store.plans.find(x => x.id === store.current) || store.plans[0];
-const B = () => state.account || "Customer";
+const B = () => (state && state.account) || "Customer";
 function switchPlan(id) { state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); }
 let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null };
 try { const t = localStorage.getItem(STORE_KEY + ":tab"); if (t === "plan" || t === "people") ui.tab = t; } catch (e) {}
@@ -844,7 +848,8 @@ function growBox(el) {
 function growAll(root = document) { root.querySelectorAll("textarea[data-grow]").forEach(el => { growBox(el); if (!el.dataset.growWired) { el.dataset.growWired = "1"; el.addEventListener("input", () => growBox(el)); } }); }
 
 function render() {
-  checkSetup();
+  if (!state && !ui.wizard) ui.mode = "seller";
+  if (state) checkSetup();
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
   $("#mode-buyer").className = ui.mode === "buyer" ? "on" : "";
   $("#app").innerHTML = ui.mode === "seller" ? sellerShell() : buyerShell();
@@ -865,7 +870,7 @@ function sellerShell() {
         <button type="button" data-applink="/"><span class="i i-people"></span>People</button>
         <button type="button" class="active"><span class="i i-star"></span>Close plans<em class="nav-new">NEW</em></button>
         <div class="nav-children">
-          ${store.plans.map(pl => `<button type="button" class="${pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span>${esc(pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
+          ${store.plans.map(pl => `<button type="button" class="${state && pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span>${esc(pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
           <button type="button" class="${ui.wizard ? "current" : ""}" data-newplan><span>+ New close plan</span></button>
         </div>
       </nav>
@@ -873,7 +878,7 @@ function sellerShell() {
     </aside>
     <div class="main"><div class="content">
       <div class="mob-logo logo" style="display:none;padding:0 0 18px;font-size:26px">Task<b style="font-size:16px">AI</b></div>
-      ${ui.wizard ? wizardView() : `${titleBlock()}${tabsBlock()}${ui.tab === "people" ? peopleTab() : planTab()}`}
+      ${ui.wizard ? wizardView() : !state ? emptyView() : `${titleBlock()}${tabsBlock()}${ui.tab === "people" ? peopleTab() : planTab()}`}
     </div></div>
   </div>`;
 }
@@ -928,8 +933,34 @@ function titleBlock() {
     <div class="title-actions">
       ${ui.mode === "seller" ? `<button type="button" class="btn" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : ""}
       ${canCreate() && ui.tab === "plan" ? `<button type="button" class="btn primary" id="new-task"><span class="i i-plus" style="width:16px;height:16px"></span>New task</button>` : ""}
+      ${ui.mode === "seller" && me() === state.planOwners.seller ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
+        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" class="danger-item" data-plandelete style="border-top:0;margin-top:0;padding-top:8px"><span class="mi">×</span>Delete close plan</button></div>` : ""}</div>` : ""}
     </div>
+  </div>
+  ${ui.deletePlan ? deletePlanBox() : ""}`;
+}
+
+// Deleting a whole plan: only the iSEEit plan owner, and only after a second confirmation.
+function deletePlanBox() {
+  const tasks = state.tasks.length, buyers = state.people.filter(p => p.side === "buyer").length, invited = state.people.filter(p => p.side === "buyer" && p.invite && p.invite.status !== "none").length;
+  return `<div class="del-box confirm plan-del" role="alertdialog" aria-label="Confirm plan deletion">
+    <b>Delete “${esc(state.title)}”?</b>
+    <p>This removes the plan with its ${state.phases.length} phases and ${tasks} tasks for everyone${buyers ? `, including ${esc(B())}` : ""}.${invited ? ` The personal links of ${invited} invited ${esc(B())} contact${invited > 1 ? "s" : ""} stop working.` : ""} This can't be undone.</p>
+    <div class="pe-actions"><button type="button" class="btn sm danger" data-plandelete-confirm>Yes, delete this plan</button><button type="button" class="btn sm" data-plandelete-cancel>Keep plan</button></div>
   </div>`;
+}
+function deletePlanNow() {
+  const title = state.title;
+  store.plans = store.plans.filter(x => x.id !== state.id);
+  Object.assign(ui, { deletePlan: false, planMenu: false });
+  if (store.plans.length) switchPlan(store.plans[0].id);
+  else { state = null; store.current = null; save(); render(); }
+  toast(`“${title}” deleted`);
+}
+// Shown when every plan has been deleted.
+function emptyView() {
+  return `<div class="title"><div><label>CLOSE PLANS</label><h1>No close plans yet</h1><p>Create a plan for a deal, or bring back the example plan with “Reset demo data” at the top.</p></div>
+    <div class="title-actions"><button type="button" class="btn primary" data-newplan><span class="i i-plus" style="width:16px;height:16px"></span>New close plan</button></div></div>`;
 }
 
 function statsBlock() {
@@ -1700,6 +1731,11 @@ function wirePage() {
   app.querySelectorAll("[data-add]").forEach(f => f.onsubmit = e => { e.preventDefault(); const v = f.querySelector("input").value.trim(); if (v) addTask(f.dataset.add, null, v); });
   app.querySelectorAll("[data-digest]").forEach(b => b.onclick = () => { ui.digestFor = b.dataset.digest; renderDigest(); });
   ["seller", "buyer"].forEach(side => { const sel = $("#po-" + side); if (sel) sel.onchange = () => { state.planOwners[side] = sel.value; log(`made ${person(sel.value).name} the ${side === "buyer" ? B() : "iSEEit"} plan owner`, null); save(); render(); }; });
+  app.querySelectorAll("[data-planmenu]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.planMenu = !ui.planMenu; render(); });
+  app.querySelectorAll("[data-plandelete]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.deletePlan = true; render(); });
+  app.querySelectorAll("[data-plandelete-cancel]").forEach(b => b.onclick = () => { ui.deletePlan = false; render(); });
+  app.querySelectorAll("[data-plandelete-confirm]").forEach(b => b.onclick = deletePlanNow);
+  if (!state) { wireSetup(app); wireWizard(app); return; }
   wirePhases(app);
   // Inside the Task AI app (served at /close-plans) the sidebar leads back to the task list; in the stand-alone demo it explains instead.
   app.querySelectorAll("[data-applink]").forEach(b => b.onclick = () => { if (location.pathname.startsWith("/close-plans")) location.href = b.dataset.applink; else toast("In Task AI this opens the task list"); });
@@ -1765,7 +1801,7 @@ const ROLES = {
 // rq (requested-by roles), ms (milestone), int (internal), key ("sign" | "live"), subs ([title, role, [anchor, offset], options]).
 const TEMPLATES = [
   {
-    id: "standard", name: "Standard B2B", goodFor: "Most software deals: align, prove it works, buy, launch, measure.",
+    id: "standard", live: 45, name: "Standard B2B", goodFor: "Most software deals: align, prove it works, buy, launch, measure.",
     phases: [
       ["align", "Align", "Agree on goals, priorities, key use cases, stakeholders, and success criteria.", ["S", -80], ["S", -56]],
       ["validate", "Validate", "Confirm the solution meets business, technical, security, and operational requirements.", ["S", -53], ["S", -28]],
@@ -1796,7 +1832,7 @@ const TEMPLATES = [
     ],
   },
   {
-    id: "poc", name: "POC-led", goodFor: "Deals that hinge on a pilot: prove value first, then buy.",
+    id: "poc", live: 45, name: "POC-led", goodFor: "Deals that hinge on a pilot: prove value first, then buy.",
     phases: [
       ["discover", "Discover", "Understand the problem and agree what the pilot must prove.", ["S", -75], ["S", -55]],
       ["pilot", "Pilot / POC", "Run a time-boxed pilot with real users on the agreed scope.", ["S", -52], ["S", -22]],
@@ -1822,7 +1858,7 @@ const TEMPLATES = [
     ],
   },
   {
-    id: "enterprise", name: "Enterprise procurement", goodFor: "Regulated buyers with long security, legal and procurement steps.",
+    id: "enterprise", live: 45, name: "Enterprise procurement", goodFor: "Regulated buyers with long security, legal and procurement steps.",
     phases: [
       ["align", "Align", "Agree goals, the buying committee and the approval path.", ["S", -110], ["S", -85]],
       ["validate", "Validate", "Prove the solution meets business and technical requirements.", ["S", -88], ["S", -55]],
@@ -1849,7 +1885,7 @@ const TEMPLATES = [
     ],
   },
   {
-    id: "renewal", name: "Renewal & expansion", goodFor: "Existing customers: renew on time and grow into new teams. The signature date is the renewal date.",
+    id: "renewal", live: 30, name: "Renewal & expansion", goodFor: "Existing customers: renew on time and grow into new teams. The signature date is the renewal date.",
     phases: [
       ["review", "Review value", "Show what was achieved since the last signature.", ["S", -75], ["S", -50]],
       ["scope", "Expansion scope", "Agree where else the solution adds value.", ["S", -52], ["S", -30]],
@@ -1870,7 +1906,7 @@ const TEMPLATES = [
     ],
   },
   {
-    id: "service", name: "App design & build (service)", goodFor: "Service projects that design and build an app with the customer, like Close Plan itself. Signature = statement of work, go-live = launch.",
+    id: "service", live: 110, name: "App design & build (service)", goodFor: "Service projects that design and build an app with the customer, like Close Plan itself. Signature = statement of work, go-live = launch.",
     phases: [
       ["sow", "Proposal & SOW", "Agree scope, approach and price in a statement of work.", ["S", -30], ["S", 0]],
       ["discovery", "Discovery", "Understand users, processes and requirements.", ["S", 1], ["S", 21]],
@@ -1900,7 +1936,7 @@ const TEMPLATES = [
     ],
   },
   {
-    id: "blank", name: "Blank", goodFor: "Start from three phases and the two key milestones, then add your own tasks.",
+    id: "blank", live: 45, name: "Blank", goodFor: "Start from three phases and the two key milestones, then add your own tasks.",
     phases: [
       ["prepare", "Prepare", "Agree goals and what has to happen before signature.", ["S", -60], ["S", -21]],
       ["decide", "Decide", "Commercials, approvals and signature.", ["S", -20], ["S", 0]],
@@ -1946,7 +1982,20 @@ const SELLER_OPTIONS = () => [
 ];
 const isoOf = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 const addDays = (iso, n) => { const x = d(iso); x.setDate(x.getDate() + n); return isoOf(x); };
-const tplDate = (w, [anchor, off]) => addDays(anchor === "G" ? w.live : w.sign, off);
+// Template dates are fitted into the real timeframe (plan start → signature → go-live). Each template date is a
+// day number on the template's own scale: signature = 0, go-live = tpl.live (its typical gap). Days before
+// signature are stretched or squeezed between the plan start and the signature date, days between signature and
+// go-live between those two dates, and days after go-live keep their distance (e.g. a 30-day adoption review).
+const daysBetween = (a, b) => Math.round((d(b) - d(a)) / 864e5);
+const tplOf = w => TEMPLATES.find(t => t.id === w.tpl);
+const tplDay = (tpl, [anchor, off]) => anchor === "G" ? (tpl.live || 45) + off : off;
+const tplEarliest = tpl => Math.min(0, ...tpl.phases.flatMap(p => [p[3], p[4]]).concat(tpl.tasks.flatMap(t => [t[3], ...(((t[4] || {}).subs) || []).map(x => x[2])])).map(x => tplDay(tpl, x)));
+function tplDate(w, at) {
+  const tpl = tplOf(w), t = tplDay(tpl, at), live = tpl.live || 45, first = tplEarliest(tpl);
+  if (t <= 0) return first < 0 ? addDays(w.start, Math.round((t - first) / -first * daysBetween(w.start, w.sign))) : w.sign;
+  if (t <= live) return addDays(w.sign, Math.round(t / live * daysBetween(w.sign, w.live)));
+  return addDays(w.live, t - live);
+}
 const tplRoles = tpl => {
   const used = new Map();
   const add = (r, n = 1) => used.set(r, (used.get(r) || 0) + n);
@@ -1957,8 +2006,8 @@ const tplCount = tpl => tpl.tasks.reduce((n, t) => n + 1 + ((t[4] || {}).subs ||
 const tplMilestones = tpl => tpl.tasks.reduce((n, t) => n + ((t[4] || {}).ms ? 1 : 0) + ((t[4] || {}).subs || []).filter(s => (s[3] || {}).ms).length, 0);
 
 function startWizard() {
-  const sign = addDays(isoOf(TODAY), 60);
-  ui.wizard = { step: 1, opp: null, manual: { account: "", domain: "" }, title: "", sign, live: addDays(sign, 45), tpl: "standard", map: {}, buyerOwner: null, exclude: [] };
+  const start = isoOf(TODAY), sign = addDays(start, 60);
+  ui.wizard = { step: 1, opp: null, manual: { account: "", domain: "" }, title: "", start, sign, live: addDays(sign, 45), tpl: "standard", map: {}, buyerOwner: null, exclude: [] };
   Object.assign(ui, { open: null, tab: "plan", mode: "seller" });
   render(); window.scrollTo({ top: 0 });
 }
@@ -2061,7 +2110,7 @@ function wzSuggest() {
 }
 function wzValid(step) {
   const w = ui.wizard;
-  if (step === 1) return Boolean(wzAccount() && w.title.trim() && w.sign && w.live && w.live >= w.sign && !w.loadingContacts);
+  if (step === 1) return Boolean(wzAccount() && w.title.trim() && w.start && w.sign && w.live && w.start < w.sign && w.live >= w.sign && !w.loadingContacts);
   if (step === 2) return Boolean(w.tpl);
   return true;
 }
@@ -2089,12 +2138,13 @@ function wzStep1() {
     <label class="wz-card wz-manual ${w.opp === "manual" ? "on" : ""}"><input type="radio" name="wz-opp" value="manual" ${w.opp === "manual" ? "checked" : ""}><b>Enter by hand</b><span>A deal that isn't in Sales AI yet. Add the customer's people later in the People tab.</span></label>
     ${w.opp === "live" && w.liveOpp ? `<div class="wz-picked"><b>${esc(w.liveOpp.account)}</b> · ${esc(w.liveOpp.opp)} · ${w.loadingContacts ? "loading contacts from Sales AI…" : w.liveOpp.contactsErr ? esc(w.liveOpp.contactsErr) : `${(w.liveOpp.contacts || []).length} contacts from Sales AI`}</div>` : ""}
     ${w.opp === "manual" ? `<div class="wz-grid"><label class="field">Customer name<input id="wz-acct" value="${esc(w.manual.account)}" placeholder="e.g. Acme Pharma"></label><label class="field">Email domain<input id="wz-domain" value="${esc(w.manual.domain)}" placeholder="acme.com"></label></div>` : ""}
-    ${w.opp ? `<div class="wz-grid wz-grid-3">
-      <label class="field wz-wide">Plan name<input id="wz-title" value="${esc(w.title)}" placeholder="e.g. Sales AI rollout for Acme Pharma"></label>
+    ${w.opp ? `<div class="wz-grid wz-grid-1"><label class="field">Plan name<input id="wz-title" value="${esc(w.title)}" placeholder="e.g. Sales AI rollout for Acme Pharma"></label></div>
+    <div class="wz-grid wz-grid-d">
+      <label class="field">Plan starts<input type="date" id="wz-start" value="${esc(w.start)}"></label>
       <label class="field">Target signature<input type="date" id="wz-sign" value="${esc(w.sign)}"></label>
       <label class="field">Target go-live<input type="date" id="wz-live" value="${esc(w.live)}"></label>
     </div>
-    <p class="hint">Every phase and task in the template is dated from these two dates. You only set them once. ${o && o.close && o.close < addDays(isoOf(TODAY), 21) ? `The close date in Sales AI (${fmtY(o.close)}) is too close or in the past, so a new target is suggested. ` : ""}${w.live < w.sign ? `<b style="color:#a84235">Go-live can't be before signature.</b>` : ""}</p>` : ""}`;
+    <p class="hint">The template is fitted into this timeframe: everything before signature runs from the plan start to the signature date, launch steps run up to go-live. ${w.start >= w.sign ? `<b style="color:#a84235">The plan must start before the signature date.</b> ` : ""} ${o && o.close && o.close < addDays(isoOf(TODAY), 21) ? `The close date in Sales AI (${fmtY(o.close)}) is too close or in the past, so a new target is suggested. ` : ""}${w.live < w.sign ? `<b style="color:#a84235">Go-live can't be before signature.</b>` : ""}</p>` : ""}`;
 }
 
 function wzStep2() {
@@ -2106,7 +2156,8 @@ function wzStep2() {
       <small>${tplCount(t)} tasks · ${tplMilestones(t)} milestones</small></label>`).join("")}</div>
     <h3 class="wz-h3">${esc(tpl.name)} with your dates</h3>
     <div class="wz-preview">${tpl.phases.map((p, i) => `<div><span class="g-num">${i + 1}</span><b>${esc(p[1])}</b><span>${fmt(tplDate(w, p[3]))} – ${fmtY(tplDate(w, p[4]))}</span><small>${esc(p[2])}</small></div>`).join("")}</div>
-    ${tpl.phases.some(p => tplDate(w, p[3]) < isoOf(TODAY)) ? `<p class="perm" style="margin:12px 0 0">With these dates, the plan starts before today (${fmtY(tplDate(w, tpl.phases[0][3]))}). Move the target signature later in step 1, or shorten the first phases after creating the plan.</p>` : ""}
+    ${w.start < isoOf(TODAY) ? `<p class="perm" style="margin:12px 0 0">The plan starts before today (${fmtY(w.start)}), so some early tasks will show as overdue right away.</p>` : ""}
+    ${daysBetween(w.start, w.sign) < -tplEarliest(tpl) * 0.6 ? `<p class="perm" style="margin:12px 0 0">Tight timeline: this template normally plans about ${Math.round(-tplEarliest(tpl) / 7)} weeks before signature and you have ${Math.max(1, Math.round(daysBetween(w.start, w.sign) / 7))}. The steps are squeezed to fit; check the dates in step 4.</p>` : ""}
     <p class="hint">You can rename, re-date, reorder, add and delete phases and tasks after the plan is created.</p>`;
 }
 
@@ -2191,9 +2242,10 @@ function wireWizard(app) {
   upd("#wz-acct", v => { w.manual.account = v; if (!w.titleTouched) { w.title = v ? `Close plan – ${v}` : ""; const t = $("#wz-title"); if (t) t.value = w.title; } });
   upd("#wz-domain", v => w.manual.domain = v);
   upd("#wz-title", v => { w.title = v; w.titleTouched = true; });
+  const st = $("#wz-start"); if (st) st.onchange = () => { w.start = st.value; render(); };
   const sign = $("#wz-sign"); if (sign) sign.onchange = () => { const gap = Math.round((d(w.live) - d(w.sign)) / 864e5); w.sign = sign.value; w.live = addDays(w.sign, Math.max(gap, 0)); render(); };
-  const live = $("#wz-live"); if (live) live.onchange = () => { w.live = live.value; render(); };
-  app.querySelectorAll("input[name=wz-tpl]").forEach(r => r.onchange = () => { w.tpl = r.value; w.map = {}; w.buyerOwner = null; w.exclude = []; render(); });
+  const live = $("#wz-live"); if (live) live.onchange = () => { w.live = live.value; w.liveTouched = true; render(); };
+  app.querySelectorAll("input[name=wz-tpl]").forEach(r => r.onchange = () => { w.tpl = r.value; if (!w.liveTouched) w.live = addDays(w.sign, tplOf(w).live || 45); w.map = {}; w.buyerOwner = null; w.exclude = []; render(); });
   app.querySelectorAll("[data-wz-role]").forEach(s => s.onchange = () => { w.map[s.dataset.wzRole] = s.value; render(); });
   const bo = $("#wz-bowner"); if (bo) bo.onchange = () => { w.buyerOwner = bo.value; };
   app.querySelectorAll("[data-wz-task]").forEach(c => c.onchange = () => { const i = Number(c.dataset.wzTask); w.exclude = c.checked ? w.exclude.filter(x => x !== i) : [...w.exclude, i]; render(); });
@@ -2275,7 +2327,7 @@ function addTask(phase, parent, title) {
 $("#mode-seller").onclick = () => { ui.mode = "seller"; ui.open = null; ui.filter = "all"; try { localStorage.setItem(STORE_KEY + ":mode", "seller"); } catch (e) {} render(); };
 $("#mode-buyer").onclick = () => { ui.mode = "buyer"; ui.open = null; ui.filter = "all"; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":mode", "buyer"); } catch (e) {} render(); };
 $("#reset").onclick = () => { store = freshStore(); state = store.plans[0]; ui.wizard = null; ui.open = null; ui.expanded = new Set(); save(); render(); toast("Demo data reset"); };
-document.addEventListener("click", e => { if (ui.phaseMenu && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; render(); } });
+document.addEventListener("click", e => { if ((ui.phaseMenu || ui.planMenu) && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; ui.planMenu = false; render(); } });
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();

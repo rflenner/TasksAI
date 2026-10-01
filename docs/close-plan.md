@@ -149,12 +149,16 @@ per plan per week.
 as a **draft**: nothing is shared and nobody on the customer side is invited until
 the owner does it.
 
-1. **Deal**: pick the opportunity from Sales AI (account, amount, stage, close
-   date, contacts) or enter it by hand. Set the plan name, **target signature**
-   and **target go-live**.
-2. **Template**: choose a starting plan. Every phase and task date is an offset
-   from signature ("S") or go-live ("G"), so the whole plan is dated from those
-   two dates. The step warns when the plan would start before today.
+1. **Deal**: search the opportunity in Sales AI as you type (account, amount,
+   stage, close date, contacts) or enter it by hand. Set the plan name, **plan
+   start** (default today), **target signature** and **target go-live**.
+2. **Template**: choose a starting plan. The template is **fitted into the real
+   timeframe**: each template date is a day number on the template's own scale
+   (signature = 0, go-live = the template's typical gap). Days before signature
+   are stretched or squeezed between plan start and signature, days between
+   signature and go-live between those two dates, and days after go-live keep
+   their distance. The step warns when the plan starts before today or the
+   timeline is much tighter than the template expects.
 3. **People**: template tasks are written for roles (buyer: executive sponsor,
    project lead, technical lead, IT security, procurement, legal, end-user
    representative; seller: account lead, solutions engineer, customer success,
@@ -176,6 +180,11 @@ Out-of-the-box templates:
 | Blank | Prepare → Decide → Implement, with the signature and go-live milestones | Anything else |
 
 Later: "Save as template" on any plan, and company templates managed by admins.
+
+**Deleting a plan**: the selling-side plan owner can delete a plan from the ⋮
+menu next to its title, after a second confirmation that names how many phases
+and tasks go and whose personal links stop working. With no plans left, the
+page offers "New close plan".
 
 **Getting started checklist** on a draft plan (seller view): check the dates with
 the buyer plan owner, review internal tasks, invite the buyer plan owner, invite
