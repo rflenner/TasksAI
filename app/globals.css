@@ -191,3 +191,9 @@ span.checklist-text:hover{background:#f6f8fa}
 .stat{text-align:left;transition:border-color .15s,box-shadow .15s,transform .15s}.stat:hover{border-color:#b8c6da;box-shadow:0 5px 18px #173f7610;transform:translateY(-1px)}.stat.active{border-color:var(--navy);box-shadow:0 0 0 2px #173f7620}.stat.warn.active{border-color:var(--orange)}
 .side nav .admin-nav{display:block;text-decoration:none;color:#5d6470;padding:13px 14px;border-radius:9px}.side nav .admin-nav:hover{background:#f3f6fa;color:var(--navy)}
 .filter-menu{position:relative;display:inline-block}.filter-toggle{background:none;border:0;padding:0;font:inherit;font-weight:700;color:var(--navy);cursor:pointer;display:inline-flex;align-items:center;gap:2px}.filter-toggle .tri{font-size:9px;position:relative;top:1px}.filter-backdrop{position:fixed;inset:0;z-index:20}.filter-popover{position:absolute;top:100%;left:0;margin-top:8px;background:white;border:1px solid #d9dee5;border-radius:10px;box-shadow:0 10px 28px #17223428;padding:8px;z-index:30;min-width:190px}.filter-option{display:flex;align-items:center;gap:9px;padding:7px 6px;font-size:13px;font-weight:400;color:var(--ink);cursor:pointer;white-space:nowrap;border-radius:6px;border:0;background:none;font-family:inherit;text-align:left;width:100%}.filter-option:hover{background:#f3f6fa}.filter-option.current{background:#eef4fc;color:var(--navy);font-weight:700}
+/* Close Plan demo link in the sidebar (app/close-plans/route.ts) — an <a>,
+   not a <button>, since it leaves the task list for its own page; styled
+   to match the nav buttons above it. */
+.side nav a.nav-link{color:#5d6470;padding:13px 14px;border-radius:9px;display:flex;gap:14px;align-items:center;text-decoration:none}
+.side nav a.nav-link:hover{background:#f3f6fa;color:var(--navy)}
+.side nav a.nav-link em.nav-new{background:var(--orange);color:white;font-size:9px;font-weight:800;letter-spacing:.4px}
