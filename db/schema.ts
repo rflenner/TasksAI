@@ -284,3 +284,21 @@ export const taskUpdateTokens = pgTable("task_update_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, table => [uniqueIndex("task_update_tokens_hash_unique").on(table.tokenHash), index("task_update_tokens_task_idx").on(table.taskId)]);
+// Close Plan, step A (docs/close-plan.md, "Shared storage"): one row per plan,
+// the whole plan as JSON. memberEmails (lowercase emails of the plan's iSEEit
+// members) is computed on the server and decides who sees the plan; version is
+// bumped on every save so two people can't silently overwrite each other.
+// deletedAt is a soft delete. Replaced by proper tables in step B.
+export const closePlanDocuments = pgTable("close_plan_documents", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  account: text("account").notNull().default(""),
+  data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+  memberEmails: jsonb("member_emails").$type<string[]>().notNull().default([]),
+  version: integer("version").notNull().default(1),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, table => [index("close_plan_documents_updated_idx").on(table.updatedAt)]);

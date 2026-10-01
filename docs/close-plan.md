@@ -310,6 +310,32 @@ removal time (default: that side's plan owner). They're taken off coworker and
 recipient lists, and their personal link stops working. A plan owner can't be removed
 until another plan owner is set.
 
+## Shared storage (step A, live since 2026-10-01)
+
+Until the full data model (step B) is built, each plan is stored **whole, as one
+JSON document** in `close_plan_documents` (migration `0021`), so the iSEEit team
+can work on the same plan.
+
+- `GET /api/close-plans/store`: the signed-in user (so the page acts as them, not
+  a fixed person) and the plans they can see: **Site Admins** see all, everyone
+  else the plans they **created** or where their Task AI email is one of the
+  plan's **iSEEit members** (`member_emails`, derived on the server). Customer
+  contacts never see plans this way.
+- `PUT /api/close-plans/store/:id` with the version last loaded: creates (Site and
+  Area Admins only) or updates (anyone who can see it). A version mismatch returns
+  409 with the latest plan; the page shows it and asks to redo the change.
+- `DELETE /api/close-plans/store/:id`: soft delete, iSEEit plan owner or Site Admin.
+- The page saves 0.6 s after a change, shows "Saving… / Saved / Not saved", and
+  checks for others' changes every 30 s while nobody is typing.
+- Someone not yet on a plan (e.g. a Site Admin) who changes it is added to the
+  iSEEit team on that first change.
+- Plans created before step A lived only in the creator's browser; the page offers
+  a one-time **Upload** of those. The fictional demo plan can still be opened from
+  the empty page but is never saved.
+- Limits: whole-plan saves, so two people editing at the same moment can't both
+  win (the later one is asked to redo); no customer access yet; plan tasks are not
+  yet Task AI tasks (no My tasks, digests, Slack).
+
 ## Data model: built on Task AI's existing database
 
 Plan tasks are ordinary `tasks` rows, so most of what a close plan needs already
