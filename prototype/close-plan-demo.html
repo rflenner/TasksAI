@@ -557,6 +557,13 @@ button.wz-card { font: inherit; text-align: left; }
 .setup-act { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .preview-note { background: #fff7e8; border-bottom: 1px solid #fde2b0; color: #6b4a00; font-size: 13px; padding: 8px 42px; }
 @media (max-width: 900px) { .preview-note { padding: 8px 16px; } }
+.save-state { margin-left: 8px; font-size: 10px; font-weight: 700; letter-spacing: .4px; color: var(--hint); text-transform: none; }
+.save-state.bad { color: #a84235; }
+.demo-pill { background: #8a919c; }
+.upload-banner { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: #fff7e8; border: 1px solid #fde2b0; border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; }
+.upload-banner b { display: block; color: var(--dark); }
+.upload-banner small { display: block; color: #6b5a3a; font-size: 12px; margin-top: 2px; }
+.ub-acts { display: flex; gap: 8px; }
 .ext-empty { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 26px; color: var(--muted); }
 @media (max-width: 800px) { .wz-cols, .wz-grid, .wz-grid-3, .wz-grid-d { grid-template-columns: 1fr; } .wz-preview > div { grid-template-columns: 24px minmax(0, 1fr); } .wz-preview small { grid-column: 2; } .wz-task { grid-template-columns: 20px minmax(0, 1fr) 60px; } .wz-flags, .wz-who { display: none; } .setup li { grid-template-columns: 24px minmax(0, 1fr); } .setup-act { grid-column: 2; justify-content: flex-start; } .wz-body { padding: 18px 16px; } }
 .d-tags { margin: -10px 0 20px; }
@@ -908,9 +915,10 @@ function seed() {
 }
 
 // The store holds every close plan; `state` is the plan currently open.
+const IN_APP = location.pathname.startsWith("/close-plans");
 function freshStore() { return { plans: [seed()], current: "meridian" }; }
-let store = load() || freshStore();
-let state = store.plans.find(x => x.id === store.current) || store.plans[0];
+let store = IN_APP ? { plans: [], current: null } : (load() || freshStore());
+let state = IN_APP ? null : (store.plans.find(x => x.id === store.current) || store.plans[0]);
 const B = () => (state && state.account) || "Customer";
 function switchPlan(id) { state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); }
 let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null };
@@ -918,18 +926,23 @@ try { const t = localStorage.getItem(STORE_KEY + ":tab"); if (t === "plan" || t 
 try { const m = localStorage.getItem(STORE_KEY + ":mode"); if (m === "buyer" || m === "seller") ui.mode = m; } catch (e) {}
 
 function load() { try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) {} }
+function save() {
+  if (!IN_APP) { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) {} return; }
+  if (!state || state._demo || !APP_ME) return;
+  materializeMe(state);
+  queueSave(state);
+}
 
 // Helpers
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const person = id => state.people.find(p => p.id === id) || { name: "Unassigned", side: "seller", title: "" };
+const person = id => (state && state.people.find(p => p.id === id)) || (id === "__me" && APP_ME ? { id: "__me", name: APP_ME.name, email: APP_ME.email, side: "seller", title: "Task AI user", access: { ...ACCESS_DEFAULTS.seller } } : { name: "Unassigned", side: "seller", title: "" });
 const initials = name => name.split(/\s+/).filter(w => /^[A-Za-z]/.test(w)).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const d = s => new Date(s + "T00:00:00");
 const fmt = s => d(s).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 const fmtY = s => d(s).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 const isOver = t => t.status !== "Closed" && t.due && d(t.due) < TODAY;
-const me = () => ui.mode === "seller" ? "rf" : ui.viewer;
+const me = () => ui.mode === "seller" ? mySellerId() : ui.viewer;
 const children = id => state.tasks.filter(t => t.parent === id);
 const parentOf = t => t.parent ? state.tasks.find(x => x.id === t.parent) : null;
 const statusClass = s => s === "In progress" ? "in-progress" : s === "Closed" ? "closed" : "";
@@ -981,6 +994,7 @@ function growAll(root = document) { root.querySelectorAll("textarea[data-grow]")
 
 function render() {
   if (!state && !ui.wizard) ui.mode = "seller";
+  if (IN_APP && state) { try { localStorage.setItem(STORE_KEY + ":current:" + (APP_ME ? APP_ME.id : ""), state.id); } catch (e) {} }
   clearTimeout(render.flash); if (ui.justAdded) render.flash = setTimeout(() => { ui.justAdded = null; document.querySelector(".just-added")?.classList.remove("just-added"); }, 1600);
   if (state) checkSetup();
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
@@ -1005,14 +1019,14 @@ function sellerShell() {
         <button type="button" class="active"><span class="i i-star"></span>Close plans<em class="nav-new">NEW</em></button>
         <div class="nav-children">
           ${store.plans.map(pl => `<button type="button" class="${state && pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span>${esc(pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
-          <button type="button" class="${ui.wizard ? "current" : ""}" data-newplan><span>+ New close plan</span></button>
+          ${!APP_ME || APP_ME.canCreate ? `<button type="button" class="${ui.wizard ? "current" : ""}" data-newplan><span>+ New close plan</span></button>` : ""}
         </div>
       </nav>
-      <div class="side-foot"><span class="avatar" style="width:32px;height:32px;font-size:11px">RF</span><div><b>Rizan Flenner</b>Site admin</div></div>
+      <div class="side-foot"><span class="avatar" style="width:32px;height:32px;font-size:11px">${esc(initials(myName()))}</span><div><b>${esc(myName())}</b>${APP_ME ? esc({ site_admin: "Site Admin", area_admin: "Area Admin", collaborator: "Collaborator", readonly: "Read-only" }[APP_ME.role] || "") : "Site admin"}</div></div>
     </aside>
     <div class="main"><div class="content">
       <div class="mob-logo logo" style="display:none;padding:0 0 18px;font-size:26px">Task<b style="font-size:16px">AI</b></div>
-      ${ui.wizard ? wizardView() : !state ? emptyView() : `${titleBlock()}${tabsBlock()}${ui.tab === "people" ? peopleTab() : planTab()}`}
+      ${ui.loading ? `<div class="ext-empty">Loading your close plans…</div>` : ui.loadError ? `<div class="ext-empty"><b>Close plans could not be loaded.</b><br>Reload the page to try again.</div>` : `${uploadBanner()}${ui.wizard ? wizardView() : !state ? emptyView() : `${titleBlock()}${tabsBlock()}${ui.tab === "people" ? peopleTab() : planTab()}`}`}
     </div></div>
   </div>`;
 }
@@ -1065,7 +1079,7 @@ function titleBlock() {
   const o = state.opp;
   return `<div class="title">
     <div>
-      <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}</label>
+      <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}${IN_APP && !state._demo ? ` <span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}</label>
       <h1>${esc(state.title)}</h1>
       <p><span>Target signature <b>${sign ? fmtY(sign.due) : "–"}</b></span><span>Target go-live <b>${live ? fmtY(live.due) : "–"}</b></span><span>Plan owners <b>${esc(person(state.planOwners.seller).name)}</b> · <b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></span>
       ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}</p>
@@ -1089,8 +1103,14 @@ function deletePlanBox() {
     <div class="pe-actions"><button type="button" class="btn sm danger" data-plandelete-confirm>Yes, delete this plan</button><button type="button" class="btn sm" data-plandelete-cancel>Keep plan</button></div>
   </div>`;
 }
-function deletePlanNow() {
+async function deletePlanNow() {
   const title = state.title;
+  if (IN_APP && !state._demo) {
+    try {
+      const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}`, { method: "DELETE", credentials: "same-origin" });
+      if (!r.ok) { const res = await r.json().catch(() => ({})); toast(res.error || "The plan could not be deleted"); return; }
+    } catch (e) { toast("The plan could not be deleted. Check your connection."); return; }
+  }
   store.plans = store.plans.filter(x => x.id !== state.id);
   Object.assign(ui, { deletePlan: false, planMenu: false });
   if (store.plans.length) switchPlan(store.plans[0].id);
@@ -1099,8 +1119,9 @@ function deletePlanNow() {
 }
 // Shown when every plan has been deleted.
 function emptyView() {
-  return `<div class="title"><div><label>CLOSE PLANS</label><h1>No close plans yet</h1><p>Create a plan for a deal, or bring back the example plan with “Reset demo data” at the top.</p></div>
-    <div class="title-actions"><button type="button" class="btn primary" data-newplan><span class="i i-plus" style="width:16px;height:16px"></span>New close plan</button></div></div>`;
+  const create = !APP_ME || APP_ME.canCreate;
+  return `<div class="title"><div><label>CLOSE PLANS</label><h1>${IN_APP ? "No close plans for you yet" : "No close plans yet"}</h1><p>${IN_APP ? `You see the plans where you are on the iSEEit team. ${create ? "Create one for a deal, or open the fictional demo plan to look around." : "Ask a plan owner to add you to a plan, or open the fictional demo plan to look around."}` : "Create a plan for a deal, or bring back the example plan with “Reset demo data” at the top."}</p></div>
+    <div class="title-actions">${IN_APP ? `<button type="button" class="btn" data-demo>Open demo plan</button>` : ""}${create ? `<button type="button" class="btn primary" data-newplan><span class="i i-plus" style="width:16px;height:16px"></span>New close plan</button>` : ""}</div></div>`;
 }
 
 function statsBlock() {
@@ -1406,7 +1427,7 @@ function teamSection(side) {
 
 function addPersonForm(side) {
   if (side === "seller") {
-    const pool = SELLER_OPTIONS().filter(c => c.key !== "rf" && !state.people.some(p => p.name === c.name || (c.email && p.email === c.email)));
+    const pool = SELLER_OPTIONS().filter(c => c.key !== ME_ID() && !state.people.some(p => p.name === c.name || (c.email && p.email === c.email)));
     return `<form class="add-person" id="add-person-form" data-side="seller">
       <label class="field">${usingAppUsers() ? "Active Task AI user" : "Task AI user (demo examples)"}<select id="ap-pick" required>${pool.map(c => `<option value="${esc(c.key)}">${esc(c.name)}${c.email ? ` · ${esc(c.email)}` : ""}</option>`).join("")}</select></label>
       <label class="field">Role on this plan<input id="ap-role" placeholder="e.g. Solutions Engineer"></label>
@@ -2106,6 +2127,9 @@ function wirePage() {
   app.querySelectorAll("[data-report]").forEach(b => b.onclick = openReport);
   app.querySelectorAll("[data-plandelete-cancel]").forEach(b => b.onclick = () => { ui.deletePlan = false; render(); });
   app.querySelectorAll("[data-plandelete-confirm]").forEach(b => b.onclick = deletePlanNow);
+  app.querySelectorAll("[data-upload]").forEach(b => b.onclick = () => { b.disabled = true; uploadLocalPlans(); });
+  app.querySelectorAll("[data-upload-later]").forEach(b => b.onclick = () => { ui.uploadOffer = null; render(); });
+  app.querySelectorAll("[data-demo]").forEach(b => b.onclick = openDemoPlan);
   if (!state) { wireSetup(app); wireWizard(app); return; }
   app.querySelectorAll("[data-act-toggle]").forEach(b => b.onclick = () => { ui.actOpen = !ui.actOpen; render(); });
   app.querySelectorAll("[data-nu]").forEach(b => b.onclick = () => { ui.open = b.dataset.nu; render(); });
@@ -2352,8 +2376,8 @@ async function loadAppUsers() {
 }
 const usingAppUsers = () => Boolean(APP_USERS && APP_USERS.length);
 const SELLER_OPTIONS = () => [
-  { key: "rf", name: "Rizan Flenner", email: "rizan@iseeit.com", title: "Account lead" },
-  ...(usingAppUsers() ? APP_USERS.filter(u => u.email !== "rizan@iseeit.com" && u.name !== "Rizan Flenner") : SELLER_POOL.map((c, i) => ({ key: "pool" + i, name: c.name, email: c.email, title: c.title }))),
+  { key: ME_ID(), name: myName(), email: myEmail(), title: "Account lead" },
+  ...(usingAppUsers() ? APP_USERS.filter(u => lowerEmail(u.email) !== lowerEmail(myEmail())) : SELLER_POOL.map((c, i) => ({ key: "pool" + i, name: c.name, email: c.email, title: c.title }))),
 ];
 const isoOf = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 const addDays = (iso, n) => { const x = d(iso); x.setDate(x.getDate() + n); return isoOf(x); };
@@ -2473,7 +2497,7 @@ function wzSuggest() {
   tplRoles(tpl).forEach(({ role }) => {
     if (w.map[role] !== undefined) return;
     const R = ROLES[role];
-    if (R.side === "seller") { w.map[role] = "rf"; return; }
+    if (R.side === "seller") { w.map[role] = ME_ID(); return; }
     const pats = Array.isArray(R.match) ? R.match : [R.match];
     let i = -1;
     for (const re of pats) { i = contacts.findIndex((c, idx) => !taken.has(idx) && re.test(c.title || "")); if (i >= 0) break; }
@@ -2550,7 +2574,7 @@ function wzStep3() {
         ${contacts.length ? `<label class="field wz-owner">${esc(acct)} plan owner<select id="wz-bowner">${contacts.map((c, i) => `<option value="c${i}" ${w.buyerOwner === "c" + i ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : `<p class="hint">No contacts yet. Customer roles go to you for now; add people in the People tab after creating the plan.</p>`}
         ${roles.filter(r => ROLES[r.role].side === "buyer").map(row).join("")}</div>
       <div class="wz-col"><h3 class="wz-h3">iSEEit</h3>
-        <div class="wz-role"><div><b>iSEEit plan owner</b><small>the person creating the plan</small></div><span class="wz-fixed">Rizan Flenner</span></div>
+        <div class="wz-role"><div><b>iSEEit plan owner</b><small>the person creating the plan</small></div><span class="wz-fixed">${esc(myName())}</span></div>
         ${roles.filter(r => ROLES[r.role].side === "seller").map(row).join("")}</div>
     </div>`;
 }
@@ -2558,7 +2582,7 @@ function wzStep3() {
 function wzStep4() {
   const w = ui.wizard; wzSuggest();
   const tpl = TEMPLATES.find(t => t.id === w.tpl), ex = new Set(w.exclude);
-  const nameOf = role => { const v = w.map[role]; if (ROLES[role].side === "seller") return SELLER_OPTIONS().find(o => o.key === v)?.name || "Rizan Flenner"; const c = wzContacts()[Number(String(v).slice(1))]; return v && c ? c.name : (wzContacts()[Number(String(w.buyerOwner).slice(1))]?.name || "Rizan Flenner"); };
+  const nameOf = role => { const v = w.map[role]; if (ROLES[role].side === "seller") return SELLER_OPTIONS().find(o => o.key === v)?.name || myName(); const c = wzContacts()[Number(String(v).slice(1))]; return v && c ? c.name : (wzContacts()[Number(String(w.buyerOwner).slice(1))]?.name || "Rizan Flenner"); };
   const included = tpl.tasks.filter((_, i) => !ex.has(i));
   const total = included.reduce((n, t) => n + 1 + ((t[4] || {}).subs || []).length, 0);
   return `<h2 class="wz-h">Review and create</h2>
@@ -2579,14 +2603,14 @@ function createPlanFromWizard() {
   const w = ui.wizard; wzSuggest();
   const tpl = TEMPLATES.find(t => t.id === w.tpl), o = wzOpp(), contacts = wzContacts(), ex = new Set(w.exclude);
   const plan = { id: "pl" + Date.now(), account: wzAccount(), domain: o ? o.domain : (w.manual.domain || "").trim(), status: "draft", title: w.title.trim(),
-    opp: o ? { name: o.opp, stage: o.stage, amount: o.amount } : null, phases: [], tasks: [], people: [], planOwners: { seller: "rf", buyer: null }, activity: [], seq: 1000, setup: { dates: false, internal: false, hidden: false } };
+    opp: o ? { name: o.opp, stage: o.stage, amount: o.amount } : null, phases: [], tasks: [], people: [], planOwners: { seller: ME_ID(), buyer: null }, activity: [], seq: 1000, setup: { dates: false, internal: false, hidden: false } };
   // People: the creator, the iSEEit colleagues picked for roles, and every contact of the account.
   const roleNames = key => Object.entries(w.map).filter(([, v]) => v === key).map(([r]) => ROLES[r].label).join(", ");
-  plan.people.push({ ...SEED_PEOPLE.find(p => p.id === "rf"), role: roleNames("rf") || "Account lead", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
-  SELLER_OPTIONS().filter(s => s.key !== "rf" && Object.values(w.map).includes(s.key)).forEach(s => plan.people.push({ id: s.key, name: s.name, email: s.email || "", title: s.title || "Task AI user", role: roleNames(s.key), side: "seller", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } }));
+  plan.people.push({ ...creatorPerson(), role: roleNames(ME_ID()) || "Account lead", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
+  SELLER_OPTIONS().filter(s => s.key !== ME_ID() && Object.values(w.map).includes(s.key)).forEach(s => plan.people.push({ id: s.key, name: s.name, email: s.email || "", title: s.title || "Task AI user", role: roleNames(s.key), side: "seller", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } }));
   contacts.forEach((c, i) => plan.people.push({ id: "c" + i, name: c.name, title: c.title || "", email: c.email || "", role: roleNames("c" + i), side: "buyer", access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } }));
   plan.planOwners.buyer = contacts.length ? (w.buyerOwner || "c0") : null;
-  const ownerOfSide = side => side === "seller" ? "rf" : (plan.planOwners.buyer || "rf");
+  const ownerOfSide = side => side === "seller" ? ME_ID() : (plan.planOwners.buyer || ME_ID());
   const who = role => w.map[role] || ownerOfSide(ROLES[role].side);
   const many = (roles, not) => [...new Set((roles || []).map(who))].filter(x => x && x !== not);
   // Phases and tasks, dated from the two anchor dates.
@@ -2595,10 +2619,10 @@ function createPlanFromWizard() {
   tpl.tasks.forEach((t, i) => {
     if (ex.has(i)) return;
     const [ph, title, role, at, opt = {}] = t, owner = who(role), id = "t" + (++plan.seq);
-    plan.tasks.push({ id, phase: phaseId[ph], parent: null, title, desc: opt.d || "", owner, coworkers: many(opt.co, owner), recipients: many(opt.rq, owner), due: tplDate(w, at), status: "Open", shared: !opt.int, milestone: Boolean(opt.ms), key: opt.key, createdBy: "rf", updates: [] });
-    (opt.subs || []).forEach(([st, sr, sat, so = {}]) => { const so_ = who(sr); plan.tasks.push({ id: "t" + (++plan.seq), phase: phaseId[ph], parent: id, title: st, desc: "", owner: so_, coworkers: many(so.co, so_), recipients: [], due: tplDate(w, sat), status: "Open", shared: !so.int && !opt.int, milestone: Boolean(so.ms), createdBy: "rf", updates: [] }); });
+    plan.tasks.push({ id, phase: phaseId[ph], parent: null, title, desc: opt.d || "", owner, coworkers: many(opt.co, owner), recipients: many(opt.rq, owner), due: tplDate(w, at), status: "Open", shared: !opt.int, milestone: Boolean(opt.ms), key: opt.key, createdBy: ME_ID(), updates: [] });
+    (opt.subs || []).forEach(([st, sr, sat, so = {}]) => { const so_ = who(sr); plan.tasks.push({ id: "t" + (++plan.seq), phase: phaseId[ph], parent: id, title: st, desc: "", owner: so_, coworkers: many(so.co, so_), recipients: [], due: tplDate(w, sat), status: "Open", shared: !so.int && !opt.int, milestone: Boolean(so.ms), createdBy: ME_ID(), updates: [] }); });
   });
-  plan.activity.push({ at: isoOf(TODAY), by: "rf", text: `created this plan from the “${tpl.name}” template`, task: null });
+  plan.activity.push({ at: isoOf(TODAY), by: ME_ID(), text: `created this plan from the “${tpl.name}” template`, task: null });
   store.plans.push(plan); ui.wizard = null; switchPlan(plan.id);
   toast("Draft plan created. Nothing has been shared yet");
 }
@@ -2659,6 +2683,142 @@ function wireSetup(app) {
   app.querySelectorAll("[data-setup-hide]").forEach(b => b.onclick = () => { state.setup.hidden = true; save(); render(); });
   app.querySelectorAll("[data-plan]").forEach(b => b.onclick = () => switchPlan(b.dataset.plan));
   app.querySelectorAll("[data-newplan]").forEach(b => b.onclick = startWizard);
+}
+
+// ---------- Shared storage inside Task AI (step A) ----------
+// Inside Task AI (/close-plans) plans are loaded from and saved to the server (one JSON document per plan,
+// with a version number), and the page acts as the signed-in user. The stand-alone demo keeps using this
+// browser's storage. Every 30 s the page checks for changes by others while nobody is typing.
+let APP_ME = null; // { id, name, email, role, canCreate } of the signed-in Task AI user
+const lowerEmail = v => String(v || "").trim().toLowerCase();
+const ME_ID = () => APP_ME ? "u" + APP_ME.id : "rf";
+const myName = () => APP_ME ? APP_ME.name : "Rizan Flenner";
+const myEmail = () => APP_ME ? APP_ME.email : "rizan@iseeit.com";
+function creatorPerson() { return APP_ME ? { id: ME_ID(), name: APP_ME.name, email: APP_ME.email, title: "Task AI user", side: "seller" } : { ...SEED_PEOPLE.find(p => p.id === "rf") }; }
+// The signed-in user's person id in the current plan; "__me" until they are on it (added on their first change).
+function mySellerId() {
+  if (!IN_APP || !APP_ME || !state) return "rf";
+  const p = state.people.find(x => x.side === "seller" && lowerEmail(x.email) === lowerEmail(APP_ME.email));
+  return p ? p.id : "__me";
+}
+// Replace one person id everywhere in a plan (tasks, updates, activity, plan owners).
+function remapPerson(plan, from, to) {
+  const sw = v => v === from ? to : v;
+  for (const t of plan.tasks) {
+    t.owner = sw(t.owner); t.createdBy = sw(t.createdBy);
+    t.coworkers = (t.coworkers || []).map(sw); t.recipients = (t.recipients || []).map(sw);
+    (t.updates || []).forEach(u => { u.by = sw(u.by); });
+    (t.dateChanges || []).forEach(c => { c.by = sw(c.by); });
+  }
+  (plan.activity || []).forEach(a => { a.by = sw(a.by); });
+  if (plan.planOwners) { plan.planOwners.seller = sw(plan.planOwners.seller); plan.planOwners.buyer = sw(plan.planOwners.buyer); }
+}
+// Someone not yet on the plan (e.g. a Site Admin) who changes it is added to the iSEEit team on their first change.
+function materializeMe(plan) {
+  if (!APP_ME || !JSON.stringify(plan).includes('"__me"')) return;
+  if (!plan.people.some(p => p.id === ME_ID())) plan.people.push({ ...creatorPerson(), role: "", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
+  remapPerson(plan, "__me", ME_ID());
+}
+const cleanPlan = plan => { const { _v, _demo, ...data } = plan; return data; };
+const sync = { inflight: {}, dirty: {}, timers: {} };
+function setSaveState(text, bad = false) { const el = document.getElementById("save-state"); if (el) { el.textContent = text; el.classList.toggle("bad", bad); } }
+function queueSave(plan) {
+  clearTimeout(sync.timers[plan.id]);
+  sync.dirty[plan.id] = true; setSaveState("Saving…");
+  sync.timers[plan.id] = setTimeout(() => pushPlan(plan), 600);
+}
+async function pushPlan(plan) {
+  if (sync.inflight[plan.id]) { sync.dirty[plan.id] = true; return; }
+  sync.inflight[plan.id] = true; sync.dirty[plan.id] = false;
+  try {
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: plan._v || 0, data: cleanPlan(plan) }) });
+    const res = await r.json().catch(() => ({}));
+    if (r.ok) { plan._v = res.version; setSaveState("Saved"); }
+    else if (r.status === 409 && res.plan) {
+      const fresh = { ...res.plan.data, _v: res.plan.version };
+      store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
+      if (state && state.id === fresh.id) state = fresh;
+      sync.dirty[plan.id] = false; render();
+      toast("Someone else changed this plan at the same time. You now see their latest version; please redo your last change.");
+    } else { setSaveState("Not saved", true); toast(res.error || "The plan could not be saved. Check your connection and try again."); }
+  } catch (e) { setSaveState("Not saved", true); toast("The plan could not be saved. Check your connection."); }
+  sync.inflight[plan.id] = false;
+  if (sync.dirty[plan.id]) pushPlan(plan);
+}
+async function fetchStore() {
+  const r = await fetch("/api/close-plans/store", { credentials: "same-origin" });
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json();
+}
+async function bootFromServer() {
+  try {
+    const data = await fetchStore();
+    APP_ME = data.me;
+    store = { plans: data.plans.map(p => ({ ...p.data, _v: p.version })), current: null };
+    let last = null; try { last = localStorage.getItem(STORE_KEY + ":current:" + APP_ME.id); } catch (e) {}
+    state = store.plans.find(p => p.id === last) || store.plans[0] || null;
+    if (state) store.current = state.id;
+    // Plans created before shared storage only exist in this browser: offer to upload them once.
+    const serverIds = new Set(store.plans.map(p => p.id));
+    let uploaded = []; try { uploaded = JSON.parse(localStorage.getItem(STORE_KEY + ":uploaded") || "[]"); } catch (e) {}
+    ui.uploadOffer = ((load() || {}).plans || []).filter(p => /^pl\d/.test(p.id) && !serverIds.has(p.id) && !uploaded.includes(p.id));
+    if (state) ui.viewer = state.planOwners.buyer || ui.viewer;
+  } catch (e) { ui.loadError = true; }
+  ui.loading = false; render();
+  setInterval(pollStore, 30000);
+}
+async function pollStore() {
+  if (!IN_APP || document.hidden || ui.loading || ui.wizard) return;
+  if (Object.values(sync.inflight).some(Boolean) || Object.values(sync.dirty).some(Boolean)) return;
+  const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  try {
+    const data = await fetchStore();
+    const byId = new Map(data.plans.map(p => [p.id, p]));
+    let changed = false;
+    const next = data.plans.map(p => { const local = store.plans.find(x => x.id === p.id); if (local && local._v === p.version) return local; changed = true; return { ...p.data, _v: p.version }; });
+    if (store.plans.some(p => !p._demo && !byId.has(p.id))) changed = true;
+    if (!changed) return;
+    const demo = store.plans.filter(p => p._demo);
+    store.plans = [...next, ...demo];
+    state = (state && store.plans.find(p => p.id === state.id)) || store.plans[0] || null;
+    render();
+  } catch (e) {}
+}
+async function uploadLocalPlans() {
+  const plans = ui.uploadOffer || []; let ok = 0;
+  let uploaded = []; try { uploaded = JSON.parse(localStorage.getItem(STORE_KEY + ":uploaded") || "[]"); } catch (e) {}
+  for (const local of plans) {
+    const plan = JSON.parse(JSON.stringify(local));
+    // In the browser-only version "rf" always meant "me": the person who created the plan.
+    const mine = plan.people.find(p => p.side === "seller" && lowerEmail(p.email) === lowerEmail(APP_ME.email));
+    if (plan.people.some(p => p.id === "rf")) {
+      const target = mine && mine.id !== "rf" ? mine.id : ME_ID();
+      if (target !== ME_ID()) plan.people = plan.people.filter(p => p.id !== "rf");
+      else plan.people = plan.people.filter(p => p.id !== ME_ID() || p.id === "rf").map(p => p.id === "rf" ? { ...p, id: ME_ID(), name: APP_ME.name, email: APP_ME.email } : p);
+      remapPerson(plan, "rf", target);
+    }
+    try {
+      const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: 0, data: plan }) });
+      const res = await r.json().catch(() => ({}));
+      if (r.ok) { plan._v = res.version; store.plans.push(plan); uploaded.push(plan.id); ok++; }
+      else toast(res.error || `“${plan.title}” could not be uploaded`);
+    } catch (e) { toast(`“${plan.title}” could not be uploaded`); }
+  }
+  try { localStorage.setItem(STORE_KEY + ":uploaded", JSON.stringify(uploaded)); } catch (e) {}
+  ui.uploadOffer = null;
+  if (ok) { state = store.plans[store.plans.length - 1]; store.current = state.id; toast(`${ok} plan${ok > 1 ? "s" : ""} uploaded. Your team can now see ${ok > 1 ? "them" : "it"}.`); }
+  render();
+}
+function uploadBanner() {
+  const plans = ui.uploadOffer || []; if (!plans.length) return "";
+  return `<div class="upload-banner"><div><b>${plans.length} close plan${plans.length > 1 ? "s are" : " is"} saved only in this browser</b><small>${plans.map(p => esc(p.title)).join(" · ")}</small><small>Upload ${plans.length > 1 ? "them" : "it"} so the iSEEit people on the plan can see ${plans.length > 1 ? "them" : "it"} in Task AI.</small></div>
+    <div class="ub-acts"><button type="button" class="btn sm" data-upload-later>Not now</button><button type="button" class="btn sm primary" data-upload>Upload</button></div></div>`;
+}
+function openDemoPlan() {
+  const demo = { ...seed(), _demo: true };
+  store.plans = [...store.plans.filter(p => !p._demo), demo];
+  switchPlan(demo.id);
+  toast("Demo plan opened. It's fictional and isn't saved or shared.");
 }
 
 // Actions
@@ -2759,13 +2919,14 @@ function wireReorder(app) {
 
 $("#mode-seller").onclick = () => { ui.mode = "seller"; ui.open = null; ui.filter = "all"; try { localStorage.setItem(STORE_KEY + ":mode", "seller"); } catch (e) {} render(); };
 $("#mode-buyer").onclick = () => { ui.mode = "buyer"; ui.open = null; ui.filter = "all"; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":mode", "buyer"); } catch (e) {} render(); };
+if (IN_APP) $("#reset").hidden = true;
 $("#reset").onclick = () => { store = freshStore(); state = store.plans[0]; ui.wizard = null; ui.open = null; ui.expanded = new Set(); save(); render(); toast("Demo data reset"); };
 document.addEventListener("click", e => {
   if ((ui.phaseMenu || ui.planMenu) && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; ui.planMenu = false; render(); }
   if (ui.picker && !e.target.closest(".pfield")) { ui.picker = null; render(); }
 });
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
-ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
+if (state) ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();
-render();
+if (IN_APP) { ui.loading = true; render(); bootFromServer(); } else render();
 </script>
