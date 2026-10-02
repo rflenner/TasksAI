@@ -62,7 +62,7 @@ How Close Plan uses it:
 - **+ Add a task** at the end of a phase opens an inline task card with the name
   field focused. Enter adds the task and starts the next one, Esc cancels. The
   task gets the creator as owner and the phase end as due date; clicking it opens
-  the details. "New task" at the top opens the same inline row in the current phase.
+  the details.
 - **Order**: drag a task card by its grip (shown on hover) above or below another
   task, or onto another phase to move it there (subtasks travel with it);
   keyboard: focus the grip and use the up and down arrow keys. Available to the
@@ -87,8 +87,10 @@ Task AI.
 
 - **Next up** (top of the side panel): open tasks that are overdue or due in the
   next 14 days for whoever is viewing, overdue first, six shown ("Show all N").
-- **Client PDF**: ⋮ next to the plan title → "Export PDF for <customer>" (iSEEit
-  team). Opens a print-ready report preview, then the browser's print dialog
+- **Client PDF**: the large "Download PDF" button next to the plan title, for
+  everyone (iSEEit team and customer contacts on their personal link; it replaced
+  the "New task" button, tasks are added with "+ Add a task" in each phase), or
+  ⋮ → "Export PDF for <customer>". Opens a print-ready report preview, then the browser's print dialog
   ("Save as PDF", A4, vector text; the suggested file name is
   "Close plan – <customer> – <date>"). Contents: where we stand (phase,
   progress, next milestone, signature, go-live), key dates, a phase timeline,
