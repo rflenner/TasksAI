@@ -8,6 +8,7 @@ import { resolveTaskNames } from "../../lib/name-resolution";
 import { resolvePrefs } from "../../lib/notification-prefs";
 import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
+import { auditRowForVoiceQuery, recordVoiceAudit, type VoiceAuditCollector } from "../../lib/voice-audit";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
 import { resolveDueDate } from "../../lib/task-defaults";
@@ -163,10 +164,32 @@ async function registerDimensionsFor(t: { project: string; recurringMeeting: str
   for (const [type, value] of entries) await getDb().insert(dimensionValues).values({ type, value }).onConflictDoNothing();
 }
 
+// Thin wrapper that adds the voice audit trail (app/lib/voice-audit.ts)
+// around the real handler below without touching its many return paths:
+// reads the request body from a clone (the handler consumes the original),
+// lets the handler fill in what actually changed via `collector`, then
+// logs one row from the finished response. Logging is best-effort — a
+// failure to write the audit row must never fail or slow a voice command.
 export async function POST(request: Request) {
+  const body = await request.clone().json().catch(() => ({})) as Record<string, unknown>;
+  const collector: VoiceAuditCollector = { actor: null, taskIds: [], changes: [] };
+  const response = await handleVoiceQuery(request, collector);
+  if (collector.actor) {
+    try {
+      const json = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
+      await recordVoiceAudit(collector.actor, [auditRowForVoiceQuery(body, response.ok, json, collector)]);
+    } catch (error) {
+      console.error("Voice audit write failed:", error instanceof Error ? error.message : error);
+    }
+  }
+  return response;
+}
+
+async function handleVoiceQuery(request: Request, collector: VoiceAuditCollector) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
   const actor = await currentActor();
   if (!actor) return Response.json({ error: "Sign in required" }, { status: 401 });
+  collector.actor = { id: actor.id, name: actor.name };
 
   const body = await request.json().catch(() => ({})) as {
     transcript?: string; currentTaskId?: number | null; workingList?: number[];
@@ -544,7 +567,12 @@ This is a spoken request to create ONE new task right now, not a written meeting
       // detail list, so calling this unconditionally is safe.
       // describeChecklistChanges mirrors the same wording Slack's own
       // checklist toggle already writes to Task History.
-      await recordActivity(updated.id, actor.name, [...describeChanges(targetTask, updated), ...describeChecklistChanges(targetTask.checklist, updated.checklist)]);
+      const activityLines = [...describeChanges(targetTask, updated), ...describeChecklistChanges(targetTask.checklist, updated.checklist)];
+      await recordActivity(updated.id, actor.name, activityLines);
+      // Same lines Task History just got, plus the posted-update note
+      // (describeChanges skips `updates`) — for the voice audit trail.
+      collector.taskIds.push(updated.id);
+      collector.changes.push(...[...activityLines, ...(result.updatesGrew ? ["posted an update"] : [])].map(line => `#${updated.id} ${updated.subject}: ${line}`));
       await noteAssignments(updated.id, newlyAssignedPeople(targetTask, updated));
       const justClosed = targetTask.status !== "Closed" && finalStatus === "Closed";
       if (justClosed || advanced) await notifySlackOnTaskChange(updated, actor.name, justClosed ? "closed" : "update");

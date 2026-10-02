@@ -39,16 +39,24 @@ export async function POST(request: Request) {
 
   const model = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1-mini";
   const voice = process.env.OPENAI_REALTIME_VOICE || "marin";
+  // Transcribes what the PERSON said, purely for the voice audit trail
+  // (app/lib/voice-audit.ts) — the realtime model hears the audio itself
+  // and never sees this text, so it can differ from what the model
+  // understood; the audit shows both side by side on purpose, since a
+  // mismatch is exactly the kind of thing worth being able to spot.
+  // whisper-1 is deprecated (removal announced for Feb 2027), so this
+  // defaults to the model OpenAI now recommends instead.
+  const transcribeModel = process.env.OPENAI_REALTIME_TRANSCRIBE_MODEL || "gpt-transcribe";
 
-  const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+  const mint = (withTranscription: boolean) => fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({
       session: {
         type: "realtime",
         model,
-        audio: { output: { voice } },
-        instructions: "You are Task AI's voice assistant, in a live spoken conversation. Keep replies short and conversational — this is being spoken aloud, not read. Whenever the person asks about their tasks, wants to filter or find something, wants to change or create a task, check off a checklist item, or wants to notify/remind someone connected to a task, call ask_task_ai with what they said, close to their own words rather than your own paraphrase. When ask_task_ai returns, speak its spokenAnswer back — a light rephrase for natural speech is fine, but never change the facts in it. If spokenAnswer asks a yes/no question (like confirming before sending a notification or deleting a task), ask it and wait for their answer, then call ask_task_ai again with exactly what they said in reply.",
+        audio: { ...(withTranscription ? { input: { transcription: { model: transcribeModel } } } : {}), output: { voice } },
+        instructions: "You are Task AI's voice assistant, in a live spoken conversation. Keep replies short and conversational — this is being spoken aloud, not read. Whenever the person asks about their tasks, wants to filter or find something, wants to change or create a task, check off a checklist item, or wants to notify/remind someone connected to a task, call ask_task_ai with what they said, close to their own words rather than your own paraphrase. When ask_task_ai returns, speak its spokenAnswer back — a light rephrase for natural speech is fine, but never change the facts in it. Never say that you changed, created, sent or checked off anything unless ask_task_ai just told you it happened. If spokenAnswer asks a yes/no question (like confirming before sending a notification or deleting a task), ask it and wait for their answer, then call ask_task_ai again with exactly what they said in reply.",
         tools: [{
           type: "function",
           name: "ask_task_ai",
@@ -63,6 +71,12 @@ export async function POST(request: Request) {
       },
     }),
   });
+
+  // The audit transcription is a debugging add-on, never a reason the
+  // assistant itself fails to start: if OpenAI rejects the session with
+  // it (an unavailable model, say), retry once without it.
+  let response = await mint(true);
+  if (!response.ok) response = await mint(false);
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     return Response.json({ error: `Could not start a realtime session${detail ? `: ${detail.slice(0, 300)}` : ""}`, code: "ai_failed" }, { status: 502 });

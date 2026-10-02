@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { PendingNotify, VoiceCreatedTask, VoiceDimensions, VoiceFilters, VoiceNavigateTarget, VoiceTaskUpdate } from "./VoiceAsk";
+import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./voice-audit-client";
 
 // "Live Voice Assistant" (requested 2026-10-02) — the true voice-to-voice
 // alternative to the Deepgram-based "Ask Task AI" (VoiceAsk.tsx), sitting
@@ -77,8 +78,23 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   // past a model's own read of "that sounded like a yes."
   const pendingDeleteRef = useRef<{ id: number; subject: string } | null>(null);
   const pendingNotifyRef = useRef<PendingNotify | null>(null);
+  // Voice audit trail (app/lib/voice-audit.ts). One id per live session
+  // ties together what the server logs for each tool call with what only
+  // this component can see: what the person actually said, what the
+  // assistant said back, confirmation outcomes, and transport errors.
+  const auditSessionRef = useRef("");
+  // True between handing a tool result back and the model's spoken
+  // follow-up to it starting — lets the audit tell "assistant read out a
+  // Task AI answer" apart from "assistant answered on its own, without
+  // ever calling Task AI" (the one that can claim something happened
+  // that didn't). Per-response, not per-transcript, so it doesn't depend
+  // on the order the realtime events happen to arrive in.
+  const followUpPendingRef = useRef(false);
+  const responseKindRef = useRef(new Map<string, "direct" | "tool_result">());
+  const transcriptByResponseRef = useRef(new Map<string, string>());
 
   function appendLog(entry: LogEntry) { setLog(l => [...l, entry]); logRef.current = [...logRef.current, entry]; }
+  function audit(...events: ClientAuditEvent[]) { reportVoiceAudit(auditSessionRef.current, "live", events); }
 
   function teardown() {
     dcRef.current?.close(); dcRef.current = null;
@@ -88,7 +104,11 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
 
   function sendToolResult(callId: string, payload: unknown) {
     const dc = dcRef.current;
-    if (!dc || dc.readyState !== "open") return;
+    if (!dc || dc.readyState !== "open") {
+      audit({ event: "error", outcome: "failed", spokenAnswer: "Task AI's answer could not be delivered back to the live session (connection was already closed).", detail: { callId } });
+      return;
+    }
+    followUpPendingRef.current = true;
     dc.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(payload) } }));
     dc.send(JSON.stringify({ type: "response.create" }));
   }
@@ -101,7 +121,11 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   // route — the realtime model speaks it itself.
   async function runTool(callId: string, utterance: string) {
     const trimmed = utterance.trim();
-    if (!trimmed) { sendToolResult(callId, { spokenAnswer: "" }); return; }
+    if (!trimmed) {
+      audit({ event: "error", outcome: "not_done", spokenAnswer: "The assistant called Task AI with an empty request, so nothing was done.", detail: { callId } });
+      sendToolResult(callId, { spokenAnswer: "" });
+      return;
+    }
     appendLog({ role: "you", text: trimmed });
 
     if (pendingDeleteRef.current) {
@@ -109,19 +133,21 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       pendingDeleteRef.current = null;
       if (isAffirmative(trimmed)) {
         try {
-          const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmDeleteTaskId: pending.id }) });
+          const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmDeleteTaskId: pending.id, sessionId: auditSessionRef.current, source: "live" }) });
           const data = await res.json() as { mode?: string; deletedTaskId?: number; spokenAnswer?: string; error?: string };
           const answer = !res.ok ? (data.error || "Could not delete that") : (data.spokenAnswer || "");
           appendLog({ role: "assistant", text: answer });
           if (res.ok && data.mode === "deleted" && data.deletedTaskId != null) onTaskDeleted(data.deletedTaskId);
           sendToolResult(callId, { spokenAnswer: answer });
         } catch {
+          audit({ event: "error", outcome: "failed", utterance: trimmed, spokenAnswer: "Could not reach Task AI to confirm the delete.", detail: { taskId: pending.id } });
           sendToolResult(callId, { spokenAnswer: "Could not reach Task AI — check your connection." });
         }
         return;
       }
       const answer = isNegative(trimmed) ? "Okay, keeping it." : "I didn't catch a yes or no, so I'll leave it as is.";
       appendLog({ role: "assistant", text: answer });
+      audit({ event: "confirmation", mode: "delete", outcome: "declined", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.id], detail: { reply: isNegative(trimmed) ? "no" : "unclear" } });
       sendToolResult(callId, { spokenAnswer: answer });
       return;
     }
@@ -140,14 +166,17 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
             : data.sent ? `Sent to ${pending.toName}.`
             : `Could not send — ${data.results?.[0]?.reason || "please try again."}`;
           appendLog({ role: "assistant", text: answer });
+          audit({ event: "confirmation", mode: "notify", outcome: res.ok && data.sent ? "sent" : "failed", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message } });
           sendToolResult(callId, { spokenAnswer: answer });
         } catch {
+          audit({ event: "confirmation", mode: "notify", outcome: "failed", utterance: trimmed, spokenAnswer: "Could not reach Task AI to send the notification.", taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message } });
           sendToolResult(callId, { spokenAnswer: "Could not reach Task AI — check your connection." });
         }
         return;
       }
       const answer = isNegative(trimmed) ? "Okay, not sending it." : "I didn't catch a yes or no, so I won't send it.";
       appendLog({ role: "assistant", text: answer });
+      audit({ event: "confirmation", mode: "notify", outcome: "declined", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message, reply: isNegative(trimmed) ? "no" : "unclear" } });
       sendToolResult(callId, { spokenAnswer: answer });
       return;
     }
@@ -156,7 +185,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
     try {
       const res = await fetch("/api/voice-query", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, history: recentHistory }),
+        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, history: recentHistory, sessionId: auditSessionRef.current, source: "live" }),
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
@@ -201,15 +230,62 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
 
       sendToolResult(callId, { spokenAnswer: answer });
     } catch {
+      audit({ event: "error", outcome: "failed", utterance: trimmed, spokenAnswer: "Could not reach Task AI — the request failed before an answer came back.", detail: { currentTaskId: currentTaskIdRef.current } });
       sendToolResult(callId, { spokenAnswer: "Could not reach Task AI — check your connection." });
+    }
+  }
+
+  // Everything below handles the realtime session's own events. Written
+  // against shapes confirmed in OpenAI's current docs where possible and
+  // deliberately tolerant elsewhere (the assistant-transcript event has
+  // gone by more than one name), since a missed event here only costs a
+  // line in the audit trail — it must never break the conversation.
+  function handleRealtimeEvent(msg: {
+    type?: string; call_id?: string; name?: string; arguments?: string; transcript?: string; response_id?: string;
+    response?: { id?: string; status?: string; status_details?: { error?: { message?: string } }; output?: Array<{ type?: string; content?: Array<{ transcript?: string; text?: string }> }> };
+    error?: { message?: string; type?: string; code?: string | null };
+  }) {
+    if (msg.type === "response.function_call_arguments.done" && msg.call_id && msg.arguments !== undefined) {
+      if (msg.name !== "ask_task_ai") {
+        audit({ event: "error", outcome: "failed", spokenAnswer: `The assistant tried to call an unknown tool (${msg.name}).`, detail: { tool: msg.name } });
+        return;
+      }
+      let utterance = "";
+      try { utterance = (JSON.parse(msg.arguments) as { utterance?: string }).utterance || ""; } catch { /* leave blank */ }
+      void runTool(msg.call_id, utterance);
+    } else if (msg.type === "conversation.item.input_audio_transcription.completed" && msg.transcript?.trim()) {
+      audit({ event: "heard", utterance: msg.transcript.trim() });
+    } else if (msg.type === "conversation.item.input_audio_transcription.failed") {
+      audit({ event: "error", outcome: "failed", spokenAnswer: "Transcribing what the person said failed (the assistant may still have heard it).", detail: { message: msg.error?.message } });
+    } else if (msg.type === "response.created" && msg.response?.id) {
+      responseKindRef.current.set(msg.response.id, followUpPendingRef.current ? "tool_result" : "direct");
+      followUpPendingRef.current = false;
+    } else if ((msg.type === "response.output_audio_transcript.done" || msg.type === "response.audio_transcript.done") && msg.response_id && msg.transcript) {
+      transcriptByResponseRef.current.set(msg.response_id, msg.transcript);
+    } else if (msg.type === "response.done" && msg.response?.id) {
+      const response = msg.response, id = response.id as string;
+      const kindBase = responseKindRef.current.get(id) ?? "direct";
+      responseKindRef.current.delete(id);
+      const fromOutput = (response.output || []).flatMap(item => item.content || []).map(part => part.transcript || "").filter(Boolean).join(" ").trim();
+      const transcript = fromOutput || transcriptByResponseRef.current.get(id) || "";
+      transcriptByResponseRef.current.delete(id);
+      const calledTool = (response.output || []).some(item => item.type === "function_call");
+      if (response.status === "failed") {
+        audit({ event: "error", outcome: "failed", spokenAnswer: `The live assistant's response failed${response.status_details?.error?.message ? `: ${response.status_details.error.message}` : "."}` });
+      }
+      if (transcript) audit({ event: "said", spokenAnswer: transcript, detail: { kind: calledTool ? "with_tool_call" : kindBase } });
+    } else if (msg.type === "error") {
+      audit({ event: "error", outcome: "failed", spokenAnswer: `Realtime session error: ${msg.error?.message || "unknown"}`, detail: { type: msg.error?.type, code: msg.error?.code } });
     }
   }
 
   async function start() {
     setError(""); setLog([]); logRef.current = []; setStatus("connecting");
+    auditSessionRef.current = newVoiceSessionId();
+    followUpPendingRef.current = false; responseKindRef.current.clear(); transcriptByResponseRef.current.clear();
     try {
       const sessionRes = await fetch("/api/voice-live/session", { method: "POST" });
-      const session = await sessionRes.json() as { clientSecret?: string; error?: string };
+      const session = await sessionRes.json() as { clientSecret?: string; model?: string; error?: string };
       if (!session.clientSecret) throw new Error(session.error || "Could not start a live session");
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -223,12 +299,14 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
       dc.onmessage = event => {
-        let msg: { type?: string; call_id?: string; name?: string; arguments?: string } = {};
+        let msg: Parameters<typeof handleRealtimeEvent>[0] = {};
         try { msg = JSON.parse(event.data); } catch { return; }
-        if (msg.type === "response.function_call_arguments.done" && msg.call_id && msg.name === "ask_task_ai" && msg.arguments !== undefined) {
-          let utterance = "";
-          try { utterance = (JSON.parse(msg.arguments) as { utterance?: string }).utterance || ""; } catch { /* leave blank */ }
-          void runTool(msg.call_id, utterance);
+        handleRealtimeEvent(msg);
+      };
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed") {
+          audit({ event: "session", mode: "connection_lost", outcome: "failed", spokenAnswer: "The live connection to OpenAI dropped." });
+          teardown(); setStatus("error"); setError("The live connection dropped — tap the microphone to start again.");
         }
       };
 
@@ -245,14 +323,18 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       await pc.setRemoteDescription({ type: "answer", sdp: await sdpRes.text() });
 
       setStatus("connected");
+      audit({ event: "session", mode: "started", detail: { model: session.model } });
     } catch (err) {
       teardown();
       setStatus("error");
-      setError(err instanceof DOMException ? describeMicError(err) : err instanceof Error ? err.message : "Could not start the live session.");
+      const message = err instanceof DOMException ? describeMicError(err) : err instanceof Error ? err.message : "Could not start the live session.";
+      setError(message);
+      audit({ event: "session", mode: "start_failed", outcome: "failed", spokenAnswer: message });
     }
   }
 
   function closePanel() {
+    if (pcRef.current) audit({ event: "session", mode: "stopped" });
     teardown();
     setOpen(false); setStatus("idle"); setError("");
   }

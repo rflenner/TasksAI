@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { splitIntoSpeechChunks } from "../lib/speech-chunks";
+import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./voice-audit-client";
 
 // The lightweight alternative to a full conversational voice agent — see
 // app/api/voice-query/route.ts for the reasoning. Reuses the exact mic/
@@ -194,6 +195,19 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // deterministic keyword gate rather than trusting the model's own
   // read of a reply.
   const pendingNotifyRef = useRef<PendingNotify | null>(null);
+  // Voice audit trail (app/lib/voice-audit.ts): one id per time the panel
+  // is opened, created lazily on the first thing worth recording. The
+  // server logs every /api/voice-query call itself; this only adds what
+  // it can't see — how a notify yes/no turned out, and a declined delete.
+  const auditSessionRef = useRef("");
+  function audit(...events: ClientAuditEvent[]) {
+    if (!auditSessionRef.current) auditSessionRef.current = newVoiceSessionId();
+    reportVoiceAudit(auditSessionRef.current, "ask", events);
+  }
+  function auditSessionId() {
+    if (!auditSessionRef.current) auditSessionRef.current = newVoiceSessionId();
+    return auditSessionRef.current;
+  }
 
   // Tears down whatever the *previous* generation left behind — a live
   // WebSocket, an active MediaRecorder/mic stream — before a new one
@@ -221,6 +235,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   }
 
   function closePanel() {
+    auditSessionRef.current = ""; // the next time the panel opens is a new session
     voiceSessionRef.current = false;
     teardown();
     interruptSpeech();
@@ -254,7 +269,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       if (isAffirmative(trimmed)) {
         setStatus("processing"); setError("");
         try {
-          const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmDeleteTaskId: pending.id }) });
+          const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmDeleteTaskId: pending.id, sessionId: auditSessionId(), source: "ask" }) });
           const data = await res.json() as { mode?: string; deletedTaskId?: number; spokenAnswer?: string; error?: string };
           if (!res.ok) { setStatus("error"); setError(data.error || "Could not delete that"); return; }
           const answer = data.spokenAnswer || "";
@@ -273,6 +288,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       // while a delete was still technically on the table.
       const answer = isNegative(trimmed) ? "Okay, keeping it." : "I didn't catch a yes or no, so I'll leave it as is.";
       setLog(prev => [...prev, { role: "assistant", text: answer }]);
+      audit({ event: "confirmation", mode: "delete", outcome: "declined", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.id], detail: { reply: isNegative(trimmed) ? "no" : "unclear" } });
       await speak(answer);
       return;
     }
@@ -298,14 +314,17 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
             : data.sent ? `Sent to ${pending.toName}.`
             : `Could not send — ${data.results?.[0]?.reason || "please try again."}`;
           setLog(prev => [...prev, { role: "assistant", text: answer }]);
+          audit({ event: "confirmation", mode: "notify", outcome: res.ok && data.sent ? "sent" : "failed", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message } });
           await speak(answer);
         } catch {
+          audit({ event: "confirmation", mode: "notify", outcome: "failed", utterance: trimmed, spokenAnswer: "Could not reach Task AI to send the notification.", taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message } });
           setStatus("error"); setError("Could not reach Task AI — check your connection.");
         }
         return;
       }
       const answer = isNegative(trimmed) ? "Okay, not sending it." : "I didn't catch a yes or no, so I won't send it.";
       setLog(prev => [...prev, { role: "assistant", text: answer }]);
+      audit({ event: "confirmation", mode: "notify", outcome: "declined", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message, reply: isNegative(trimmed) ? "no" : "unclear" } });
       await speak(answer);
       return;
     }
@@ -320,7 +339,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     try {
       const res = await fetch("/api/voice-query", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, history: recentHistory }),
+        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, history: recentHistory, sessionId: auditSessionId(), source: "ask" }),
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
