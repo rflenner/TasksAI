@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { closePlanDocuments } from "../../../../db/schema";
-import { addressedToSomeoneElse, calendar, checkProposal, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, viewerId, waitingSide } from "../../../lib/close-plan-voice";
+import { addressedToSomeoneElse, calendar, checkProposal, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, viewerId, waitingSide } from "../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
 import { cleanSessionId, recordVoiceAudit } from "../../../lib/voice-audit";
+import { knownRequestNames, pickRequestName, recordRequestAsk } from "../../../lib/voice-requests";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +18,11 @@ export const dynamic = "force-dynamic";
 // access rules, saving and activity log apply as for a click.
 const schema = {
   type: "object", additionalProperties: false,
-  required: ["mode", "answer", "taskId", "filter", "personId", "phaseId", "actions", "newTask"],
+  required: ["mode", "answer", "taskId", "filter", "personId", "phaseId", "actions", "newTask", "requestName", "sameAsKnownRequest"],
   properties: {
-    mode: { type: "string", enum: ["answer", "open_task", "list", "next", "act", "add_task", "unclear"] },
+    mode: { type: "string", enum: ["answer", "open_task", "list", "next", "act", "add_task", "unsupported", "wish", "unclear"] },
+    requestName: { type: ["string", "null"] },
+    sameAsKnownRequest: { type: ["string", "null"] },
     answer: { type: "string" },
     taskId: { type: ["string", "null"] },
     filter: { type: ["string", "null"], enum: [...LIST_FILTERS, null] },
@@ -53,7 +56,10 @@ Modes:
 - "next": also for "next", "next one", "skip this one".
 - "act": change one existing task. taskId is the task (null means the task open on screen, focusTaskId). actions: set_status (Open / In progress / Closed; "done", "tick off", "complete" mean Closed), post_update (only when this request itself contains the words of an update: text = exactly those words; never add an update of your own, never repeat an earlier one), set_due (date YYYY-MM-DD, worked out from today), set_owner / add_coworker / add_requester (personId), rename (text), set_description (text, only their words). Several actions are fine.
 - "add_task": create a task or subtask. newTask: title (their words), phaseId (the phase they name; the current phase when they don't), parentId (for a subtask: the task it belongs under), ownerId (personId when named, else null), due (YYYY-MM-DD or null), internal (true only when they say internal or "just for us").
+- "unsupported": they want something this assistant can't do: inviting someone or sharing the plan ("invite Olivia", "send her the link"), sending emails or messages, deleting a task or phase, changing access rights, exporting, scheduling a meeting, the task history, anything outside this plan. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing from what you CAN do (the modes above: answer, list, open, change status/dates/owner/coworkers/requested by of a task, post an update, add a task or subtask). Never suggest anything else. requestName: your own short name for the feature they want, 2 to 6 words, Title Case (e.g. "Task History By Voice"). sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
+- "wish": they tell you what they'd like you or the app to do ("I wish you could…", "it would be great if…", "feature request: …", "can you learn to…"). requestName as above. answer: a short thank-you saying it's noted.
 - "unclear": you can't tell what they want, or they're talking to someone else. Put a short question or "Okay." in answer.
+requestName and sameAsKnownRequest are null in every other mode.
 Use the exact ids from the plan JSON. People are matched by name; "me"/"I" is "you" in the JSON. Dates: use the calendar you're given to turn "Friday", "next Tuesday" or "in two weeks" into YYYY-MM-DD; a bare weekday means the next one after today.`;
 
 export async function POST(request: Request) {
@@ -81,12 +87,16 @@ export async function POST(request: Request) {
   // Meant for someone in the room, not for the assistant.
   if (addressedToSomeoneElse(utterance, Array.isArray(data.people) ? data.people as Array<{ name?: unknown }> : [])) return Response.json({ mode: "unclear", spokenAnswer: "Okay." });
 
+  // "What can you do?" is answered from the capability list, not by the AI.
+  if (isHelpRequest(utterance)) return Response.json({ mode: "help", spokenAnswer: HELP_SPOKEN(customer) });
+
   // "Next" needs no AI: the next task of the list on screen.
   if (body?.action === "next") return Response.json(shape(data, { mode: "next", answer: "", taskId: null, filter: null, personId: null, phaseId: null, actions: [], newTask: null }, focusTaskId, listIds, viewer, today, utterance));
 
   const model = process.env.OPENAI_MODEL || "gpt-5-mini";
   const isGpt5 = model.startsWith("gpt-5");
-  let proposal: Proposal;
+  const requestNames = await knownRequestNames().catch(() => [] as string[]);
+  let proposal: Proposal & { requestName?: string | null; sameAsKnownRequest?: string | null };
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -96,7 +106,7 @@ export async function POST(request: Request) {
         input: [
           { role: "system", content: rules(customer) },
           ...history,
-          { role: "user", content: `Plan:\n${JSON.stringify(planContext(data, viewer, today))}\n\nCalendar: ${calendar(today)}\nfocusTaskId (open on screen): ${focusTaskId || "none"}\nlistIds (list on screen, in order): ${JSON.stringify(listIds)}\n\nSpoken request: ${utterance}` },
+          { role: "user", content: `Plan:\n${JSON.stringify(planContext(data, viewer, today))}\n\nCalendar: ${calendar(today)}\nfocusTaskId (open on screen): ${focusTaskId || "none"}\nlistIds (list on screen, in order): ${JSON.stringify(listIds)}\nKnown request names: ${JSON.stringify(requestNames)}\n\nSpoken request: ${utterance}` },
         ],
         text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "close_plan_voice", strict: true, schema } },
       }),
@@ -111,11 +121,18 @@ export async function POST(request: Request) {
   const side = waitingSide(utterance, [customer, ...(Array.isArray(data.people) ? (data.people as Array<{ side?: unknown; name?: unknown }>).filter(p => p.side === "buyer").map(p => String(p.name || "")) : [])]);
   if (side && (proposal.mode === "list" || proposal.mode === "answer")) proposal = { ...proposal, mode: "list", filter: side, personId: null };
   const reply = shape(data, proposal, focusTaskId, listIds, viewer, today, utterance);
+  // Something it can't do yet, or a wish: filed as a product request.
+  if ((proposal.mode === "unsupported" || proposal.mode === "wish") && proposal.requestName) {
+    const name = pickRequestName(proposal.requestName, proposal.sameAsKnownRequest ?? null, requestNames, utterance);
+    proposal = { ...proposal, requestName: name };
+    try { await recordRequestAsk({ id: actor.id, name: actor.name }, { sessionId: cleanSessionId(body?.sessionId), surface: "close_plan", requestName: name, kind: proposal.mode === "wish" ? "wish" : "unsupported", utterance }); }
+    catch (error) { console.error("Voice request could not be recorded:", error instanceof Error ? error.message : error); }
+  }
   try {
     await recordVoiceAudit({ id: actor.id, name: actor.name }, [{
       sessionId: cleanSessionId(body?.sessionId), source: "live", event: "request", utterance, mode: `close_plan:${reply.mode}`,
-      outcome: reply.mode === "act" || reply.mode === "add_task" ? "changed" : reply.mode === "confirm" ? "awaiting_confirmation" : reply.mode === "unclear" ? "not_done" : "shown",
-      taskIds: [], spokenAnswer: reply.spokenAnswer, detail: { surface: "close_plan", planId, taskId: reply.taskId ?? null, proposal },
+      outcome: reply.mode === "act" || reply.mode === "add_task" ? "changed" : reply.mode === "confirm" ? "awaiting_confirmation" : reply.mode === "unclear" || reply.mode === "unsupported" ? "not_done" : "shown",
+      taskIds: [], spokenAnswer: reply.spokenAnswer, detail: { surface: "close_plan", planId, taskId: reply.taskId ?? null, requestName: proposal.requestName ?? null, proposal },
     }]);
   } catch (error) { console.error("Close plan voice audit failed:", error instanceof Error ? error.message : error); }
   return Response.json(reply);
@@ -152,6 +169,8 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
       const question = confirmQuestion(data, checked.taskId!, checked.actions, today);
       return { mode: question ? "confirm" : "act", taskId: checked.taskId, actions: checked.actions, spokenAnswer: question || describeActions(data, checked.taskId!, checked.actions, today) };
     }
+    case "unsupported": return { mode: "unsupported", spokenAnswer: `${p.answer || "I can't do that yet."} I've noted it as a request.` };
+    case "wish": return { mode: "wish", spokenAnswer: p.answer || "Thanks, I've noted that." };
     default: return { mode: "unclear", spokenAnswer: p.answer || "Sorry, I didn't get that." };
   }
 }

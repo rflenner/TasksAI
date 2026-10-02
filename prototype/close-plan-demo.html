@@ -154,6 +154,13 @@ button { cursor: pointer; }
 .vx-mic { width: 32px; height: 32px; border-radius: 50%; border: 0; color: #fff; background: var(--navy); cursor: pointer; flex: none; }
 .vx-mic.stop { background: #c96539; }
 .vx-err { color: #a84235; font-size: 12px; }
+.vx-link { border: 0; background: none; color: var(--navy); font-weight: 700; font-size: 12px; cursor: pointer; padding: 2px 4px; margin-left: auto; border-radius: 6px; }
+.vx-link:hover { background: #eef3fa; }
+.vx-help h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #697181; margin: 8px 0 4px; }
+.vx-help h3:first-child { margin-top: 0; }
+.vx-say { display: block; width: 100%; text-align: left; border: 1px solid #e3e8ee; background: #fff; border-radius: 8px; padding: 5px 8px; margin: 0 0 4px; font-size: 12.5px; color: var(--ink); cursor: pointer; }
+.vx-say:hover { border-color: var(--soft-line); background: #f7f9fc; }
+.vx-say.pattern { cursor: default; color: #697181; font-style: italic; background: #fafbfc; }
 @media print { .vx-btn, .vx-panel { display: none !important; } }
 .cur-tag { background: var(--navy); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .4px; border-radius: 999px; padding: 3px 9px; }
 
@@ -3070,16 +3077,30 @@ async function pollLink() {
 // Closing a task and moving a milestone ask for a yes first. Not offered on personal links (customers) yet.
 const VX_STALE_MS = 30000;
 const voice = { open: false, min: false, status: "idle", error: "", feed: [], seq: 0, pc: null, dc: null, stream: null, audio: null,
-  history: [], listIds: [], pending: null, activeSince: 0, wantResponse: false, followUp: false, greeting: false, kinds: new Map(), said: new Map(), session: "", transcribing: true };
+  history: [], listIds: [], pending: null, help: false, caps: [], activeSince: 0, wantResponse: false, followUp: false, greeting: false, kinds: new Map(), said: new Map(), session: "", transcribing: true };
 const voiceAvailable = () => IN_APP && !LINK && Boolean(APP_ME) && Boolean(state) && !state._demo && !ui.wizard;
 function voiceAudit(...events) {
   if (!voice.session) return;
   try { fetch("/api/voice-audit", { method: "POST", credentials: "same-origin", keepalive: true, headers: { "content-type": "application/json" },
     body: JSON.stringify({ sessionId: voice.session, source: "live", events: events.map(e => ({ ...e, detail: { surface: "close_plan", planId: state ? state.id : null, ...(e.detail || {}) } })) }) }).catch(() => {}); } catch (e) {}
 }
+// The first time someone uses it, the greeting also says what it can do (once, then just the short greeting).
 function voiceGreeting(firstName) {
   const name = String(firstName || "").replace(/[^\p{L}\p{M}'’ -]/gu, "").trim().slice(0, 40);
-  return `Hi${name ? ` ${name}` : ""}, I am your voice assistant. How can I help with this plan?`;
+  let first = false;
+  try { const k = `${STORE_KEY}:voice-greeted:${APP_ME ? APP_ME.id : ""}`; first = !localStorage.getItem(k); localStorage.setItem(k, "1"); } catch (e) {}
+  return `Hi${name ? ` ${name}` : ""}, I am your voice assistant. ${first ? `You can ask me where this plan stands, what to do next, or tell me to update a task. Say "what can you do" any time. ` : ""}How can I help with this plan?`;
+}
+// Tapping a line in "What can I say?" says it for you: into the live conversation when connected, so the
+// assistant answers out loud, otherwise straight to the plan.
+function voiceSay(text) {
+  voice.help = false;
+  const dc = voice.dc;
+  if (dc && dc.readyState === "open") {
+    voiceFeed("heard", text);
+    dc.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text }] } }));
+    voiceRequest();
+  } else voiceAsk("local", text);
 }
 function voiceFeed(kind, text) { if (!String(text || "").trim()) return; voice.feed = [...voice.feed, { id: "v" + (++voice.seq), kind, text }].slice(-60); renderVoice(); }
 function voiceHeard(id, change) {
@@ -3258,7 +3279,7 @@ async function voiceStart() {
     const r = await fetch("/api/close-plans/voice/session", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: state.id }) });
     const s = await r.json().catch(() => ({}));
     if (!s.clientSecret) throw new Error(s.error || "Could not start the voice assistant.");
-    voice.transcribing = s.transcription !== false;
+    voice.transcribing = s.transcription !== false; voice.caps = Array.isArray(s.capabilities) ? s.capabilities : [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); voice.stream = stream;
     const pc = new RTCPeerConnection(); voice.pc = pc;
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -3303,14 +3324,17 @@ function renderVoice() {
     <div class="vx-head"><span class="vx-dot ${voice.status === "connected" ? "on" : voice.status === "error" ? "bad" : ""}"></span><h2>Voice assistant</h2>
       <button type="button" class="vx-x" data-vx-min aria-label="Minimise (keeps listening)" title="Minimise (keeps listening)">▾</button><button type="button" class="vx-x" data-vx-close aria-label="Stop and close" title="Stop and close">×</button></div>
     ${t ? `<div class="vx-screen" title="${esc(t.title)}">On screen: ${esc(t.title)}</div>` : ""}
-    <div class="vx-feed" aria-live="polite">${items || `<div class="vx-hint">${voice.status === "connecting" ? "Connecting…" : `Just talk. Try “where do we stand?”, “what is ${esc(B())} waiting on?” or “add a task to the current phase”.`}</div>`}</div>
+    ${voice.help && voice.caps.length ? `<div class="vx-feed vx-help">${voice.caps.map(g => `<h3>${esc(g.group)}</h3>${g.items.map(i => i.includes("…") ? `<div class="vx-say pattern">“${esc(i)}”</div>` : `<button type="button" class="vx-say" data-vx-say="${esc(i)}">“${esc(i)}”</button>`).join("")}`).join("")}</div>`
+      : `<div class="vx-feed" aria-live="polite">${items || `<div class="vx-hint">${voice.status === "connecting" ? "Connecting…" : `Just talk. Try “where do we stand?”, “what is ${esc(B())} waiting on?” or “add a task to the current phase”.`}</div>`}</div>`}
     ${voice.error ? `<div class="vx-err">${esc(voice.error)}</div>` : ""}
-    <div class="vx-foot">${live ? `<button type="button" class="vx-mic stop" data-vx-close aria-label="Stop">■</button>` : `<button type="button" class="vx-mic" data-vx-start aria-label="Start again">🎙</button>`}<span>${voice.status === "connecting" ? "Connecting…" : voice.status === "connected" ? "Listening, just talk" : "Tap the mic to start again"}</span></div>
+    <div class="vx-foot">${live ? `<button type="button" class="vx-mic stop" data-vx-close aria-label="Stop">■</button>` : `<button type="button" class="vx-mic" data-vx-start aria-label="Start again">🎙</button>`}<span>${voice.status === "connecting" ? "Connecting…" : voice.status === "connected" ? "Listening, just talk" : "Tap the mic to start again"}</span>${voice.caps.length ? `<button type="button" class="vx-link" data-vx-help>${voice.help ? "Back" : "What can I say?"}</button>` : ""}</div>
   </div>`;
   const feed = root.querySelector(".vx-feed"); if (feed) feed.scrollTop = feed.scrollHeight;
   root.querySelectorAll("[data-vx-close]").forEach(b => b.onclick = voiceClose);
   const mn = root.querySelector("[data-vx-min]"); if (mn) mn.onclick = () => { voice.min = true; renderVoice(); };
   const st = root.querySelector("[data-vx-start]"); if (st) st.onclick = () => voiceStart();
+  const hp = root.querySelector("[data-vx-help]"); if (hp) hp.onclick = () => { voice.help = !voice.help; renderVoice(); };
+  root.querySelectorAll("[data-vx-say]").forEach(b => b.onclick = () => voiceSay(b.dataset.vxSay));
 }
 
 function openDemoPlan() {

@@ -403,6 +403,18 @@ help with this plan?").
 - **Safety:** closing a task and moving a milestone ask "Say yes to confirm";
   text written into a task (update, title, details) must come from the person's
   own words; requests addressed to someone else ("Drew, can you…") are ignored.
+- **Knowing what it can do:** "What can I say?" in the panel lists it by topic
+  with this plan's names (tap a line to say it); "what can you do?" is answered
+  out loud from the same list (`capabilities()` in `app/lib/close-plan-voice.ts`);
+  the first greeting per person also says it once. Requests it can't handle get an
+  honest "I can't do that yet" with the closest thing it can do.
+- **Voice requests (product backlog):** every request it can't do, and every "I
+  wish you could…", is filed under a short request name (`voice_request_asks`,
+  migration `0024`, kept beyond the 90-day audit). An existing name is reused only
+  when it shares words with what was said. `/voice-requests` (Site Admins, linked
+  from Company settings and the Voice Audit) ranks them: different people ×5,
+  wishes ×3, asked again in one session ×2, plus every ask; each gets a status
+  (new / planned / built / won't do) and a note.
 - Sessions show up in the Voice Audit (detail `surface: close_plan`).
 - **Not yet:** customers on their personal link. The plan context already has an
   `audience` switch so the customer view (no internal tasks) can be used later.

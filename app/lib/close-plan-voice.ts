@@ -22,9 +22,9 @@ export const ACTION_TYPES = ["set_status", "post_update", "set_due", "set_owner"
 export type VoiceAction = { type: (typeof ACTION_TYPES)[number]; status: string | null; text: string | null; date: string | null; personId: string | null };
 export type NewTask = { title: string; phaseId: string | null; parentId: string | null; ownerId: string | null; due: string | null; internal: boolean };
 export type Proposal = {
-  mode: "answer" | "open_task" | "list" | "next" | "act" | "add_task" | "unclear";
+  mode: "answer" | "open_task" | "list" | "next" | "act" | "add_task" | "unsupported" | "wish" | "unclear";
   answer: string; taskId: string | null; filter: ListFilter | null; personId: string | null; phaseId: string | null;
-  actions: VoiceAction[]; newTask: NewTask | null;
+  actions: VoiceAction[]; newTask: NewTask | null; requestName?: string | null;
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -221,3 +221,20 @@ export function describeActions(data: Obj, taskId: string, actions: VoiceAction[
     }
   }).join(" ");
 }
+
+// What the close plan voice assistant can do, in the words a person would use.
+// One list for the "What can I say?" panel, the spoken answer to "what can you
+// do?" and (later) the guided tour, so help never promises more than exists.
+// Lines with "…" are patterns to say, not to tap.
+export type Capability = { group: string; items: string[] };
+export function capabilities(customer: string, phase: string, person: string): Capability[] {
+  return [
+    { group: "Ask", items: ["Where do we stand?", "What should I do next?", "What's overdue?"] },
+    { group: "Find", items: [`What is ${customer} waiting on?`, `What are we waiting on from ${customer}?`, "Show my tasks", `What's left in ${phase}?`, "Show the internal tasks", "Next"] },
+    { group: "Change a task", items: ["Open the … task", "Post an update: …", "Mark it done", "Move it to next Friday", `Assign it to ${person}`, `Add ${person} as coworker`] },
+    { group: "Add", items: [`Add a task to ${phase}: …`, "Add a subtask: …, due …"] },
+    { group: "Ideas", items: ["I wish you could …"] },
+  ];
+}
+export const HELP_SPOKEN = (customer: string) => `I can tell you where the plan stands and what to do next, show lists like what ${customer} is waiting on or what's overdue, open and walk through tasks, post updates, change status, dates and owners, and add tasks or subtasks. The full list is in the panel under "What can I say?". And if you wish I could do something else, just tell me.`;
+export const isHelpRequest = (u: string) => /\b(what can (you|i) (do|say|ask)|what are you able to do|how (can|do) (you|i) (help|use you)|what do you (do|know))\b|^\s*help\b/i.test(u);

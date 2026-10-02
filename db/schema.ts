@@ -316,6 +316,27 @@ export const closePlanLinks = pgTable("close_plan_links", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
 }, table => [uniqueIndex("close_plan_links_hash_unique").on(table.tokenHash), index("close_plan_links_plan_idx").on(table.planId, table.personId)]);
+// Product requests heard by the voice assistants (drizzle/0024_voice_requests.sql):
+// one row per ask (something it can't do yet, or "I wish you could…"), grouped by
+// requestName, plus the team's decision per request. Not deleted with voice_audit.
+export const voiceRequestAsks = pgTable("voice_request_asks", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull().default(""),
+  sessionId: text("session_id").notNull().default(""),
+  surface: text("surface").notNull(),
+  requestName: text("request_name").notNull(),
+  kind: text("kind").notNull(),
+  utterance: text("utterance").notNull().default(""),
+}, table => [index("voice_request_asks_name_idx").on(table.requestName)]);
+export const voiceRequestStatus = pgTable("voice_request_status", {
+  requestName: text("request_name").primaryKey(),
+  status: text("status").notNull().default("new"),
+  note: text("note").notNull().default(""),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 // Voice audit trail (drizzle/0022_voice_audit.sql): one row per thing that
 // happened in a voice session — what was heard, what Task AI did with it
 // (or why it didn't), what was said back, how a confirmation turned out.

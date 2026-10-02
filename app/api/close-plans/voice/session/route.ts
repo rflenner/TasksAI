@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { closePlanDocuments } from "../../../../../db/schema";
+import { capabilities } from "../../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../lib/request";
 import { currentActor } from "../../../../lib/session";
@@ -59,5 +60,11 @@ export async function POST(request: Request) {
   const result = await response.json() as { value?: string; client_secret?: { value?: string } };
   const clientSecret = result.client_secret?.value || result.value;
   if (!clientSecret) return Response.json({ error: "Could not start a voice session" }, { status: 502 });
-  return Response.json({ clientSecret, model, transcription: withTranscription, firstName: actor.name.trim().split(/\s+/)[0] || "" });
+  // The "What can I say?" list, filled in with this plan's names.
+  const d = row.data as { account?: unknown; phases?: Array<{ name?: unknown; start?: unknown; end?: unknown }>; people?: Array<{ name?: unknown; side?: unknown }> };
+  const today = new Date().toISOString().slice(0, 10);
+  const phase = (d.phases || []).find(p => String(p.start) <= today && today <= String(p.end)) || (d.phases || [])[0];
+  const person = (d.people || []).find(p => p.side === "seller" && String(p.name || "").split(" ")[0] !== actor.name.split(" ")[0]);
+  const list = capabilities(String(d.account || "the customer"), String(phase?.name || "this phase"), String(person?.name || "Drew").split(" ")[0]);
+  return Response.json({ clientSecret, model, transcription: withTranscription, firstName: actor.name.trim().split(/\s+/)[0] || "", capabilities: list });
 }
