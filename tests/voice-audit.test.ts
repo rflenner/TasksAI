@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  auditRowForVoiceQuery, cleanSessionId, cleanSource, groupIntoSessions, isProblem, isUnbackedReply, outcomeForResponse,
-  rowLabel, sanitizeClientAuditEvent, sessionMatches, summarizeSessions, type VoiceAuditCollector, type VoiceAuditRecord,
+  auditRowForVoiceQuery, cleanSessionId, cleanSource, formatSessionsAsText, groupIntoSessions, isProblem, isUnbackedReply, outcomeForResponse,
+  parseAuditFilters, rowLabel, sanitizeClientAuditEvent, sessionMatches, summarizeSessions, type VoiceAuditCollector, type VoiceAuditRecord,
 } from "../app/lib/voice-audit";
 
 const emptyCollector = (): VoiceAuditCollector => ({ actor: { name: "Rizan Flenner" }, taskIds: [], changes: [] });
@@ -80,7 +80,8 @@ test("auditRowForVoiceQuery: a refusal is 'not_done' and keeps the reason the as
   const row = auditRowForVoiceQuery({ transcript: "notify Pavneet", currentTaskId: 6 }, true, { mode: "unclear", spokenAnswer: "Pavneet isn't someone I can notify on this task." }, emptyCollector());
   assert.equal(row.outcome, "not_done");
   assert.match(row.spokenAnswer, /isn't someone I can notify/);
-  assert.deepEqual(row.taskIds, [6]); // falls back to the task that was open
+  assert.deepEqual(row.taskIds, []); // a refusal touched no task — the open one is context, not a target
+  assert.equal(row.detail.currentTaskId, 6);
   assert.equal(row.source, "ask"); // no source sent -> the original assistant
 });
 
@@ -149,4 +150,51 @@ test("rowLabel: each kind of row gets a distinct, honest label", () => {
   assert.equal(rowLabel({ event: "said", outcome: null, mode: null, detail: { kind: "direct" } }).tone, "bad");
   assert.equal(rowLabel({ event: "said", outcome: null, mode: null, detail: { kind: "tool_result" } }).label, "Assistant said");
   assert.equal(rowLabel({ event: "heard", outcome: null, mode: null, detail: {} }).label, "Heard");
+});
+
+test("auditRowForVoiceQuery: a lookup that opens a task attributes it to THAT task, not to whatever was on screen", () => {
+  const row = auditRowForVoiceQuery({ transcript: "what's the first one", currentTaskId: 6, source: "live" }, true, { mode: "open_task", openTaskId: 12, spokenAnswer: "Number 1 of 5." }, emptyCollector());
+  assert.deepEqual(row.taskIds, [12]);
+  assert.equal(row.detail.currentTaskId, 6);
+  const next = auditRowForVoiceQuery({ action: "next", currentTaskId: 12 }, true, { mode: "next", nextTaskId: 13, spokenAnswer: "x" }, emptyCollector());
+  assert.equal(next.utterance, "[next task]");
+  assert.deepEqual(next.taskIds, [13]);
+});
+
+test("rowLabel: the opening greeting is not flagged as an answer given without asking Task AI", () => {
+  assert.equal(rowLabel({ event: "said", outcome: null, mode: null, detail: { kind: "greeting" } }).label, "Assistant said");
+  assert.equal(isProblem({ event: "said", outcome: null, detail: { kind: "greeting" } }), false);
+});
+
+test("parseAuditFilters: defaults to everything/7 days and ignores anything it doesn't recognise", () => {
+  assert.deepEqual(parseAuditFilters({}), { source: "all", show: "all", days: 7 });
+  assert.deepEqual(parseAuditFilters({ source: "live", show: "problems", days: "30" }), { source: "live", show: "problems", days: 30 });
+  assert.deepEqual(parseAuditFilters({ source: "x", show: "y", days: "1234" }), { source: "all", show: "all", days: 7 });
+});
+
+test("formatSessionsAsText: a paste-friendly report with what was heard, understood, said, changed and why something failed", () => {
+  const at = (time: string) => new Date(`2026-10-02T${time}Z`);
+  const sessions = groupIntoSessions([
+    record({ id: 1, sessionId: "s9", createdAt: at("13:11:00"), event: "heard", utterance: "show me my overdue tasks" }),
+    record({ id: 2, sessionId: "s9", createdAt: at("13:11:02"), event: "request", utterance: "show me my overdue tasks", mode: "filter", outcome: "shown", spokenAnswer: "Showing 4 overdue tasks.", detail: { currentTaskId: 6 } }),
+    record({ id: 3, sessionId: "s9", createdAt: at("13:12:10"), event: "request", utterance: "mark it done", mode: "act", outcome: "changed", taskIds: [7], detail: { changes: ["#7 Chase invoice: changed status Open → Closed"] } }),
+    record({ id: 4, sessionId: "s9", createdAt: at("13:12:30"), event: "said", spokenAnswer: "Done, I sent it.", detail: { kind: "direct" } }),
+    record({ id: 5, sessionId: "s9", createdAt: at("13:12:40"), event: "request", utterance: "notify Pavneet", mode: "unclear", outcome: "not_done", spokenAnswer: "Pavneet isn't someone I can notify." }),
+  ]);
+  const text = formatSessionsAsText(sessions, { source: "all", show: "all", days: 7 }, new Date("2026-10-02T14:00:00Z"));
+  assert.match(text, /^VOICE AUDIT TRAIL — exported 2026-10-02 14:00:00 UTC/);
+  assert.match(text, /1 session · 1 change made · 2 problems/);
+  assert.match(text, /=== 2026-10-02 13:11:00 UTC · Rizan Flenner · Live Voice Assistant · 5 events · session s9 ===/);
+  assert.match(text, /13:11:00 {2}\[Heard\] "show me my overdue tasks"/);
+  assert.match(text, /understood as: filter/);
+  assert.match(text, /on screen: #6/);
+  assert.match(text, /→ Showing 4 overdue tasks\./);
+  assert.match(text, /• #7 Chase invoice: changed status Open → Closed/);
+  assert.match(text, /!! \[Answered on its own[^\]]*\] Assistant: Done, I sent it\./);
+  assert.match(text, /!! \[[^\]]*\] "notify Pavneet"/);
+  assert.match(text, /tasks: #7/);
+});
+
+test("formatSessionsAsText: an empty export says so instead of printing nothing", () => {
+  assert.match(formatSessionsAsText([], null, new Date("2026-10-02T14:00:00Z")), /\(nothing recorded for these filters\)/);
 });

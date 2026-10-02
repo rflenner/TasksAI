@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { splitIntoSpeechChunks } from "../lib/speech-chunks";
+import { interpretConfirmReply } from "../lib/voice-confirm";
 import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./voice-audit-client";
 
 // The lightweight alternative to a full conversational voice agent — see
@@ -158,6 +159,13 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // when posting a question and written when a filter answer arrives,
   // never something the render needs to react to.
   const workingListRef = useRef<number[]>([]);
+  // What the list on screen is called, the filters that built it, and the
+  // last item of it the person was on — sent with every request so a
+  // follow-up ("the first one", "next") resolves against that list
+  // (see the same refs in VoiceAskRealtime.tsx).
+  const listLabelRef = useRef<string | null>(null);
+  const listFiltersRef = useRef<VoiceFilters | null>(null);
+  const cursorRef = useRef<number | null>(null);
   // currentTaskId is a prop, but ask() runs inside callbacks (mic
   // handlers, speak()) that close over stale values — a ref mirrors it
   // so every POST sends whatever's actually on screen right now.
@@ -242,16 +250,16 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     setOpen(false); setStatus("idle"); setLiveText(""); setError("");
   }
 
-  // Plain keyword check, not a model call — see pendingDeleteRef above
-  // for why this stays deterministic. Ambiguous input (neither a clear
-  // yes nor no) errs toward NOT deleting, same safety bias as the
-  // existing browser confirm() dialog on the Delete button.
-  function isAffirmative(text: string) { return /^\s*(yes|yeah|yep|yup|confirm(ed)?|do it|go ahead|correct|sure|please do)\b/i.test(text); }
-  function isNegative(text: string) { return /^\s*(no|nope|never\s?mind|cancel|stop|don'?t)\b/i.test(text); }
+  // The yes/no gate itself (interpretConfirmReply) is a plain keyword check,
+  // not a model call — see pendingDeleteRef above for why this stays
+  // deterministic. Anything but a clean "yes" cancels the pending action.
 
   async function ask(question: string) {
-    const trimmed = question.trim();
+    let trimmed = question.trim();
     if (!trimmed) return;
+    // Spoken before the answer when a pending confirmation was cancelled
+    // and the reply is being handled as a new request instead.
+    let spokenPrefix = "";
     // A new question is the clearest possible "I'm done listening to
     // that" signal, whether it arrived by typing over a still-playing
     // answer or by tapping skip — stop it immediately rather than
@@ -266,7 +274,8 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       const pending = pendingDeleteRef.current;
       pendingDeleteRef.current = null;
       setLog(prev => [...prev, { role: "user", text: trimmed }]);
-      if (isAffirmative(trimmed)) {
+      const reply = interpretConfirmReply(trimmed);
+      if (reply.decision === "yes") {
         setStatus("processing"); setError("");
         try {
           const res = await fetch("/api/voice-query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmDeleteTaskId: pending.id, sessionId: auditSessionId(), source: "ask" }) });
@@ -281,16 +290,19 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         }
         return;
       }
-      // A clear "no", or anything else that isn't a clear "yes" — both
-      // just cancel. An ambiguous reply not being treated as the
-      // original question again is deliberate: safer to make the user
-      // re-ask than to risk half-parsing a stray word as a new command
-      // while a delete was still technically on the table.
-      const answer = isNegative(trimmed) ? "Okay, keeping it." : "I didn't catch a yes or no, so I'll leave it as is.";
-      setLog(prev => [...prev, { role: "assistant", text: answer }]);
-      audit({ event: "confirmation", mode: "delete", outcome: "declined", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.id], detail: { reply: isNegative(trimmed) ? "no" : "unclear" } });
-      await speak(answer);
-      return;
+      // A clear "no", or anything else that isn't a clear "yes", cancels
+      // the delete. If the reply also said something to do ("No, open
+      // the next task", or a different request altogether) that is now
+      // handled as a new request instead of being thrown away.
+      audit({ event: "confirmation", mode: "delete", outcome: "declined", utterance: trimmed, spokenAnswer: "I won't delete it.", taskIds: [pending.id], detail: { reply: reply.decision, handledAsNewRequest: reply.newRequest !== null } });
+      if (reply.newRequest === null) {
+        const answer = "Okay, keeping it.";
+        setLog(prev => [...prev, { role: "assistant", text: answer }]);
+        await speak(answer);
+        return;
+      }
+      spokenPrefix = "Okay, I won't delete it. ";
+      trimmed = reply.newRequest;
     }
 
     // A notify confirmation is pending — same deterministic yes/no gate
@@ -302,7 +314,8 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       const pending = pendingNotifyRef.current;
       pendingNotifyRef.current = null;
       setLog(prev => [...prev, { role: "user", text: trimmed }]);
-      if (isAffirmative(trimmed)) {
+      const reply = interpretConfirmReply(trimmed);
+      if (reply.decision === "yes") {
         setStatus("processing"); setError("");
         try {
           const res = await fetch("/api/tasks/notify", {
@@ -322,11 +335,18 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         }
         return;
       }
-      const answer = isNegative(trimmed) ? "Okay, not sending it." : "I didn't catch a yes or no, so I won't send it.";
-      setLog(prev => [...prev, { role: "assistant", text: answer }]);
-      audit({ event: "confirmation", mode: "notify", outcome: "declined", utterance: trimmed, spokenAnswer: answer, taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message, reply: isNegative(trimmed) ? "no" : "unclear" } });
-      await speak(answer);
-      return;
+      // Same as the delete gate above: only an unambiguous "yes" sends;
+      // anything else cancels, and a reply that also carried a request
+      // ("No, send it to Xenofon instead") is handled as a new one.
+      audit({ event: "confirmation", mode: "notify", outcome: "declined", utterance: trimmed, spokenAnswer: "I won't send it.", taskIds: [pending.taskId], detail: { to: pending.toName, channel: pending.channel, message: pending.message, reply: reply.decision, handledAsNewRequest: reply.newRequest !== null } });
+      if (reply.newRequest === null) {
+        const answer = "Okay, not sending it.";
+        setLog(prev => [...prev, { role: "assistant", text: answer }]);
+        await speak(answer);
+        return;
+      }
+      spokenPrefix = "Okay, I won't send it. ";
+      trimmed = reply.newRequest;
     }
 
     // Read before appending this turn — exactly what was said before
@@ -334,41 +354,51 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
     // turn is a few sentences, not another driver of the latency this
     // was just tuned for.
     const recentHistory = logRef.current.slice(-6);
-    setLog(prev => [...prev, { role: "user", text: trimmed }]);
+    if (!spokenPrefix) setLog(prev => [...prev, { role: "user", text: trimmed }]);
     setStatus("processing"); setError("");
     try {
       const res = await fetch("/api/voice-query", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, history: recentHistory, sessionId: auditSessionId(), source: "ask" }),
+        body: JSON.stringify({ transcript: trimmed, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current, listLabel: listLabelRef.current, listFilters: listFiltersRef.current, cursorTaskId: cursorRef.current, history: recentHistory, sessionId: auditSessionId(), source: "ask" }),
       });
       const data = await res.json() as {
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
-        workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; tasks?: VoiceTaskUpdate[] | null;
+        workingListIds?: number[]; listLabel?: string | null; task?: VoiceTaskUpdate | VoiceCreatedTask | null; tasks?: VoiceTaskUpdate[] | null;
         nextTaskId?: number | null; openTaskId?: number | null;
         dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null; pendingNotify?: PendingNotify | null;
         spokenAnswer?: string; error?: string;
       };
       if (!res.ok) { setStatus("error"); setError(data.error || "Could not process that"); return; }
-      const answer = data.spokenAnswer || "";
+      const answer = `${spokenPrefix}${data.spokenAnswer || ""}`.trim();
       setLog(prev => [...prev, { role: "assistant", text: answer }]);
+      // Opening a task also moves the place-in-the-list marker, when the
+      // task is on the list — "next" counts from there.
+      const openTask = (id: number) => { onOpenTask(id); if (workingListRef.current.includes(id)) cursorRef.current = id; };
       if (data.mode === "filter" || data.mode === "walk") {
         if (data.filters) onApplyFilters(data.filters);
         // Seeds (or replaces) what "next task" will walk through —
         // every filter/walk/briefing response carries a fresh ordered
         // list, so asking a new question always restarts from its
         // results.
-        if (data.workingListIds) workingListRef.current = data.workingListIds;
+        if (data.workingListIds) {
+          workingListRef.current = data.workingListIds; listLabelRef.current = data.listLabel ?? null;
+          listFiltersRef.current = data.filters ?? null; cursorRef.current = null;
+        }
         // "walk" additionally opens and reads the first match itself.
-        if (data.mode === "walk" && data.openTaskId != null) onOpenTask(data.openTaskId);
+        if (data.mode === "walk" && data.openTaskId != null) openTask(data.openTaskId);
       }
       // "briefing" is a spoken summary only — it doesn't touch the
       // on-screen filter (there's no single Filters shape for "overdue
       // OR due today OR due today as recipient"), but "next task"
       // afterward pages through exactly what got flagged.
       if (data.mode === "briefing" && data.workingListIds) {
-        workingListRef.current = data.workingListIds;
+        workingListRef.current = data.workingListIds; listLabelRef.current = data.listLabel ?? "your briefing";
+        listFiltersRef.current = null; cursorRef.current = null;
         onShowTasks(data.workingListIds);
       }
+      // A question or request about one task puts that task on screen, so
+      // what is said and what is shown stay on the same task.
+      if ((data.mode === "open_task" || data.mode === "answer") && data.openTaskId != null) openTask(data.openTaskId);
       if (data.mode === "navigate" && data.navigateTarget) {
         onNavigate(data.navigateTarget);
         await speak(answer);
@@ -389,14 +419,15 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         else if (data.task) onTaskUpdated(data.task as VoiceTaskUpdate);
         // A chained "...and go to the next task" resolved as part of
         // the same turn — open it right after applying the write.
-        if (data.nextTaskId != null) onOpenTask(data.nextTaskId);
+        if (data.nextTaskId != null) openTask(data.nextTaskId);
+        else if (data.openTaskId != null) openTask(data.openTaskId);
       }
       if (data.mode === "confirm_delete" && data.pendingDeleteTaskId != null) {
         pendingDeleteRef.current = { id: data.pendingDeleteTaskId, subject: currentTaskLabel || "this task" };
       }
       if (data.mode === "confirm_notify" && data.pendingNotify) pendingNotifyRef.current = data.pendingNotify;
       if (data.mode === "created" && data.task && data.dimensions) onTaskCreated(data.task as VoiceCreatedTask, data.dimensions);
-      if (data.mode === "next" && data.nextTaskId != null) onOpenTask(data.nextTaskId);
+      if (data.mode === "next" && data.nextTaskId != null) openTask(data.nextTaskId);
       await speak(answer);
     } catch {
       setStatus("error"); setError("Could not reach Task AI — check your connection.");
