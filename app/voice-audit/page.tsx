@@ -1,13 +1,11 @@
-import { and, desc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getDb } from "../../db";
-import { voiceAudit } from "../../db/schema";
 import { currentActor } from "../lib/session";
 import {
-  groupIntoSessions, isChange, rowLabel, sessionMatches, summarizeSessions, VOICE_AUDIT_RETENTION_DAYS,
-  type RowTone, type VoiceAuditRecord, type VoiceAuditShow,
+  isChange, loadVoiceAuditSessions, parseAuditFilters, rowLabel, summarizeSessions, VOICE_AUDIT_MAX_ROWS, VOICE_AUDIT_RETENTION_DAYS,
+  type RowTone, type VoiceAuditRecord,
 } from "../lib/voice-audit";
+import ExportButtons from "./ExportButtons";
 import LocalTime from "./LocalTime";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +19,7 @@ const TONE: Record<RowTone, string> = {
 };
 const SOURCE_LABEL: Record<string, string> = { live: "🔴 Live Voice Assistant", ask: "🗣️ Ask Task AI" };
 const PERIODS: Array<[string, number]> = [["24 hours", 1], ["7 days", 7], ["30 days", 30], [`${VOICE_AUDIT_RETENTION_DAYS} days`, VOICE_AUDIT_RETENTION_DAYS]];
-const MAX_ROWS = 1500, MAX_SESSIONS = 100;
-const sinceDaysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+const MAX_SESSIONS = 100;
 
 function href(params: { source: string; show: string; days: number }) {
   const query = new URLSearchParams();
@@ -57,17 +54,13 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
   if (!actor) redirect("/login?returnTo=/voice-audit");
   if (actor.role !== "site_admin") redirect("/");
 
-  const params = await searchParams;
-  const source = params.source === "live" || params.source === "ask" ? params.source : "all";
-  const show: VoiceAuditShow = params.show === "changes" || params.show === "problems" ? params.show : "all";
-  const days = PERIODS.some(([, value]) => value === Number(params.days)) ? Number(params.days) : 7;
-
-  const rows = await getDb().select().from(voiceAudit)
-    .where(and(gte(voiceAudit.createdAt, sinceDaysAgo(days)), source === "all" ? undefined : eq(voiceAudit.source, source)))
-    .orderBy(desc(voiceAudit.createdAt)).limit(MAX_ROWS);
-  const all = groupIntoSessions(rows as VoiceAuditRecord[]);
-  const sessions = all.filter(session => sessionMatches(session, show));
+  // The same filters + loader the export endpoint uses, so "Copy as text"
+  // is exactly what's on this page.
+  const filters = parseAuditFilters(await searchParams);
+  const { source, show, days } = filters;
+  const { sessions, rowLimitHit } = await loadVoiceAuditSessions(filters);
   const shown = sessions.slice(0, MAX_SESSIONS);
+  const exportQuery = new URLSearchParams({ source, show, days: String(days) }).toString();
   const totals = summarizeSessions(sessions);
 
   return (
@@ -97,7 +90,13 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
         <span><b className="text-[#173f76]">{totals.sessions}</b> session{totals.sessions === 1 ? "" : "s"}</span>
         <span><b className="text-[#25784b]">{totals.changes}</b> change{totals.changes === 1 ? "" : "s"} made</span>
         <span><b className="text-[#a84235]">{totals.problems}</b> problem{totals.problems === 1 ? "" : "s"}</span>
-        {rows.length >= MAX_ROWS && <span className="text-[#9b5d00]">Showing the newest {MAX_ROWS} events only — narrow the period to see more.</span>}
+        {rowLimitHit && <span className="text-[#9b5d00]">Showing the newest {VOICE_AUDIT_MAX_ROWS} events only — narrow the period to see more.</span>}
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Share</span>
+        <ExportButtons query={exportQuery} />
+        <span className="text-xs text-[#8b929d]">Exports exactly what these filters show, as plain text.</span>
       </div>
 
       {!shown.length && <div className="border border-[#e3e8ee] bg-white rounded-lg p-6 text-[#697181]">Nothing recorded for these filters yet. Talk to either voice assistant and it shows up here.</div>}
@@ -110,6 +109,7 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
               <span>{session.actorName}</span>
               <span className="text-[#697181]">{SOURCE_LABEL[session.source] ?? session.source}</span>
               <span className="text-[#8b929d]">{session.events.length} event{session.events.length === 1 ? "" : "s"}</span>
+              <span className="ml-auto"><ExportButtons query="" session={session.key} compact /></span>
             </header>
             <ul className="divide-y divide-[#eef1f5]">
               {session.events.map(row => {
@@ -122,7 +122,7 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
                     <span className={`justify-self-start px-2.5 py-1 rounded-full text-xs font-bold ${TONE[tone]} ${isChange(row) ? "ring-1 ring-[#25784b]/30" : ""}`}>{label}</span>
                     <div className="col-span-2 sm:col-span-1 min-w-0">
                       {text && <div className="text-[#202735]">“{text}”</div>}
-                      {row.event === "request" && row.mode && <div className="text-xs text-[#8b929d]">understood as: {row.mode}</div>}
+                      {row.event === "request" && row.mode && <div className="text-xs text-[#8b929d]">understood as: {row.mode}{typeof row.detail.currentTaskId === "number" ? ` · on screen: Task #${row.detail.currentTaskId}` : ""}</div>}
                       {reply && <div className={text ? "mt-1 text-[#4a5160]" : "text-[#4a5160]"}>{row.event === "request" || row.event === "confirmation" ? "→ " : ""}{reply}</div>}
                       <Details row={row} />
                       {row.taskIds.length > 0 && <div className="mt-1 text-xs">{row.taskIds.map(id => <a key={id} href={`/?task=${id}`} className="mr-2 text-[#173f76] underline">Task #{id}</a>)}</div>}

@@ -10,7 +10,7 @@
 //     sees: what the person actually said and what the assistant said back
 //     (Live Voice Assistant), notify yes/no outcomes, session start/stop,
 //     and transport errors.
-import { lt } from "drizzle-orm";
+import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "../../db";
 import { voiceAudit } from "../../db/schema";
 
@@ -127,14 +127,14 @@ export async function recordVoiceAudit(actor: { id?: number; name: string }, row
 
 // Builds the server-side "request" row from one /api/voice-query exchange.
 export function auditRowForVoiceQuery(
-  body: { transcript?: unknown; currentTaskId?: unknown; confirmDeleteTaskId?: unknown; sessionId?: unknown; source?: unknown },
+  body: { transcript?: unknown; currentTaskId?: unknown; confirmDeleteTaskId?: unknown; sessionId?: unknown; source?: unknown; action?: unknown },
   httpOk: boolean,
   json: Record<string, unknown> | null,
   collector: VoiceAuditCollector,
 ): VoiceAuditRow {
   const { mode, outcome } = outcomeForResponse(httpOk, json as { mode?: string } | null);
   const deleteId = typeof body.confirmDeleteTaskId === "number" ? body.confirmDeleteTaskId : null;
-  const utterance = clip(body.transcript, 2000).trim() || (deleteId != null ? `[confirmed delete of task #${deleteId}]` : "");
+  const utterance = clip(body.transcript, 2000).trim() || (deleteId != null ? `[confirmed delete of task #${deleteId}]` : body.action === "next" ? "[next task]" : "");
   const task = json?.task as { id?: unknown; subject?: unknown } | null | undefined;
   const pendingNotify = json?.pendingNotify as { taskId?: number; toName?: string; channel?: string; message?: string } | null | undefined;
   const taskIds = new Set<number>(collector.taskIds);
@@ -142,7 +142,14 @@ export function auditRowForVoiceQuery(
   if (typeof json?.deletedTaskId === "number") taskIds.add(json.deletedTaskId);
   if (typeof json?.pendingDeleteTaskId === "number") taskIds.add(json.pendingDeleteTaskId);
   if (pendingNotify?.taskId) taskIds.add(pendingNotify.taskId);
-  if (!taskIds.size && typeof body.currentTaskId === "number") taskIds.add(body.currentTaskId);
+  // The tasks this request actually opened, moved to or acted on — NOT
+  // whichever task happened to be open on screen. That was the old
+  // fallback, and it made a refusal or a lookup look like it had touched
+  // the open task (a live audit row for "open the first one" listed an
+  // unrelated task). What was on screen is kept separately, in
+  // detail.currentTaskId, for context.
+  if (typeof json?.openTaskId === "number") taskIds.add(json.openTaskId);
+  if (typeof json?.nextTaskId === "number") taskIds.add(json.nextTaskId);
   const detail: Record<string, unknown> = {};
   if (typeof body.currentTaskId === "number") detail.currentTaskId = body.currentTaskId;
   if (collector.changes.length) detail.changes = collector.changes.slice(0, 40);
@@ -213,4 +220,81 @@ export function rowLabel(row: { event: string; outcome: string | null; mode: str
     case "failed": return { label: "Failed", tone: "bad" };
     default: return { label: row.event, tone: "neutral" };
   }
+}
+
+// ---- Filters, loading and plain-text export (shared by the viewer page
+// and /api/voice-audit/export, so what you see and what you copy or
+// download are always built from the same code). ----
+
+export const VOICE_AUDIT_PERIODS: number[] = [1, 7, 30, VOICE_AUDIT_RETENTION_DAYS];
+export const VOICE_AUDIT_MAX_ROWS = 1500;
+export type VoiceAuditFilters = { source: "all" | VoiceAuditSource; show: VoiceAuditShow; days: number };
+
+export function parseAuditFilters(params: Record<string, string | undefined>): VoiceAuditFilters {
+  const source = params.source === "live" || params.source === "ask" ? params.source : "all";
+  const show: VoiceAuditShow = params.show === "changes" || params.show === "problems" ? params.show : "all";
+  const days = VOICE_AUDIT_PERIODS.includes(Number(params.days)) ? Number(params.days) : 7;
+  return { source, show, days };
+}
+
+// With `sessionId`, loads exactly that one session (whatever its age,
+// ignoring the other filters) — for "copy this session". Otherwise the
+// newest rows inside the filter window, grouped and show-filtered.
+export async function loadVoiceAuditSessions(filters: VoiceAuditFilters, sessionId?: string): Promise<{ sessions: VoiceAuditSession[]; rowLimitHit: boolean }> {
+  const db = getDb();
+  if (sessionId) {
+    const isLoose = sessionId.startsWith("row-");
+    const rows = await db.select().from(voiceAudit).where(isLoose ? eq(voiceAudit.id, Number(sessionId.slice(4)) || 0) : eq(voiceAudit.sessionId, cleanSessionId(sessionId)));
+    return { sessions: groupIntoSessions(rows as VoiceAuditRecord[]), rowLimitHit: false };
+  }
+  const since = new Date(Date.now() - filters.days * 86_400_000);
+  const rows = await db.select().from(voiceAudit)
+    .where(and(gte(voiceAudit.createdAt, since), filters.source === "all" ? undefined : eq(voiceAudit.source, filters.source)))
+    .orderBy(desc(voiceAudit.createdAt)).limit(VOICE_AUDIT_MAX_ROWS);
+  return { sessions: groupIntoSessions(rows as VoiceAuditRecord[]).filter(session => sessionMatches(session, filters.show)), rowLimitHit: rows.length >= VOICE_AUDIT_MAX_ROWS };
+}
+
+const SOURCE_NAME: Record<string, string> = { live: "Live Voice Assistant", ask: "Ask Task AI" };
+const utcStamp = (date: Date) => date.toISOString().slice(0, 19).replace("T", " ");
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+
+// A readable, paste-friendly report: one block per session, one entry
+// per row, every timestamp UTC. Meant to be copied into a chat or an
+// email as-is, so it carries everything needed to understand a session
+// without the page (what was heard, how it was understood, what changed,
+// why something wasn't done) and nothing decorative.
+export function formatSessionsAsText(sessions: VoiceAuditSession[], filters: VoiceAuditFilters | null, exportedAt: Date): string {
+  const totals = summarizeSessions(sessions);
+  const lines: string[] = [
+    `VOICE AUDIT TRAIL — exported ${utcStamp(exportedAt)} UTC`,
+    filters ? `Filters: assistant=${filters.source} · show=${filters.show} · last ${filters.days} day${filters.days === 1 ? "" : "s"}` : "Single session",
+    `${totals.sessions} session${totals.sessions === 1 ? "" : "s"} · ${totals.changes} change${totals.changes === 1 ? "" : "s"} made · ${totals.problems} problem${totals.problems === 1 ? "" : "s"}`,
+    'All times UTC. "Heard" is a separate transcript of the audio, not necessarily what the assistant understood — the request rows show what it actually acted on.',
+  ];
+  for (const session of sessions) {
+    lines.push("", `=== ${utcStamp(session.startedAt)} UTC · ${session.actorName} · ${SOURCE_NAME[session.source] ?? session.source} · ${session.events.length} events · session ${session.key} ===`);
+    const startDay = session.startedAt.toISOString().slice(0, 10);
+    for (const row of session.events) {
+      const iso = row.createdAt.toISOString();
+      const when = iso.slice(0, 10) === startDay ? iso.slice(11, 19) : `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+      const { label } = rowLabel(row);
+      const flag = isProblem(row) ? "!! " : "";
+      const text = row.event === "said" ? "" : oneLine(row.utterance);
+      const head = `${when}  ${flag}[${label}]`;
+      lines.push(row.event === "said" ? `${head} Assistant: ${oneLine(row.spokenAnswer)}` : text ? `${head} "${text}"` : head);
+      const pad = "          ";
+      if (row.event === "request" && row.mode) lines.push(`${pad}understood as: ${row.mode}`);
+      if (row.event === "request" && typeof row.detail.currentTaskId === "number") lines.push(`${pad}on screen: #${row.detail.currentTaskId}`);
+      if (row.event !== "said" && row.spokenAnswer) lines.push(`${pad}→ ${oneLine(row.spokenAnswer)}`);
+      if (Array.isArray(row.detail.changes)) for (const change of row.detail.changes as string[]) lines.push(`${pad}• ${oneLine(change)}`);
+      const target = (row.detail.pendingNotify ?? (row.event === "confirmation" ? row.detail : null)) as { to?: string; channel?: string; message?: string } | null;
+      if (target?.to) lines.push(`${pad}notify: to ${target.to} via ${target.channel} — "${oneLine(target.message || "").slice(0, 300)}"`);
+      if (row.detail.createdSubject) lines.push(`${pad}created: ${oneLine(String(row.detail.createdSubject))}`);
+      if (row.detail.error) lines.push(`${pad}error: ${oneLine(String(row.detail.error))}`);
+      if (row.event === "session" && row.detail.model) lines.push(`${pad}model: ${String(row.detail.model)}`);
+      if (row.taskIds.length) lines.push(`${pad}tasks: ${row.taskIds.map(id => `#${id}`).join(", ")}`);
+    }
+  }
+  if (!sessions.length) lines.push("", "(nothing recorded for these filters)");
+  return `${lines.join("\n")}\n`;
 }

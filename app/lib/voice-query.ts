@@ -135,6 +135,75 @@ export function resolveNext(currentTaskId: number | null, list: number[], visibl
   return null;
 }
 
+// Where "next" counts from. The open task when it's on the list being
+// walked — otherwise the last list item the person was on (the client's
+// cursor), so opening or asking about a task OFF the list and then saying
+// "next" carries on from where the walk was, instead of restarting at the
+// top (resolveNext treats a task that isn't on the list as "before the
+// first one" — which is what made a live walk through overdue tasks keep
+// jumping back to the start).
+export function listAnchor(currentTaskId: number | null, cursorTaskId: number | null, list: number[]): number | null {
+  if (currentTaskId != null && list.includes(currentTaskId)) return currentTaskId;
+  if (cursorTaskId != null && list.includes(cursorTaskId)) return cursorTaskId;
+  return null;
+}
+
+// "open the first one" was classified as navigate -> Dictate twice in one
+// live session (2026-10-02), which leaves the page entirely and ends the
+// live session — it looked like a crash. A screen change is only honoured
+// when the person's own words actually name that screen; anything else the
+// classifier proposed is treated as a mistake.
+const NAVIGATE_WORDS: Record<"dictate" | "new_task" | "paste_minutes", RegExp> = {
+  dictate: /\bdictat/i,
+  new_task: /\b(new|create|add|start)\b.*\b(task|action|item)\b/i,
+  paste_minutes: /\bminutes\b|\bmeeting notes\b/i,
+};
+export function navigationAllowed(target: "dictate" | "new_task" | "paste_minutes", spoken: string): boolean {
+  return NAVIGATE_WORDS[target].test(spoken);
+}
+
+// "the first one" / "the second task" / "the last one" against the list on
+// screen — resolved here, not left to the classifier: a live check showed
+// it answering "open the first one" with the first task of the WHOLE task
+// list while an overdue list was on screen. Only word ordinals, and only
+// when the phrase points at the list ("the first one", "the last task") —
+// "the first task in the pilot project" is a new search, not a list
+// position. Returns null when there is no list, no ordinal, or the list
+// has no such position (the caller then falls back to the classifier).
+const ORDINAL_VALUES: Record<string, number> = {
+  first: 1, "1st": 1, second: 2, "2nd": 2, third: 3, "3rd": 3, fourth: 4, "4th": 4, fifth: 5, "5th": 5,
+  sixth: 6, "6th": 6, seventh: 7, "7th": 7, eighth: 8, "8th": 8, ninth: 9, "9th": 9, tenth: 10, "10th": 10,
+};
+export function resolveListOrdinal(spoken: string, listIds: number[], visible: StoredTask[]): number | null {
+  const match = /\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th|last|final)\b(\s+(?:one|task|item)\b)?(\s+(?:in|of|for|from|with|on|about|by|at)\b)?/i.exec(spoken);
+  if (!match) return null;
+  const pointsAtList = Boolean(match[2]) || /^\W*$/.test(spoken.slice(match.index + match[0].length));
+  if (!pointsAtList || match[3]) return null;
+  const visibleIds = new Set(visible.map(t => t.id));
+  const ids = listIds.filter(id => visibleIds.has(id));
+  const word = match[1].toLowerCase();
+  const position = word === "last" || word === "final" ? ids.length : ORDINAL_VALUES[word];
+  return position >= 1 && position <= ids.length ? ids[position - 1] : null;
+}
+
+// Names that are never a person to assign a task to — the product's own
+// automation names. "Sales AI" was written into a task's owner (and then
+// into the people suggestion list) by a mis-heard assignment.
+const NOT_A_PERSON = /^(sales ai|task ai|task ai voice assistant|voice assistant|nobody|no one|none|unassigned)$/i;
+
+// Resolves a spoken name against names Task AI already knows: exact, or a
+// first name that identifies exactly one person. Null when it doesn't
+// resolve (so the caller can say so rather than invent an owner).
+export function resolveKnownPerson(spoken: string, candidates: string[]): string | null {
+  const s = spoken.trim().toLowerCase();
+  if (!s || NOT_A_PERSON.test(s)) return null;
+  const usable = candidates.filter(c => c.trim() && !NOT_A_PERSON.test(c.trim()));
+  const exact = usable.find(c => c.toLowerCase() === s);
+  if (exact) return exact;
+  const byFirst = [...new Set(usable.filter(c => c.toLowerCase().split(/\s+/)[0] === s))];
+  return byFirst.length === 1 ? byFirst[0] : null;
+}
+
 // Shared by "filter" and "walk" — the exact same matching rules; only
 // what happens with the result differs.
 export function computeMatches(f: Filters, visible: StoredTask[], actorName: string, today: string, weekAhead: string, isNewTaskIds: ReadonlySet<number> = new Set(), unseenUpdateTaskIds: ReadonlySet<number> = new Set()): StoredTask[] {
@@ -252,7 +321,7 @@ export type ActionResult = {
 // uses), and the activity-log recording once this returns cleanly.
 // Stops at the first bad step and returns its error — a command that's
 // partly malformed shouldn't silently apply only the parts that parsed.
-export function applyActionSteps(current: StoredTask, steps: ActionStep[], actorName: string, knownPeople: string[]): ActionResult {
+export function applyActionSteps(current: StoredTask, steps: ActionStep[], actorName: string, knownPeople: string[], ownerCandidates?: string[]): ActionResult {
   const updated = {
     subject: current.subject, description: current.description, owner: current.owner,
     collaborators: [...current.collaborators], recipients: [...current.recipients],
@@ -285,7 +354,15 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
       confirmations.push(`Set priority to ${a.priority}.`);
     } else if (a.type === "set_owner") {
       if (!a.owner?.trim()) return fail("I didn't catch who to assign this to.");
-      updated.owner = resolvePerson(a.owner.trim());
+      // When the caller supplies who Task AI actually knows, an owner has
+      // to resolve to one of them — a mis-heard or invented name is
+      // refused instead of being written onto the task (and from there
+      // into the people suggestion list).
+      if (ownerCandidates) {
+        const person = resolveKnownPerson(a.owner, ownerCandidates);
+        if (!person) return fail(`I don't know anyone called "${a.owner.trim()}" on Task AI, so I haven't changed the owner — say the full name of someone already on a task.`);
+        updated.owner = person;
+      } else updated.owner = resolvePerson(a.owner.trim());
       confirmations.push(`Assigned it to ${updated.owner}.`);
     } else if (a.type === "set_subject") {
       if (!a.textValue?.trim()) return fail("I didn't catch the new subject.");
@@ -425,4 +502,30 @@ export function briefingWorkingList(counts: BriefingCounts): number[] {
     if (!seen.has(t.id)) { seen.add(t.id); ids.push(t.id); }
   }
   return ids;
+}
+
+// ---- Conversational list state (requested 2026-10-02 after a live Live-
+// Voice session lost its place: "what's the first one?" was answered from
+// the whole task list instead of the overdue list being walked, and
+// "next" turned into a brand-new search that dropped "my"/"overdue"). The
+// classifier used to see only the open task and the last few turns — never
+// the list the person was actually looking at — so every follow-up was
+// re-derived from scratch. This describes that list, in order, with where
+// the person currently is in it, so "the first one", "the remaining
+// ones", "them" and "next" resolve against it. ----
+
+export type ActiveListInput = { label: string | null; filters: unknown; ids: number[]; currentTaskId: number | null };
+
+// Returns "" when there is no usable list (nothing was filtered yet, or
+// every id has since dropped out of what this person can see).
+export function describeActiveList(input: ActiveListInput, visible: StoredTask[], max = 25): string {
+  const byId = new Map(visible.map(task => [task.id, task]));
+  const items = input.ids.map(id => byId.get(id)).filter((task): task is StoredTask => Boolean(task));
+  if (!items.length) return "";
+  const position = input.currentTaskId == null ? -1 : items.findIndex(task => task.id === input.currentTaskId);
+  const lines = items.slice(0, max).map((task, i) => `${i + 1}. #${task.id} "${task.subject.slice(0, 90)}" — owner ${task.owner || "none"}, due ${task.due || "no date"}, ${task.status}`);
+  const more = items.length > max ? `\n(+${items.length - max} more after these)` : "";
+  const where = position >= 0 ? `The person is currently on item ${position + 1} of ${items.length} (#${items[position].id}); ${items.length - position - 1} item${items.length - position - 1 === 1 ? "" : "s"} still to go after this one.` : "No item from this list is open on screen right now.";
+  const filters = input.filters && typeof input.filters === "object" ? `\nIt was produced by exactly these filters: ${JSON.stringify(input.filters)}` : "";
+  return `THE LIST CURRENTLY ON THE PERSON'S SCREEN${input.label ? ` is "${input.label}"` : ""} — ${items.length} task${items.length === 1 ? "" : "s"}, in this order:\n${lines.join("\n")}${more}\n${where}${filters}`;
 }
