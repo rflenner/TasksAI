@@ -347,6 +347,36 @@ can work on the same plan.
   win (the later one is asked to redo); no customer access yet; plan tasks are not
   yet Task AI tasks (no My tasks, digests, Slack).
 
+## Personal links for customer contacts (live since 2026-10)
+
+Customer contacts open their plan through a personal link (`/p/<token>`): no
+password, no Task AI account, no Task AI navigation.
+
+- **Creating a link:** the iSEEit plan owner (or a Site Admin) clicks "Copy
+  personal link" or "Send invitation" on a customer contact in the People tab.
+  The server creates the link (`POST /api/close-plans/store/:id/links`) and it's
+  copied to send in their own email; invitation emails come later. The contact
+  shows as "invited", and as "active" once they've opened it.
+- **Link rules:** a random token, stored only as its hash
+  (`close_plan_links`, migration `0023`), valid for **60 days**. It stops working
+  when it expires, when it's switched off ("Switch off link", `DELETE …/links`),
+  when the person is removed from the plan, or when the plan is deleted.
+  Creating a new link doesn't switch off older ones.
+- **What the contact sees** (`GET /api/close-plans/shared/:token`, built on the
+  server by `customerView` in `app/lib/close-plan-share.ts`): phases, shared
+  tasks (a subtask only when its main task is shared), people, and activity about
+  shared tasks. Internal tasks, the Sales AI deal data, the setup checklist and
+  iSEEit people's email addresses never leave the server.
+- **What the contact can change** (`POST /api/close-plans/shared/:token`): the
+  page sends only the tasks it changed and the new activity entries;
+  `applyCustomerChanges` checks every field against their rights (view / own /
+  all, can create), the same rules as the page. Status updates are append-only
+  and always in their own name. People, phases, plan owners and the
+  internal/shared flag are never changed this way, and they can't reorder tasks.
+  Anything they may not change is skipped, never saved.
+- **Not yet:** invitation emails, the Monday digest, and the AI summary for
+  contacts (they see the rule-based summary).
+
 ## Data model: built on Task AI's existing database
 
 Plan tasks are ordinary `tasks` rows, so most of what a close plan needs already

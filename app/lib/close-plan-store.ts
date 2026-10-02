@@ -12,7 +12,8 @@ export const MAX_PLAN_BYTES = 2_000_000;
 const lower = (v: unknown) => typeof v === "string" ? v.trim().toLowerCase() : "";
 
 // Emails of the plan's iSEEit (seller-side) members: the people who see the plan
-// in Task AI. Customer contacts never do; they will get personal links in step B.
+// in Task AI. Customer contacts never do; they open the plan through a personal
+// link instead (app/lib/close-plan-links.ts).
 export function memberEmails(data: PlanData): string[] {
   const people = Array.isArray(data.people) ? data.people as PlanPerson[] : [];
   return [...new Set(people.filter(p => p && p.side === "seller").map(p => lower(p.email)).filter(Boolean))].sort();

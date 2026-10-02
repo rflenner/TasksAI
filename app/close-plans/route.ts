@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { closePlanPageHtml } from "../lib/close-plan-page";
 import { currentActor } from "../lib/session";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +12,5 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const actor = await currentActor();
   if (!actor) return new Response(null, { status: 307, headers: { location: "/login?returnTo=/close-plans" } });
-  const body = await readFile(path.join(process.cwd(), "prototype", "close-plan-demo.html"), "utf8");
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="/favicon.svg"><style>body{margin:0}</style></head><body>${body}</body></html>`;
-  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  return new Response(await closePlanPageHtml(), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }
