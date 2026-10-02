@@ -36,7 +36,8 @@ import { currentActor } from "../../../lib/session";
 // was, and app/components/VoiceAskRealtime.tsx for how the bridge works.
 export async function POST(request: Request) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
-  if (!await currentActor()) return Response.json({ error: "Sign in required" }, { status: 401 });
+  const actor = await currentActor();
+  if (!actor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const key = process.env.OPENAI_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured", code: "ai_unavailable" }, { status: 503 });
 
@@ -99,5 +100,7 @@ export async function POST(request: Request) {
   const result = await response.json() as { value?: string; client_secret?: { value?: string } };
   const clientSecret = result.client_secret?.value || result.value;
   if (!clientSecret) return Response.json({ error: "Realtime API did not return a client secret", code: "ai_failed" }, { status: 502 });
-  return Response.json({ clientSecret, model, transcription: withTranscription });
+  // The first name lets the assistant greet the person by name ("Hi Rizan, …").
+  const firstName = actor.name.trim().split(/\s+/)[0] || "";
+  return Response.json({ clientSecret, model, transcription: withTranscription, firstName });
 }
