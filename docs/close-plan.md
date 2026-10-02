@@ -379,6 +379,46 @@ password, no Task AI account, no Task AI navigation.
 - **Not yet:** invitation emails, the Monday digest, and the AI summary for
   contacts (they see the rule-based summary).
 
+## Voice assistant (iSEEit team, since 2026-10)
+
+The Task AI Live Voice Assistant, for the close plan on screen: "🎙 Voice
+assistant" (bottom right, inside Task AI, saved plans only) opens a small panel,
+turns the mic on and greets ("Hi Rizan, I am your voice assistant. How can I
+help with this plan?").
+
+- **What you can say:** where do we stand / what should I do next (a short
+  answer, advisor style); what is <customer> waiting on (open iSEEit tasks) /
+  what are we waiting on from them (open customer tasks), what's overdue, my
+  tasks, the internal tasks, what's left in a phase (shown on screen, walked
+  with "next"); open a task by name or number in the list; close it, post an
+  update, change due date, owner, coworkers, requested by, title or details; add
+  a task or subtask with owner and due date.
+- **How it works:** the live voice (OpenAI Realtime, session from
+  `POST /api/close-plans/voice/session`) passes what was said to
+  `POST /api/close-plans/voice`. The AI reads the plan and proposes what to do;
+  the server checks every task, person, phase and date (`app/lib/close-plan-voice.ts`),
+  counts lists itself, and decides "who waits on whom" from the sentence. The
+  **page applies changes** through the same functions and access rules as a click,
+  so saving and the activity log ("… by voice") work as for manual edits.
+- **Safety:** closing a task and moving a milestone ask "Say yes to confirm";
+  text written into a task (update, title, details) must come from the person's
+  own words; requests addressed to someone else ("Drew, can you…") are ignored.
+- **Knowing what it can do:** "What can I say?" in the panel lists it by topic
+  with this plan's names (tap a line to say it); "what can you do?" is answered
+  out loud from the same list (`capabilities()` in `app/lib/close-plan-voice.ts`);
+  the first greeting per person also says it once. Requests it can't handle get an
+  honest "I can't do that yet" with the closest thing it can do.
+- **Voice requests (product backlog):** every request it can't do, and every "I
+  wish you could…", is filed under a short request name (`voice_request_asks`,
+  migration `0024`, kept beyond the 90-day audit). An existing name is reused only
+  when it shares words with what was said. `/voice-requests` (Site Admins, linked
+  from Company settings and the Voice Audit) ranks them: different people ×5,
+  wishes ×3, asked again in one session ×2, plus every ask; each gets a status
+  (new / planned / built / won't do) and a note.
+- Sessions show up in the Voice Audit (detail `surface: close_plan`).
+- **Not yet:** customers on their personal link. The plan context already has an
+  `audience` switch so the customer view (no internal tasks) can be used later.
+
 ## Data model: built on Task AI's existing database
 
 Plan tasks are ordinary `tasks` rows, so most of what a close plan needs already

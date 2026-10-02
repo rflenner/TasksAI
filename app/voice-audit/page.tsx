@@ -65,7 +65,7 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
 
   return (
     <div className="max-w-5xl mx-auto p-8">
-      <Link href="/" className="text-sm text-[#697181]">← Back to Task AI</Link>
+      <div className="flex gap-4"><Link href="/" className="text-sm text-[#697181]">← Back to Task AI</Link><Link href="/voice-requests" className="text-sm text-[#173f76] font-semibold">Voice requests →</Link></div>
       <div className="text-[11px] font-extrabold tracking-widest text-[#173f76] mt-4">VOICE</div>
       <h1 className="text-2xl font-bold text-[#102f59] mt-1 mb-1">Voice audit trail</h1>
       <p className="text-[#697181] mb-5 max-w-3xl">What the voice assistants heard, what Task AI actually did about it — and what it didn&apos;t. Sessions are newest first; inside a session, rows read in order. “Heard” is a separate transcript of the audio, so it can differ slightly from what the assistant understood (the row it acted on shows that). Kept {VOICE_AUDIT_RETENTION_DAYS} days.</p>
