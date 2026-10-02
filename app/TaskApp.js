@@ -240,7 +240,7 @@ applyVoiceFilters=f=>{
  // confirmed live 2026-09-07: without this, asking to see in-progress
  // tasks fell through to `null` (no filter at all, showing everything)
  // because nothing here recognized that status value.
- j(f.dueWithin===`week`?`week`:f.dueWithin===`overdue`?`overdue`:f.status===`Open`||f.status===`In progress`?`open`:f.status===`Closed`?`completed`:null)
+ j(f.dueWithin===`week`?`week`:f.dueWithin===`overdue`?`overdue`:f.status===`Open`||f.status===`In progress`||f.status===`Not closed`?`open`:f.status===`Closed`?`completed`:null)
 },
 // "Open dictate task", "start a new action item", "paste meeting
 // minutes" — the three screens/forms the assistant can open directly.
