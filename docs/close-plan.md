@@ -232,7 +232,7 @@ Out-of-the-box templates:
 | Enterprise procurement | Align → Validate → Security & Legal → Procurement → Launch | Regulated buyers, long paper process |
 | Renewal & expansion | Review value → Expansion scope → Commercials → Rollout | Existing customers (signature = renewal date) |
 | App design & build (service) | Proposal & SOW → Discovery → Design & prototype → Build → Test & acceptance → Launch & handover | Service projects building an app with the customer (signature = SOW) |
-| Product MVP & client test | Align → Build: core plan → Build: client access → Integrations → Harden & release → Client test | Building an MVP in about four weeks and testing it with a client (signature = MVP release, go-live = test review). Used to plan the Close Plan MVP itself |
+| Product MVP with a development partner | Align → Build: core plan → Build: client access → Integrations → Harden & release → Client test | Building an MVP in about four weeks with Claude Code and a development partner on the other side for a few time-boxed reviews, then testing it with a client (signature = MVP release, go-live = test review). Used to plan the Close Plan MVP itself |
 | Blank | Prepare → Decide → Implement, with the signature and go-live milestones | Anything else |
 
 Later: "Save as template" on any plan, and company templates managed by admins.
