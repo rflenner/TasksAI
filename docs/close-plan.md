@@ -13,6 +13,9 @@ database, deployment, auth, email/Slack plumbing.
 | Subtasks | Full tasks (own owner, due date, status), one level deep. Example: a "POC" task with subtasks Define use cases, Create POC document, Organize participants, Create technical environment, Define date, Echo-back meeting — each with its own owner on either side. The existing per-task checklist stays for trivial tick-boxes. |
 | Phases | Editable template (default Discovery → Validation → Negotiate → Close) copied into each plan, then editable per plan. |
 
+Salesforce reporting copy (one-way push into the iSEEit close plan objects):
+see [close-plan-salesforce.md](close-plan-salesforce.md).
+
 ## Sales AI as the source of CRM data
 
 Task AI becomes the local mirror of the Sales AI CRM data a close plan needs.
