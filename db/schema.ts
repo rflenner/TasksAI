@@ -302,6 +302,20 @@ export const closePlanDocuments = pgTable("close_plan_documents", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, table => [index("close_plan_documents_updated_idx").on(table.updatedAt)]);
+// Personal links for a plan's customer contacts (drizzle/0023_close_plan_links.sql).
+// Only the token's sha256 is stored; personId is the contact's id inside the plan
+// document. Reusable until expiresAt or revokedAt, like taskUpdateTokens.
+export const closePlanLinks = pgTable("close_plan_links", {
+  id: serial("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => closePlanDocuments.id, { onDelete: "cascade" }),
+  personId: text("person_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+}, table => [uniqueIndex("close_plan_links_hash_unique").on(table.tokenHash), index("close_plan_links_plan_idx").on(table.planId, table.personId)]);
 // Voice audit trail (drizzle/0022_voice_audit.sql): one row per thing that
 // happened in a voice session — what was heard, what Task AI did with it
 // (or why it didn't), what was said back, how a confirmation turned out.

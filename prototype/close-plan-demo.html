@@ -263,7 +263,7 @@ button { cursor: pointer; }
 .sub-add input { flex: 1; min-width: 0; border: 1px solid var(--field); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 .update { display: flex; gap: 10px; margin: 15px 0; }
 .update .avatar { width: 30px; height: 30px; font-size: 10px; }
-.update b { font-size: 12px; }
+.update b { font-size: 12px; font-weight: 600; color: #3d4654; }
 .update small { color: var(--hint); font-weight: 400; }
 .update p { margin: 5px 0; color: #5f6772; white-space: pre-wrap; overflow-wrap: break-word; }
 .drawer textarea { width: 100%; min-height: 86px; resize: vertical; margin-top: 6px; }
@@ -279,6 +279,15 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .chip.chip-b button { background: #c7e6e8; }
 .drawer .chip-add { border: 1px dashed #c3cbd6; border-radius: 999px; padding: 4px 8px; font-size: 12.5px; background: #fff; color: var(--muted); }
 .chips .none { color: var(--hint); font-size: 13px; }
+.section.notify-box { background: #f3f6fa; border: 1px solid #e3e9f1; border-radius: 10px; padding: 14px 16px; margin-top: 22px; }
+.section.notify-box + .section { border-top: 0; }
+.notify-box h3 { font-size: 12px; font-weight: 700; color: #5d6878; letter-spacing: .3px; text-transform: uppercase; margin-bottom: 10px; }
+.notify-box .notify-list b { font-weight: 600; color: #3d4654; }
+.notify-box .notify-list li { font-size: 12.5px; }
+.notify-box .notify-list small { color: #7a8391; }
+.notify-box .notify-list .role { background: #e4ebf5; font-weight: 600; }
+.notify-box .hint { font-size: 12px; margin-bottom: 0; }
+.notify-box .mini { background: #fff; }
 .notify-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .notify-list li { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
 .notify-list .role { font-size: 10px; font-weight: 700; color: var(--navy); background: #eef4fc; border-radius: 10px; padding: 2px 7px; margin-left: 4px; }
@@ -929,6 +938,10 @@ function seed() {
 
 // The store holds every close plan; `state` is the plan currently open.
 const IN_APP = location.pathname.startsWith("/close-plans");
+// A customer contact's personal link (/p/<token>): the plan as they see it, loaded from and saved to
+// /api/close-plans/shared/<token>. No sign-in, no Task AI navigation, no demo switcher.
+const LINK = location.pathname.startsWith("/p/");
+const LINK_TOKEN = LINK ? decodeURIComponent(location.pathname.split("/")[2] || "") : "";
 function freshStore() { return { plans: [seed()], current: "meridian" }; }
 let store = IN_APP ? { plans: [], current: null } : (load() || freshStore());
 let state = IN_APP ? null : (store.plans.find(x => x.id === store.current) || store.plans[0]);
@@ -940,6 +953,7 @@ try { const m = localStorage.getItem(STORE_KEY + ":mode"); if (m === "buyer" || 
 
 function load() { try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 function save() {
+  if (LINK) { if (state && ui.linkMe) queueLinkSave(); return; }
   if (!IN_APP) { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) {} return; }
   if (!state || state._demo || !APP_ME) return;
   materializeMe(state);
@@ -973,7 +987,7 @@ function canEdit(t) { const a = acc(); return a.level === "all" || (a.level === 
 function canUpdate(t) { const a = acc(); return a.level !== "view" && (canEdit(t) || (t.recipients || []).includes(me())); }
 function canCreate() { return acc().create && acc().level !== "view"; }
 // Only the plan owners manage people: the iSEEit plan owner both teams, the Meridian Biotech plan owner the Meridian Biotech team.
-function canManage(side) { return me() === state.planOwners.seller || (side === "buyer" && me() === state.planOwners.buyer); }
+function canManage(side) { return !LINK && (me() === state.planOwners.seller || (side === "buyer" && me() === state.planOwners.buyer)); }
 function rightsText(a) { return [a.level === "view" ? "View only" : a.level === "own" ? "Edits own tasks" : "Edits all tasks", a.create && a.level !== "view" ? "creates tasks" : ""].filter(Boolean).join(" · "); }
 function matches(t, f = ui.filter) {
   switch (f) {
@@ -1006,7 +1020,8 @@ function growBox(el) {
 function growAll(root = document) { root.querySelectorAll("textarea[data-grow]").forEach(el => { growBox(el); if (!el.dataset.growWired) { el.dataset.growWired = "1"; el.addEventListener("input", () => growBox(el)); } }); }
 
 function render() {
-  if (!state && !ui.wizard) ui.mode = "seller";
+  if (LINK) { ui.mode = "buyer"; const bar = document.querySelector(".demo-bar"); if (bar) bar.style.display = "none"; }
+  else if (!state && !ui.wizard) ui.mode = "seller";
   if (IN_APP && state) { try { localStorage.setItem(STORE_KEY + ":current:" + (APP_ME ? APP_ME.id : ""), state.id); } catch (e) {} }
   clearTimeout(render.flash); if (ui.justAdded) render.flash = setTimeout(() => { ui.justAdded = null; document.querySelector(".just-added")?.classList.remove("just-added"); }, 1600);
   if (state) checkSetup();
@@ -1047,6 +1062,7 @@ function sellerShell() {
 // Customer view preview. Any customer contact can be previewed (for testing), defaulting to the customer's
 // plan owner; someone not invited yet is marked, because in reality they couldn't open the plan.
 function buyerShell() {
+  if (LINK) return linkShell();
   const owner = state.planOwners.buyer;
   const buyers = state.people.filter(p => p.side === "buyer").sort((a, b) => (b.id === owner) - (a.id === owner));
   if (!buyers.length) return `<header class="ext-head"><div class="logo">Task<b>AI</b></div></header>
@@ -1063,6 +1079,14 @@ function buyerShell() {
     <div class="content">
       ${titleBlock()}${tabsBlock()}${ui.tab === "people" ? peopleTab() : planTab()}
     </div>`;
+}
+
+// What a customer contact sees through their personal link: their name instead of the "Preview as" picker.
+function linkShell() {
+  const head = `<header class="ext-head"><div class="logo">Task<b>AI</b></div>${state && ui.linkMe ? `<div class="ext-who"><span>Shared by iSEEit with <b style="color:var(--ink)">${esc(person(ui.linkMe).name)}</b></span>${avatar(ui.linkMe, "av-sm")}</div>` : ""}</header>`;
+  if (ui.loading) return `${head}<div class="content"><div class="ext-empty">Loading your close plan…</div></div>`;
+  if (ui.loadError || !state) return `${head}<div class="content"><div class="ext-empty"><b>${ui.loadError === "gone" ? "This link is no longer valid." : "The plan could not be loaded."}</b><br>${ui.loadError === "gone" ? "Ask your iSEEit contact for a new personal link." : "Check your connection and reload the page."}</div></div>`;
+  return `${head}<div class="content">${titleBlock()}${tabsBlock()}${ui.tab === "people" ? peopleTab() : planTab()}</div>`;
 }
 
 function tabsBlock() {
@@ -1092,7 +1116,7 @@ function titleBlock() {
   const o = state.opp;
   return `<div class="title">
     <div>
-      <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}${IN_APP && !state._demo ? ` <span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}</label>
+      <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}${(IN_APP || LINK) && !state._demo ? ` <span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}</label>
       <h1>${esc(state.title)}</h1>
       <p><span>Target signature <b>${sign ? fmtY(sign.due) : "–"}</b></span><span>Target go-live <b>${live ? fmtY(live.due) : "–"}</b></span><span>Plan owners <b>${esc(person(state.planOwners.seller).name)}</b> · <b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></span>
       ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}</p>
@@ -1166,7 +1190,7 @@ const DOTS = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor
 const PENCIL = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
 const isCurrent = ph => TODAY >= d(ph.start) && TODAY <= d(ph.end);
 // Plan owners (either side) can rename, re-date, reorder, add and delete phases.
-function canEditPhases() { return me() === state.planOwners.seller || me() === state.planOwners.buyer; }
+function canEditPhases() { return !LINK && (me() === state.planOwners.seller || me() === state.planOwners.buyer); }
 
 // Do any two phases share at least one day?
 function overlapping() {
@@ -1588,7 +1612,7 @@ function renderManage() {
 
     ${buyer ? `<div class="section"><h3>Invitation</h3>
       <p class="hint" style="margin:0 0 10px">${!p.email ? "Add an email address before you can invite them." : p.invite?.status === "active" ? `Opened their personal link. Invited ${p.invite.at ? fmtY(p.invite.at) : ""}.` : p.invite?.status === "invited" ? `Invitation sent ${p.invite.at ? fmtY(p.invite.at) : ""}, not opened yet.` : "Not invited yet. They can't see the plan and get no emails."}</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">${p.email ? (p.invite?.status === "none" || !p.invite ? `<button type="button" class="btn sm primary" data-invite="${p.id}">Send invitation</button>` : `${p.invite.status === "invited" ? `<button type="button" class="btn sm" data-invite="${p.id}">Resend invitation</button>` : ""}<button type="button" class="btn sm" data-link="${p.id}">Copy personal link</button>`) : ""}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${p.email ? (p.invite?.status === "none" || !p.invite ? `<button type="button" class="btn sm primary" data-invite="${p.id}">Send invitation</button>` : `${p.invite.status === "invited" ? `<button type="button" class="btn sm" data-invite="${p.id}">Resend invitation</button>` : ""}<button type="button" class="btn sm" data-link="${p.id}">Copy personal link</button>${IN_APP && !state._demo ? `<button type="button" class="btn sm danger-ghost" data-unlink="${p.id}">Switch off link</button>` : ""}`) : ""}</div>
     </div>` : ""}
 
     <div class="section"><h3>Access</h3>
@@ -1614,7 +1638,19 @@ function renderManage() {
   root.querySelectorAll("input[name=m-level]").forEach(r => r.onchange = () => { p.access.level = r.value; if (r.value === "view") p.access.create = false; log(`set ${p.name}'s access to ${rightsText(p.access)}`, null); save(); render(); });
   const cr = $("#m-create"); cr.onchange = () => { p.access.create = cr.checked; log(`set ${p.name}'s access to ${rightsText(p.access)}`, null); save(); render(); };
   root.querySelectorAll("[data-invite]").forEach(b => b.onclick = () => { ui.inviteFor = b.dataset.invite; renderInvite(); });
-  root.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => { const url = `https://tasks-ai.onrender.com/p/${btoa(p.id + "-meridian").replace(/=+$/, "").toLowerCase()}`; try { await navigator.clipboard.writeText(url); toast(`Link for ${p.name} copied`); } catch (e) { toast(url); } });
+  root.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => {
+    if (!IN_APP || state._demo) { const url = `https://tasks-ai.onrender.com/p/${btoa(p.id + "-meridian").replace(/=+$/, "").toLowerCase()}`; try { await navigator.clipboard.writeText(url); toast(`Link for ${p.name} copied`); } catch (e) { toast(url); } return; }
+    b.disabled = true; await copyPersonalLink(p); b.disabled = false;
+  });
+  root.querySelectorAll("[data-unlink]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/links?personId=${encodeURIComponent(p.id)}`, { method: "DELETE", credentials: "same-origin" });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(res.error || "");
+      p.invite = { status: "none" }; log(`switched off ${p.name}'s personal link`, null); save(); renderManage(); render(); toast(`${p.name}'s personal links no longer work`);
+    } catch (e) { toast(e.message || "The link could not be switched off. Try again."); b.disabled = false; }
+  });
   root.querySelectorAll("[data-digest]").forEach(b => b.onclick = () => { ui.digestFor = b.dataset.digest; renderDigest(); });
   root.querySelectorAll("[data-remove]").forEach(b => b.onclick = () => { ui.removing = p.id; renderManage(); });
   root.querySelectorAll("[data-cancelremove]").forEach(b => b.onclick = () => { ui.removing = null; renderManage(); });
@@ -1622,8 +1658,30 @@ function renderManage() {
     const to = $("#rm-to")?.value;
     state.tasks.forEach(t => { if (t.owner === p.id) t.owner = to || state.planOwners[p.side]; t.coworkers = (t.coworkers || []).filter(x => x !== p.id); t.recipients = (t.recipients || []).filter(x => x !== p.id); });
     state.people = state.people.filter(x => x.id !== p.id);
+    if (IN_APP && !state._demo && p.side === "buyer") fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/links?personId=${encodeURIComponent(p.id)}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
     log(`removed ${p.name} from the plan`, null); ui.removing = null; ui.manage = null; save(); render(); toast(`${p.name} removed from the plan`);
   });
+}
+
+// Inside Task AI a personal link is real: the server creates it (iSEEit plan owner only) and it's copied for
+// the plan owner to send. Invitation emails come later; until then the link goes out in their own email.
+async function flushPlanSave() {
+  if (!IN_APP || !state || state._demo) return;
+  if (sync.timers[state.id]) { clearTimeout(sync.timers[state.id]); sync.timers[state.id] = null; if (sync.dirty[state.id]) await pushPlan(state); }
+  for (let i = 0; i < 25 && (sync.inflight[state.id] || sync.dirty[state.id]); i++) await new Promise(r => setTimeout(r, 200));
+}
+async function copyPersonalLink(p, invite = false) {
+  try {
+    await flushPlanSave();
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/links`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ personId: p.id }) });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok || !res.url) throw new Error(res.error || "");
+    let copied = true; try { await navigator.clipboard.writeText(res.url); } catch (e) { copied = false; }
+    if (!p.invite || p.invite.status === "none") { p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`${invite ? "invited" : "created a personal link for"} ${p.name}`, null); save(); render(); renderManage(); }
+    if (copied) toast(`Personal link for ${p.name} copied. Paste it into your email; it works for 60 days.`);
+    else window.prompt(`Personal link for ${p.name} (works for 60 days):`, res.url);
+    return true;
+  } catch (e) { toast(e.message || "The link could not be created. Try again."); return false; }
 }
 
 function renderInvite() {
@@ -1651,6 +1709,7 @@ function renderInvite() {
   const close = () => { ui.inviteFor = null; renderInvite(); };
   root.querySelectorAll("[data-iclose]").forEach(b => b.onclick = close);
   root.querySelector("[data-iclose-bg]").onclick = e => { if (e.target === e.currentTarget) close(); };
+  if (IN_APP && !state._demo) { $("#inv-send").textContent = "Copy link to send"; $("#inv-send").onclick = async () => { $("#inv-send").disabled = true; if (await copyPersonalLink(p, true)) close(); else $("#inv-send").disabled = false; }; return; }
   $("#inv-send").onclick = () => { const again = p.invite?.status === "invited"; p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`${again ? "re-sent the invitation to" : "invited"} ${p.name}`, null); save(); close(); render(); toast(`Invitation sent to ${p.name}`); };
 }
 
@@ -1997,7 +2056,7 @@ function notifySection(t) {
     const po = state.planOwners.buyer === id ? " (with the plan overview, as plan owner)" : "";
     return `Monday email only: “${role === "Requested by" ? "Requested by you" : "My tasks"}” section${po}`;
   };
-  return `<div class="section"><h3>Who hears about this task</h3>
+  return `<div class="section notify-box"><h3>Who hears about this task</h3>
     <ul class="notify-list">${rows.map(([id, role]) => { const p = person(id); const txt = how(p, role, id); const off = /^Not|^Can/.test(txt);
       return `<li>${avatar(id, "av-sm")}<div style="flex:1;min-width:0"><b>${esc(p.name)}</b> <span class="role">${role}</span><small class="${off ? "off" : ""}">${esc(txt)}</small></div>${!off && p.side === "buyer" && t.status !== "Closed" ? `<button type="button" class="mini" data-ask="${id}">Ask for an update</button>` : ""}</li>`; }).join("")}</ul>
     <p class="hint" style="margin-top:10px">${esc(B())} contacts get at most one email per week from this plan. No email per update, no separate reminders.</p>
@@ -2910,6 +2969,64 @@ function uploadBanner() {
   return `<div class="upload-banner"><div><b>${plans.length} close plan${plans.length > 1 ? "s are" : " is"} saved only in this browser</b><small>${plans.map(p => esc(p.title)).join(" · ")}</small><small>Upload ${plans.length > 1 ? "them" : "it"} so the iSEEit people on the plan can see ${plans.length > 1 ? "them" : "it"} in Task AI.</small></div>
     <div class="ub-acts"><button type="button" class="btn sm" data-upload-later>Not now</button><button type="button" class="btn sm primary" data-upload>Upload</button></div></div>`;
 }
+// Personal-link sync. The page keeps the last version from the server as a snapshot and sends only what
+// changed: tasks that differ from the snapshot (or are new) and the activity entries added since. The server
+// checks every change against the contact's rights and answers with the plan as they may now see it.
+const linkSync = { snap: null, timer: null, inflight: false, dirty: false };
+const snapshotOf = plan => JSON.parse(JSON.stringify(plan));
+function adoptLinkPlan(plan, version) { state = { ...plan, _v: version }; store = { plans: [state], current: state.id }; linkSync.snap = snapshotOf(state); }
+async function bootFromLink() {
+  try {
+    const r = await fetch(`/api/close-plans/shared/${encodeURIComponent(LINK_TOKEN)}`, { cache: "no-store" });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.plan) { ui.loadError = r.status === 410 || r.status === 404 ? "gone" : true; }
+    else { ui.linkMe = data.me; ui.viewer = data.me; adoptLinkPlan(data.plan, data.version); }
+  } catch (e) { ui.loadError = true; }
+  ui.loading = false; render();
+  if (state) setInterval(pollLink, 30000);
+}
+function linkChanges() {
+  const snap = linkSync.snap || { tasks: [], activity: [] };
+  const before = new Map(snap.tasks.map(t => [t.id, JSON.stringify(t)]));
+  const tasks = state.tasks.filter(t => before.get(t.id) !== JSON.stringify(t) && (!before.has(t.id) || canUpdate(t)));
+  const first = snap.activity[0] ? JSON.stringify(snap.activity[0]) : null;
+  let n = first ? state.activity.findIndex(a => JSON.stringify(a) === first) : state.activity.length;
+  if (n < 0) n = 0;
+  return { tasks, activity: state.activity.slice(0, n).map(a => ({ text: a.text, task: a.task || null })) };
+}
+function queueLinkSave() {
+  clearTimeout(linkSync.timer); linkSync.dirty = true; setSaveState("Saving…");
+  linkSync.timer = setTimeout(pushLink, 600);
+}
+async function pushLink() {
+  if (linkSync.inflight) { linkSync.dirty = true; return; }
+  linkSync.inflight = true; linkSync.dirty = false;
+  const changes = linkChanges();
+  try {
+    const r = await fetch(`/api/close-plans/shared/${encodeURIComponent(LINK_TOKEN)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ changes }) });
+    const res = await r.json().catch(() => ({}));
+    if (r.ok && res.plan) {
+      // Keep what was typed meanwhile: only adopt the server's plan when nothing new is waiting to be sent.
+      if (!linkSync.dirty) { const open = ui.open; adoptLinkPlan(res.plan, res.version); ui.open = state.tasks.some(t => t.id === open) ? open : null; render(); }
+      else linkSync.snap = snapshotOf({ ...res.plan, tasks: res.plan.tasks, activity: res.plan.activity });
+      setSaveState("Saved");
+      if (res.ignored) toast("Some changes weren't saved because you can't edit that part of the plan.");
+    } else if (r.status === 410) { ui.loadError = "gone"; state = null; render(); }
+    else { setSaveState("Not saved", true); toast(res.error || "Your change could not be saved. Check your connection and try again."); }
+  } catch (e) { setSaveState("Not saved", true); toast("Your change could not be saved. Check your connection."); }
+  linkSync.inflight = false;
+  if (linkSync.dirty) pushLink();
+}
+async function pollLink() {
+  if (document.hidden || linkSync.inflight || linkSync.dirty) return;
+  const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  try {
+    const r = await fetch(`/api/close-plans/shared/${encodeURIComponent(LINK_TOKEN)}`, { cache: "no-store" });
+    if (r.status === 410) { ui.loadError = "gone"; state = null; render(); return; }
+    const data = await r.json().catch(() => ({}));
+    if (r.ok && data.plan && data.version !== (state && state._v)) { const open = ui.open; adoptLinkPlan(data.plan, data.version); ui.open = state.tasks.some(t => t.id === open) ? open : null; render(); }
+  } catch (e) {}
+}
 function openDemoPlan() {
   const demo = { ...seed(), _demo: true };
   store.plans = [...store.plans.filter(p => !p._demo), demo];
@@ -2943,8 +3060,10 @@ function setStatus(t, s) {
   save(); render();
   if (moved.length) toast(`Work started:${movedText(moved)}`);
 }
+// Customer contacts get random ids so a task they add never collides with one the iSEEit team adds at the same time.
+function newTaskId() { return LINK ? "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) : "t" + (++state.seq); }
 function addTask(phase, parent, title, focusTitle = false) {
-  const id = "t" + (++state.seq);
+  const id = newTaskId();
   const p = parent && state.tasks.find(x => x.id === parent);
   const due = (p && p.due) || state.phases.find(x => x.id === phase).end;
   state.tasks.push({ id, phase, parent, title, owner: me(), due, status: "Open", shared: p ? p.shared : true, createdBy: me(), updates: [], coworkers: [], recipients: p ? [...(p.recipients || [])] : [] });
@@ -2965,7 +3084,7 @@ function openInlineAdd(phaseId, scroll = false) {
   if (inp) { if (scroll) inp.scrollIntoView({ behavior: "smooth", block: "center" }); inp.focus({ preventScroll: scroll }); }
 }
 function addInlineTask(phaseId, title) {
-  const id = "t" + (++state.seq), ph = state.phases.find(x => x.id === phaseId);
+  const id = newTaskId(), ph = state.phases.find(x => x.id === phaseId);
   state.tasks.push({ id, phase: phaseId, parent: null, title, owner: me(), due: ph.end, status: "Open", shared: true, createdBy: me(), updates: [], coworkers: [], recipients: [] });
   log(`added “${title}”`, id); save();
   ui.justAdded = id; render();
@@ -2973,7 +3092,7 @@ function addInlineTask(phaseId, title) {
   toast("Task added. Click it to set the owner and due date");
 }
 
-function canReorder() { return ui.mode === "seller" || acc().level === "all"; }
+function canReorder() { return !LINK && (ui.mode === "seller" || acc().level === "all"); }
 function moveTask(id, targetId, after, phaseId) {
   const t = state.tasks.find(x => x.id === id); if (!t || id === targetId) return;
   const target = targetId && state.tasks.find(x => x.id === targetId);
@@ -3025,5 +3144,6 @@ document.addEventListener("click", e => {
 document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 if (state) ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();
-if (IN_APP) { ui.loading = true; render(); bootFromServer(); } else render();
+if (LINK) { store = { plans: [], current: null }; state = null; ui.loading = true; render(); bootFromLink(); }
+else if (IN_APP) { ui.loading = true; render(); bootFromServer(); } else render();
 </script>
