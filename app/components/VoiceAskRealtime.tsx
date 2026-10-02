@@ -59,7 +59,12 @@ type RealtimeEvent = {
   error?: { message?: string; type?: string; code?: string | null };
 };
 
-const GREETING = "Hi, I am your Task AI voice assistant. How can I help?";
+// Spoken as soon as the session opens. The first name comes from the
+// session route; it's cleaned so it can't change the greeting instruction.
+function greeting(firstName: string | undefined) {
+  const name = String(firstName || "").replace(/[^\p{L}\p{M}'’ -]/gu, "").trim().slice(0, 40);
+  return `Hi${name ? ` ${name}` : ""}, I am your voice assistant. How can I help?`;
+}
 // A response that never reports back as finished must not block the
 // conversation forever — after this long it no longer counts as active.
 const RESPONSE_STALE_MS = 30000;
@@ -445,7 +450,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
     activeSinceRef.current = 0; wantResponseRef.current = false;
     try {
       const sessionRes = await fetch("/api/voice-live/session", { method: "POST" });
-      const session = await sessionRes.json() as { clientSecret?: string; model?: string; transcription?: boolean; error?: string };
+      const session = await sessionRes.json() as { clientSecret?: string; model?: string; transcription?: boolean; firstName?: string; error?: string };
       if (!session.clientSecret) throw new Error(session.error || "Could not start a live session");
       transcriptionOnRef.current = session.transcription !== false;
 
@@ -464,7 +469,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       // as an answer given without asking Task AI.
       dc.onopen = () => {
         greetingPendingRef.current = true;
-        requestResponse({ instructions: `Greet the person by saying exactly this and nothing else: "${GREETING}"` });
+        requestResponse({ instructions: `Greet the person by saying exactly this and nothing else: "${greeting(session.firstName)}"` });
       };
       dc.onmessage = event => {
         let msg: RealtimeEvent = {};

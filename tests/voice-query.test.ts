@@ -37,6 +37,13 @@ test("computeMatches: mineOnly matches owner only, never collaborator or recipie
   assert.equal(result[0].owner, "Rizan Flenner");
 });
 
+test("computeMatches: status 'Not closed' (pending, outstanding) keeps Open and In progress, drops Closed", () => {
+  const tasks = [baseTask({ status: "Open" }), baseTask({ status: "In progress" }), baseTask({ status: "Closed" })];
+  const result = computeMatches({ ...noFilters, status: "Not closed" }, tasks, "Rizan Flenner", "2026-09-08", "2026-09-15");
+  assert.deepEqual(result.map(t => t.status), ["Open", "In progress"]);
+  assert.equal(describeFilterPhrase({ ...noFilters, status: "Not closed" }).includes("still open or in progress"), true);
+});
+
 test("computeMatches: myRole 'recipient' matches only the recipients field, not owner or collaborator", () => {
   const tasks = [
     baseTask({ owner: "Rizan Flenner" }),
@@ -382,7 +389,7 @@ test("speakableDate: null/empty/malformed all return null rather than throwing",
 test("describeTaskForWalk: reads subject, description, due date, then prompts for what to do next", () => {
   const spoken = describeTaskForWalk(baseTask({ subject: "Send proposal", description: "Draft it", due: "2026-09-12" }));
   assert.match(spoken, /^Send proposal\./);
-  assert.match(spoken, /Draft it\./);
+  assert.match(spoken, /Details: Draft it\./);
   assert.match(spoken, /Due Saturday, September 12th\./);
   assert.match(spoken, /What do you want me to do\?$/);
 });
