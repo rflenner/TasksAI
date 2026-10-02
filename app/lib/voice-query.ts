@@ -5,7 +5,8 @@
 // the actual classification step needs a live OPENAI_API_KEY, which most
 // dev/test environments don't have configured, so this is the only part
 // of the voice assistant that can realistically be verified without one.
-import type { tasks } from "../../db/schema";
+import type { ChecklistItem, tasks } from "../../db/schema";
+import { matchChecklistItem } from "./checklist";
 
 export type StoredTask = typeof tasks.$inferSelect;
 
@@ -84,6 +85,20 @@ export function speakableDate(dateStr: string | null | undefined): string | null
   const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
   const yearSuffix = d.getFullYear() !== new Date().getFullYear() ? `, ${d.getFullYear()}` : "";
   return `${weekday}, ${month} ${day}${suffix}${yearSuffix}`;
+}
+
+// Same phrasing as TaskApp.js's client-side notifyDraftMessage (the bell
+// icon's own default message), minus that function's multi-recipient
+// name-joining — a voice-triggered notify (requested 2026-10-02, "most
+// of the time I would like to notify someone that owns a task") only
+// ever targets one person at a time, so there's nothing to join. Kept
+// as its own small duplicate rather than sharing the client's function
+// directly: that one lives in a "use client" component and can't be
+// imported into this server-side, DB-free module without pulling
+// browser-only code across the server/client boundary.
+export function draftNotifyMessage(subject: string, due: string | null, toFirstName: string): string {
+  const dueClause = due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? `, due ${new Date(`${due}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "";
+  return `Hi ${toFirstName},\n\nJust a reminder about "${subject}"${dueClause}. Please let me know if you need any support or if you're still on track.\n\nThanks!`;
 }
 
 // Shared by "walk"'s first task and wherever a task gets handed back to
@@ -193,21 +208,27 @@ export function describeFilterPhrase(f: Filters): string {
 export type ActionStep = {
   type: "set_due" | "set_status" | "set_priority" | "set_owner" | "set_subject" | "set_description" | "set_project" | "set_topic"
       | "add_collaborator" | "remove_collaborator" | "add_recipient" | "remove_recipient"
-      | "add_update" | "delete_task" | "goto_next" | null;
+      | "add_update" | "add_checklist_item" | "set_checklist_item_done" | "delete_task" | "goto_next" | null;
   dueDate: string | null; status: string | null; priority: string | null; owner: string | null;
   // One shared slot for every "set this text field" / "append this
-  // text" step (subject, description, project, topic, add_update) —
-  // consolidated from four separate fields (subjectText/descriptionText/
-  // updateText, plus what would have been two more for project/topic)
-  // requested 2026-09-08 specifically to *shrink* the schema while
-  // adding set_project/set_topic, not grow it further — this route's
-  // own prior growth was a real contributor to a live latency
-  // regression (see app/api/voice-query/route.ts). `type` alone already
-  // disambiguates which field a value is meant for; a model has no more
-  // reasoning to do with one generic slot than with four near-identical
-  // dedicated ones.
+  // text" step (subject, description, project, topic, add_update,
+  // add_checklist_item's new text, set_checklist_item_done's spoken
+  // match phrase) — consolidated from four separate fields
+  // (subjectText/descriptionText/updateText, plus what would have been
+  // two more for project/topic) requested 2026-09-08 specifically to
+  // *shrink* the schema while adding set_project/set_topic, not grow it
+  // further — this route's own prior growth was a real contributor to a
+  // live latency regression (see app/api/voice-query/route.ts). `type`
+  // alone already disambiguates which field a value is meant for, so
+  // every later addition (including these two checklist steps,
+  // requested 2026-10-02) reuses this same slot rather than adding
+  // another near-identical dedicated one.
   textValue: string | null;
   personName: string | null;
+  // set_checklist_item_done only — true to check it off, false to
+  // un-check it. Not reused from `status`/explicit-boolean-free fields
+  // above since none of them mean "done" in any other step's context.
+  checklistDone: boolean | null;
 };
 
 export type ActionResult = {
@@ -215,6 +236,7 @@ export type ActionResult = {
     subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
     due: string; status: string; priority: string; project: string; topic: string;
     updates: Array<{ text: string; at: string; by?: string }>;
+    checklist: ChecklistItem[];
   };
   confirmations: string[];
   explicitStatus: string | null;
@@ -237,6 +259,7 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
     due: current.due, status: current.status, priority: current.priority,
     project: current.project, topic: current.topic,
     updates: [...current.updates],
+    checklist: [...current.checklist],
   };
   const confirmations: string[] = [];
   let explicitStatus: string | null = null;
@@ -305,6 +328,19 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
       updated.updates.push({ text: a.textValue.trim(), at: new Date().toISOString(), by: actorName });
       updatesGrew = true;
       confirmations.push("Added the update.");
+    } else if (a.type === "add_checklist_item") {
+      if (!a.textValue?.trim()) return fail("I didn't catch what to add to the checklist.");
+      const text = a.textValue.trim();
+      updated.checklist.push({ id: `c${Date.now()}${Math.random().toString(36).slice(2, 6)}`, text, done: false });
+      confirmations.push(`Added "${text}" to the checklist.`);
+    } else if (a.type === "set_checklist_item_done") {
+      if (!a.textValue?.trim()) return fail("I didn't catch which checklist item you meant.");
+      if (!updated.checklist.length) return fail("There's no checklist on this task yet.");
+      const match = matchChecklistItem(updated.checklist, a.textValue);
+      if (!match) return fail(`I couldn't find a checklist item matching "${a.textValue.trim()}".`);
+      const done = a.checklistDone ?? true;
+      updated.checklist = updated.checklist.map(item => item.id === match.id ? { ...item, done } : item);
+      confirmations.push(done ? `Checked off "${match.text}".` : `Unchecked "${match.text}".`);
     }
   }
   return { updated, confirmations, explicitStatus, updatesGrew, error: null };

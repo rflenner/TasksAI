@@ -42,3 +42,45 @@ export function checklistJustAdvanced(before: ChecklistItem[], after: ChecklistI
   const doneBefore = new Set(before.filter(item => item.done).map(item => item.id));
   return after.some(item => item.done && !doneBefore.has(item.id));
 }
+
+// Finds the checklist item a spoken/typed phrase most likely refers to —
+// for app/lib/voice-query.ts's set_checklist_item_done action, where
+// there's no id to click, only whatever text the person said ("mark the
+// Slack message one done"). Exact (case-insensitive) match wins outright;
+// otherwise falls back to whichever item's text contains the phrase or
+// vice versa, preferring the longest overlap as the least ambiguous
+// guess. Returns null rather than guessing wildly when nothing overlaps
+// at all — the caller turns that into "I couldn't find that," not a
+// wrong item silently getting checked.
+export function matchChecklistItem(checklist: ChecklistItem[], spoken: string): ChecklistItem | null {
+  const needle = spoken.trim().toLowerCase();
+  if (!needle) return null;
+  const exact = checklist.find(item => item.text.toLowerCase() === needle);
+  if (exact) return exact;
+  const overlapping = checklist.filter(item => {
+    const text = item.text.toLowerCase();
+    return text.includes(needle) || needle.includes(text);
+  });
+  if (!overlapping.length) return null;
+  return overlapping.reduce((best, item) => item.text.length > best.text.length ? item : best);
+}
+
+// Readable Task History lines for a checklist edit — same wording
+// Slack's own task_checklist_toggle handler already writes inline
+// (app/api/webhooks/slack/route.ts), pulled out here so the voice "act"
+// path can log identically without duplicating that phrasing. Only ever
+// called with a single checklist action applied per turn in practice,
+// but handles a full before/after diff generally: added items, then
+// newly-checked/-unchecked ones.
+export function describeChecklistChanges(before: ChecklistItem[], after: ChecklistItem[]): string[] {
+  const lines: string[] = [];
+  const beforeIds = new Set(before.map(item => item.id));
+  for (const item of after) if (!beforeIds.has(item.id)) lines.push(`added "${item.text.slice(0, 140)}" to the checklist`);
+  const beforeDoneById = new Map(before.map(item => [item.id, item.done]));
+  for (const item of after) {
+    const wasDone = beforeDoneById.get(item.id);
+    if (wasDone === undefined || wasDone === item.done) continue;
+    lines.push(item.done ? `checked off "${item.text.slice(0, 140)}"` : `unchecked "${item.text.slice(0, 140)}"`);
+  }
+  return lines;
+}

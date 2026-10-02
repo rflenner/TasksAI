@@ -1,9 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { dimensionValues, sessions, tasks, users } from "../../../db/schema";
+import { checklistJustAdvanced, describeChecklistChanges } from "../../lib/checklist";
 import { detectsMultiTaskTrigger } from "../../lib/dictate-intent";
 import { getKnownPersonNames } from "../../lib/known-people";
 import { resolveTaskNames } from "../../lib/name-resolution";
+import { resolvePrefs } from "../../lib/notification-prefs";
 import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { currentActor } from "../../lib/session";
@@ -11,10 +13,10 @@ import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/ta
 import { resolveDueDate } from "../../lib/task-defaults";
 import { hasUnseenUpdateFor, isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 import { callTaskExtractionAI } from "../../lib/task-extraction";
-import { notifySlackOnTaskChange } from "../../lib/task-notify";
+import { notifyCandidates, notifySlackOnTaskChange } from "../../lib/task-notify";
 import {
   applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
-  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveActTargets, resolveNext, speakableDate,
+  describeFilterPhrase, describeLastActive, describeTaskForWalk, draftNotifyMessage, resolveActTargets, resolveNext, speakableDate,
   type ActionStep, type ActTarget, type Filters, type StoredTask,
 } from "../../lib/voice-query";
 
@@ -35,9 +37,9 @@ import {
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["mode", "filters", "navigateTarget", "target", "actions", "answer"],
+  required: ["mode", "filters", "navigateTarget", "target", "actions", "notifyPersonName", "notifyMessage", "answer"],
   properties: {
-    mode: { type: "string", enum: ["filter", "answer", "navigate", "act", "next", "walk", "briefing", "create_task", "unclear"] },
+    mode: { type: "string", enum: ["filter", "answer", "navigate", "act", "next", "walk", "briefing", "create_task", "notify", "unclear"] },
     filters: {
       type: "object",
       additionalProperties: false,
@@ -101,21 +103,33 @@ const schema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "dueDate", "status", "priority", "owner", "textValue", "personName"],
+        required: ["type", "dueDate", "status", "priority", "owner", "textValue", "personName", "checklistDone"],
         properties: {
           type: {
             type: ["string", "null"],
-            enum: ["set_due", "set_status", "set_priority", "set_owner", "set_subject", "set_description", "set_project", "set_topic", "add_collaborator", "remove_collaborator", "add_recipient", "remove_recipient", "add_update", "delete_task", "goto_next", null],
+            enum: ["set_due", "set_status", "set_priority", "set_owner", "set_subject", "set_description", "set_project", "set_topic", "add_collaborator", "remove_collaborator", "add_recipient", "remove_recipient", "add_update", "add_checklist_item", "set_checklist_item_done", "delete_task", "goto_next", null],
           },
           dueDate: { type: ["string", "null"], description: "YYYY-MM-DD, resolved from any relative phrase against today's date; null means clear the due date" },
           status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
           priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", null] },
           owner: { type: ["string", "null"] },
-          textValue: { type: ["string", "null"], description: "For set_subject/set_description/set_project/set_topic/add_update only — the new text." },
+          textValue: { type: ["string", "null"], description: "For set_subject/set_description/set_project/set_topic/add_update/add_checklist_item (the new item's text) — or for set_checklist_item_done, the checklist item's text, as close as you can get to how it's actually written on the task." },
           personName: { type: ["string", "null"], description: "For add_collaborator/remove_collaborator/add_recipient/remove_recipient only — who to add or remove." },
+          checklistDone: { type: ["boolean", "null"], description: "For set_checklist_item_done only — true to check it off ('mark X done', 'check off X'), false to un-check it ('reopen X', 'uncheck X'). Null for every other action type." },
         },
       },
     },
+    // For mode="notify" only — "let Shankar know this is overdue",
+    // "notify the owner of this task", "remind Pavneet about the
+    // playbook task." Always targets whichever task is currently in
+    // focus (there's no "notify everyone on task 175" shorthand the way
+    // act's `target` has one — notify is a single, deliberate, outward-
+    // facing send, not a bulk operation). Resolved, not sent, here: the
+    // route drafts a message and comes back asking for a spoken yes/no
+    // before anything actually goes out, same confirm-then-execute shape
+    // delete_task already uses for its own irreversible-ish action.
+    notifyPersonName: { type: ["string", "null"], description: "Who to notify, by name, if the user named someone explicitly. Null means 'the owner of the current task' — the common case ('let them know', 'notify the owner', 'remind whoever owns this')." },
+    notifyMessage: { type: ["string", "null"], description: "Only set when the user dictated specific wording to send ('tell them I need the numbers by Friday'). Null means draft a reasonable reminder automatically." },
     answer: { type: "string" },
   },
 };
@@ -232,6 +246,12 @@ export async function POST(request: Request) {
     due: currentTask.due, dueSpeakable: speakableDate(currentTask.due),
     status: currentTask.status, priority: currentTask.priority, project: currentTask.project, topic: currentTask.topic, recurringMeeting: currentTask.recurringMeeting,
     updateCount: currentTask.updates.length, lastUpdate: currentTask.updates.length ? currentTask.updates[currentTask.updates.length - 1].text : null,
+    // Without this, "mark call the client done" had no way to be told
+    // apart from "mark [the whole task] done" — confirmed live
+    // 2026-10-02: with no checklist field in this summary at all, the
+    // model had nothing to match the phrase against and fell back to
+    // set_status every time, even on a task with a matching item.
+    checklist: currentTask.checklist.map(item => ({ text: item.text, done: item.done })),
   } : null;
 
   const summary = visible.slice(0, 200).map(t => ({
@@ -319,14 +339,17 @@ Decide exactly one of:
 - "act": change one or more tasks. One utterance can chain several field changes ("push this to Friday, assign it to Maya, add an update saying the redlines are in, and go to the next task") — one actions[] entry per change, in the order requested, each with exactly one type plus its one matching field (every other field in that entry stays null). Leave every filters field null/false, navigateTarget null, answer empty.
   WHICH task(s) — fill in target: almost always leave both fields at their default (taskId:null, applyToWorkingList:false), meaning "whichever task is currently open/in focus" (see above) — that covers ordinary "push this to Friday" while a task is open. Two exceptions: (1) the user names or numbers a task that is NOT the one open right now, e.g. "change the due date on task 175", "mark the pricing sheet task done" when that's not what's open -> set target.taskId to that task's exact id from the visible list. (2) the user wants the change applied to EVERY task in the most recent list you discussed with them (a prior "filter"/"walk"/"briefing" result, or a list you just read out in an "answer") — "add this to all of these", "tag every one of them", "update all the ones you just found" -> set target.applyToWorkingList true. If neither a task is open nor a specific one was named nor a working list exists to apply to, use "unclear" instead.
   set_due(dueDate): "push to Friday"/"set the deadline to Sept 20"/"clear the due date" — deadline/close date/completion date all mean this field. Resolve any relative phrase to YYYY-MM-DD against today: "next week"=Monday of the following week, "tomorrow"=the next calendar day, a bare weekday=its next upcoming occurrence, "ASAP"=next business day. dueDate:null clears it — a valid instruction, not a missing value.
-  set_status(status): "mark done"/"close this out"->Closed, "reopen"->Open, "put in progress"->In progress.
+  set_status(status): "mark done"/"close this out"/"finish it"->Closed, "reopen"->Open, "put in progress"->In progress — about the TASK as a whole, not one item on its checklist (see set_checklist_item_done below for that).
   set_priority(priority). set_owner(owner): "assign to Maya" — use the exact known-people spelling when it matches who's meant.
   set_subject(textValue): "change/rename the subject to...". set_description(textValue): "update the description to say...". set_project(textValue): "set the project to...", "tag this to the X project" — use the exact known-project spelling when it matches. set_topic(textValue): "set the topic to...", same idea for topics.
   add_collaborator/remove_collaborator(personName): coworkers — "add/take off Maya as a coworker".
   add_recipient/remove_recipient(personName): "reporter" and "recipient" are the same field.
   add_update(textValue): "add an update saying..."/"note that...".
+  add_checklist_item(textValue): "add a checklist item for..."/"add ... to the checklist" — the new item's text.
+  set_checklist_item_done(textValue, checklistDone): the current task's own checklist field (in the task data above) lists its real checklist items — use set_checklist_item_done, NOT set_status, whenever what's named clearly matches one of THOSE items ("mark call the client done" when checklist has an item reading "Call the client" -> this, not set_status; "mark it done"/"close this out" with no item named, or naming something that ISN'T one of the listed items -> set_status instead, about the whole task). checklistDone true for "mark/check X done/off"; false for "uncheck X"/"reopen the X item". textValue is the item's text, as close as you can get to how it reads in the checklist list above. If the task genuinely has no checklist at all and they still ask to check something off, still emit this step — the caller speaks the "no checklist" error rather than you silently falling back to set_status.
   delete_task: no field — "delete this task". ONLY ever asks for confirmation, never deletes immediately; NEVER combine with target.applyToWorkingList (deleting is always one task at a time — if they ask to delete several at once, use "unclear" and say so in answer instead).
   goto_next: only when they also say to move on ("...then next one") — one further entry, every field null, put last, never combined with delete_task or with target.applyToWorkingList (bulk commands don't have a single "next" to advance to).
+- "notify": let someone connected to the current task know something, by email or Slack — "let Shankar know this is overdue", "notify the owner", "remind Pavneet about the playbook task", "ping whoever owns this." Needs a task currently open/in focus — if none is, use "unclear" instead and say so. Set notifyPersonName to who they named, or leave it null for "the owner"/"them"/"whoever owns this" (the common, unnamed case). Set notifyMessage ONLY when they dictated specific wording to say ("tell them I need this by Friday") — leave it null to let the caller draft an ordinary reminder. This NEVER sends anything itself — the caller drafts the actual message and asks for a spoken yes/no first. Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
 - "next": move on to another task from the list they were just looking at, with no other change requested ("next task", "what's next", "skip this one"). ALSO use "next" when your own last turn (see the conversation history above) just asked "want me to walk you through them?" (a briefing ends with exactly that question) and the user now agrees in any way ("yes", "sure", "go ahead", "walk me through them") — that opens the first task from the briefing's own list, the same mechanism "next task" already uses. Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
 - "unclear": none of the above fit. Leave answer as an empty string.
 For owner/coworker/recipient names, prefer the exact spelling from the known people list above when you can tell which person is meant; a first name or close match is fine otherwise — the caller does its own matching. If the user refers to their own tasks ("my tasks", "what do I have"), set mineOnly true and leave owner null. If they ask about tasks where THEY are specifically a coworker or a recipient/reporter (not owner) — "what am I a recipient on", "tasks where I'm a reporter" — set myRole to "collaborator" or "recipient" respectively instead of mineOnly. "Created today"/"closed today" map to createdWithin/closedWithin "today" respectively.`,
@@ -339,7 +362,7 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
   if (!response.ok) return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 });
   const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
   const outputText = result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "";
-  let parsed: { mode: "filter" | "answer" | "navigate" | "act" | "next" | "walk" | "briefing" | "create_task" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; answer: string };
+  let parsed: { mode: "filter" | "answer" | "navigate" | "act" | "next" | "walk" | "briefing" | "create_task" | "notify" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; notifyPersonName: string | null; notifyMessage: string | null; answer: string };
   try { parsed = JSON.parse(outputText); } catch { return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 }); }
 
   if (parsed.mode === "unclear") {
@@ -498,11 +521,18 @@ This is a spoken request to create ONE new task right now, not a written meeting
     let anyStatusBumped = false;
     for (const targetTask of writable) {
       const result = applyActionSteps(targetTask, steps, actor.name, knownPeople);
+      // A newly-checked checklist item is the same "someone's making
+      // progress" signal a posted update already is — see Slack's own
+      // task_checklist_toggle handler for the identical reasoning;
+      // voice shouldn't behave differently just because the progress
+      // signal came from a checklist step instead of add_update.
+      const checklistAdvanced = checklistJustAdvanced(targetTask.checklist, result.updated.checklist);
+      const advanced = result.updatesGrew || checklistAdvanced;
       // Same auto-advance rule as PATCH /api/tasks (the manual "Post
       // update" button) — see autoAdvanceStatus — so voice and a click
       // behave identically: a posted update bumps Open -> In progress
       // unless this same command already set a status explicitly.
-      const finalStatus = autoAdvanceStatus(result.updated.status, result.updatesGrew, result.explicitStatus);
+      const finalStatus = autoAdvanceStatus(result.updated.status, advanced, result.explicitStatus);
       if (finalStatus !== result.updated.status) anyStatusBumped = true;
       // Identical closedAt transition rule to PATCH /api/tasks: a fresh
       // timestamp only on the Open/In progress -> Closed transition,
@@ -512,10 +542,12 @@ This is a spoken request to create ONE new task right now, not a written meeting
       // describeChanges deliberately skips `updates` (it's the Status
       // Updates log, shown as its own section) and no-ops with an empty
       // detail list, so calling this unconditionally is safe.
-      await recordActivity(updated.id, actor.name, describeChanges(targetTask, updated));
+      // describeChecklistChanges mirrors the same wording Slack's own
+      // checklist toggle already writes to Task History.
+      await recordActivity(updated.id, actor.name, [...describeChanges(targetTask, updated), ...describeChecklistChanges(targetTask.checklist, updated.checklist)]);
       await noteAssignments(updated.id, newlyAssignedPeople(targetTask, updated));
       const justClosed = targetTask.status !== "Closed" && finalStatus === "Closed";
-      if (justClosed || result.updatesGrew) await notifySlackOnTaskChange(updated, actor.name, justClosed ? "closed" : "update");
+      if (justClosed || advanced) await notifySlackOnTaskChange(updated, actor.name, justClosed ? "closed" : "update");
       await registerDimensionsFor(updated);
       updatedTasks.push(updated);
     }
@@ -555,7 +587,7 @@ This is a spoken request to create ONE new task right now, not a written meeting
       id: u.id, subject: u.subject, description: u.description, owner: u.owner,
       collaborators: u.collaborators, recipients: u.recipients,
       due: u.due, status: u.status, priority: u.priority, project: u.project, topic: u.topic,
-      closedAt: u.closedAt ? u.closedAt.toISOString() : null, updates: u.updates,
+      closedAt: u.closedAt ? u.closedAt.toISOString() : null, updates: u.updates, checklist: u.checklist,
     });
     return Response.json({
       mode: "act",
@@ -563,6 +595,35 @@ This is a spoken request to create ONE new task right now, not a written meeting
       tasks: updatedTasks.length > 1 ? updatedTasks.map(toPayload) : null,
       nextTaskId, nextTask: nextTaskPayload,
       spokenAnswer: `${summaryPrefix}${confirmations.join(" ")}${trailer}`.trim(),
+    });
+  }
+
+  // mode === "notify": drafts (never sends) a message to someone
+  // connected to the current task — the actual send happens only after
+  // a spoken yes/no, the same confirm-then-execute shape delete_task
+  // already uses, via the client posting to the existing, already-
+  // permission-checked POST /api/tasks/notify once confirmed (not
+  // duplicated here). Always targets the task currently in focus; there
+  // is no bulk/working-list form of this, unlike "act".
+  if (parsed.mode === "notify") {
+    if (!currentTask) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have a task open right now — open one first, then ask me to notify someone about it." });
+    const { people } = await notifyCandidates([currentTask.owner, ...currentTask.collaborators, ...currentTask.recipients]);
+    // No name given ("notify the owner", "let them know") is the common
+    // case per the person who asked for this ("most of the times I
+    // would like to notify someone that owns a task") — defaults to the
+    // task's owner rather than asking who they meant.
+    const targetName = parsed.notifyPersonName?.trim() || currentTask.owner;
+    const resolved = people.find(p => p.name.toLowerCase() === targetName.toLowerCase())
+      ?? people.find(p => p.name.toLowerCase().split(" ")[0] === targetName.toLowerCase());
+    if (!resolved) return Response.json({ mode: "unclear", filters: null, spokenAnswer: `${targetName} isn't someone I can notify on this task — they need a registered Task AI account connected to it.` });
+    const [me] = actor.id ? await getDb().select({ notificationPrefs: users.notificationPrefs }).from(users).where(eq(users.id, actor.id)).limit(1) : [];
+    const preferredChannel = resolvePrefs(me?.notificationPrefs).lastNotifyChannel;
+    const channel = preferredChannel && resolved.channels.includes(preferredChannel) ? preferredChannel : resolved.channels.includes("slack") ? "slack" : "email";
+    const message = parsed.notifyMessage?.trim() || draftNotifyMessage(currentTask.subject, currentTask.due || null, resolved.name.split(" ")[0]);
+    return Response.json({
+      mode: "confirm_notify",
+      pendingNotify: { taskId: currentTask.id, toEmail: resolved.email, toName: resolved.name, channel, message },
+      spokenAnswer: `I'll ${channel === "slack" ? "Slack" : "email"} ${resolved.name}: "${message}" — should I send it?`,
     });
   }
 

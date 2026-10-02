@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
-  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveActTargets, resolveNext, speakableDate,
+  describeFilterPhrase, describeLastActive, describeTaskForWalk, draftNotifyMessage, resolveActTargets, resolveNext, speakableDate,
   type ActionStep, type ActTarget, type Filters, type StoredTask,
 } from "../app/lib/voice-query";
 
@@ -12,7 +12,7 @@ function baseTask(overrides: Partial<StoredTask> = {}): StoredTask {
     id: nextId++, subject: "Send updated pilot proposal", description: "Draft and send the revised proposal.",
     owner: "Rizan Flenner", collaborators: [], recipients: [], due: "", source: "Manual", topic: "", project: "",
     recurringMeeting: "", status: "Open", priority: "Low", created: "2026-09-08", createdBy: null, updates: [],
-    closedAt: null, externalSource: null, externalId: null, accountId: null, accountName: null,
+    checklist: [], closedAt: null, externalSource: null, externalId: null, accountId: null, accountName: null,
     opportunityId: null, opportunityName: null, meetingId: null, citationUser: null, citationQuote: null,
     ownerContactId: null, recipientContactIds: {}, mergedIntoTaskId: null,
     ...overrides,
@@ -135,7 +135,7 @@ test("describeFilterPhrase: hasUnseenUpdate reads as 'with a new status update'"
 
 const step = (overrides: Partial<ActionStep>): ActionStep => ({
   type: null, dueDate: null, status: null, priority: null, owner: null,
-  textValue: null, personName: null,
+  textValue: null, personName: null, checklistDone: null,
   ...overrides,
 });
 
@@ -213,6 +213,57 @@ test("applyActionSteps: clearing the due date (dueDate: null) is a valid instruc
   assert.equal(result.error, null);
   assert.equal(result.updated.due, "");
   assert.equal(result.confirmations[0], "Cleared the due date.");
+});
+
+test("applyActionSteps: add_checklist_item appends a new, unchecked item and confirms", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "add_checklist_item", textValue: "Call the client" })], "Rizan Flenner", []);
+  assert.equal(result.error, null);
+  assert.equal(result.updated.checklist.length, 1);
+  assert.equal(result.updated.checklist[0].text, "Call the client");
+  assert.equal(result.updated.checklist[0].done, false);
+  assert.equal(result.confirmations[0], 'Added "Call the client" to the checklist.');
+});
+
+test("applyActionSteps: add_checklist_item with no text is an error", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "add_checklist_item", textValue: "  " })], "x", []);
+  assert.match(result.error || "", /didn't catch what to add/);
+});
+
+test("applyActionSteps: set_checklist_item_done checks off a matching item by its spoken text, defaulting to done:true", () => {
+  const task = baseTask({ checklist: [{ id: "c1", text: "Call Bernd", done: false }] });
+  const result = applyActionSteps(task, [step({ type: "set_checklist_item_done", textValue: "call bernd" })], "x", []);
+  assert.equal(result.error, null);
+  assert.deepEqual(result.updated.checklist, [{ id: "c1", text: "Call Bernd", done: true }]);
+  assert.equal(result.confirmations[0], 'Checked off "Call Bernd".');
+});
+
+test("applyActionSteps: set_checklist_item_done honors checklistDone:false to un-check an item", () => {
+  const task = baseTask({ checklist: [{ id: "c1", text: "Call Bernd", done: true }] });
+  const result = applyActionSteps(task, [step({ type: "set_checklist_item_done", textValue: "Call Bernd", checklistDone: false })], "x", []);
+  assert.equal(result.updated.checklist[0].done, false);
+  assert.equal(result.confirmations[0], 'Unchecked "Call Bernd".');
+});
+
+test("applyActionSteps: set_checklist_item_done on a task with no checklist at all is a clear error, not a crash", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "set_checklist_item_done", textValue: "anything" })], "x", []);
+  assert.match(result.error || "", /no checklist on this task/);
+});
+
+test("applyActionSteps: set_checklist_item_done with no matching item names what it couldn't find", () => {
+  const task = baseTask({ checklist: [{ id: "c1", text: "Call Bernd", done: false }] });
+  const result = applyActionSteps(task, [step({ type: "set_checklist_item_done", textValue: "send the invoice" })], "x", []);
+  assert.match(result.error || "", /couldn't find a checklist item matching "send the invoice"/);
+});
+
+test("applyActionSteps: a checklist step chains with other field changes in the same command, same as every other action type", () => {
+  const result = applyActionSteps(baseTask(), [
+    step({ type: "set_status", status: "In progress" }),
+    step({ type: "add_checklist_item", textValue: "Draft the agenda" }),
+  ], "x", []);
+  assert.equal(result.error, null);
+  assert.equal(result.updated.status, "In progress");
+  assert.equal(result.updated.checklist.length, 1);
+  assert.equal(result.confirmations.length, 2);
 });
 
 // ---- resolveActTargets ----
@@ -365,4 +416,21 @@ test("describeLastActive: null means never signed in; recent times read as relat
   assert.equal(describeLastActive(null), "never signed in");
   assert.equal(describeLastActive(new Date(Date.now() - 10_000)), "active just now");
   assert.equal(describeLastActive(new Date(Date.now() - 3 * 60 * 60 * 1000)), "about 3 hours ago");
+});
+
+test("draftNotifyMessage: includes a due-date clause when a real due date is given", () => {
+  const message = draftNotifyMessage("Send the proposal", "2026-10-09", "Shankar");
+  assert.match(message, /^Hi Shankar,/);
+  assert.match(message, /"Send the proposal", due 9 Oct/);
+});
+
+test("draftNotifyMessage: omits the due clause entirely when there's no due date", () => {
+  const message = draftNotifyMessage("Send the proposal", null, "Shankar");
+  assert.match(message, /"Send the proposal"\. Please let me know/);
+  assert.doesNotMatch(message, /due/);
+});
+
+test("draftNotifyMessage: a malformed due string is treated the same as no due date, never crashes", () => {
+  const message = draftNotifyMessage("Send the proposal", "not-a-date", "Shankar");
+  assert.doesNotMatch(message, /due/);
 });

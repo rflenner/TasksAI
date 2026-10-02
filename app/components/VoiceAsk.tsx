@@ -34,12 +34,18 @@ export type VoiceNavigateTarget = "dictate" | "new_task" | "paste_minutes";
 // What an "act" response hands back — every field any voice-driven
 // change could have touched (subject, description, project, topic,
 // coworkers/recipients, due, status+closedAt together, priority,
-// owner, or updates), so the caller can merge this straight into its
-// task state without a full refetch.
+// owner, updates, or checklist), so the caller can merge this straight
+// into its task state without a full refetch.
 export type VoiceTaskUpdate = {
   id: number; subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
   due: string; status: string; priority: string; project: string; topic: string; closedAt: string | null; updates: Array<{ text: string; at: string; by?: string }>;
+  checklist: Array<{ id: string; text: string; done: boolean }>;
 };
+// What mode "notify" hands back once it's resolved who to tell and
+// drafted what to say — nothing is actually sent until the NEXT
+// utterance confirms it (see pendingNotifyRef below), same
+// confirm-then-execute shape mode "confirm_delete" already uses.
+export type PendingNotify = { taskId: number; toEmail: string; toName: string; channel: "email" | "slack"; message: string };
 // A brand-new task voice created directly from a spoken description
 // (mode "create_task") — the full row, same shape GET /api/tasks
 // returns, so the caller can just prepend it to its task list.
@@ -180,6 +186,14 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   // sounds like a yes." A ref, not state — read/cleared synchronously
   // at the top of ask(), never something a render needs to react to.
   const pendingDeleteRef = useRef<{ id: number; subject: string } | null>(null);
+  // Same shape, same reasoning, for mode "notify" (requested 2026-10-02)
+  // — set once a draft message and recipient are resolved, resolved by
+  // a plain yes/no on the NEXT utterance before anything is actually
+  // sent. Sending reaches someone else's inbox/Slack, the same
+  // "can't take it back" category as a delete, so it gets the identical
+  // deterministic keyword gate rather than trusting the model's own
+  // read of a reply.
+  const pendingNotifyRef = useRef<PendingNotify | null>(null);
 
   // Tears down whatever the *previous* generation left behind — a live
   // WebSocket, an active MediaRecorder/mic stream — before a new one
@@ -263,6 +277,39 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       return;
     }
 
+    // A notify confirmation is pending — same deterministic yes/no gate
+    // as the delete flow above, before anything reaches the classify
+    // endpoint. A "yes" actually sends, via the same POST /api/tasks/
+    // notify the bell icon's own modal already uses — nothing new to
+    // trust here, just a different way of reaching an already-safe route.
+    if (pendingNotifyRef.current) {
+      const pending = pendingNotifyRef.current;
+      pendingNotifyRef.current = null;
+      setLog(prev => [...prev, { role: "user", text: trimmed }]);
+      if (isAffirmative(trimmed)) {
+        setStatus("processing"); setError("");
+        try {
+          const res = await fetch("/api/tasks/notify", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ taskId: pending.taskId, toEmails: [pending.toEmail], channel: pending.channel, message: pending.message }),
+          });
+          const data = await res.json() as { sent?: boolean; sentCount?: number; results?: Array<{ reason?: string }>; error?: string };
+          const answer = !res.ok ? (data.error || "Could not send that.")
+            : data.sent ? `Sent to ${pending.toName}.`
+            : `Could not send — ${data.results?.[0]?.reason || "please try again."}`;
+          setLog(prev => [...prev, { role: "assistant", text: answer }]);
+          await speak(answer);
+        } catch {
+          setStatus("error"); setError("Could not reach Task AI — check your connection.");
+        }
+        return;
+      }
+      const answer = isNegative(trimmed) ? "Okay, not sending it." : "I didn't catch a yes or no, so I won't send it.";
+      setLog(prev => [...prev, { role: "assistant", text: answer }]);
+      await speak(answer);
+      return;
+    }
+
     // Read before appending this turn — exactly what was said before
     // this question, oldest first, capped short so the added cost per
     // turn is a few sentences, not another driver of the latency this
@@ -279,7 +326,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
         mode?: string; filters?: VoiceFilters | null; navigateTarget?: VoiceNavigateTarget | null;
         workingListIds?: number[]; task?: VoiceTaskUpdate | VoiceCreatedTask | null; tasks?: VoiceTaskUpdate[] | null;
         nextTaskId?: number | null; openTaskId?: number | null;
-        dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null;
+        dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null; pendingNotify?: PendingNotify | null;
         spokenAnswer?: string; error?: string;
       };
       if (!res.ok) { setStatus("error"); setError(data.error || "Could not process that"); return; }
@@ -328,6 +375,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
       if (data.mode === "confirm_delete" && data.pendingDeleteTaskId != null) {
         pendingDeleteRef.current = { id: data.pendingDeleteTaskId, subject: currentTaskLabel || "this task" };
       }
+      if (data.mode === "confirm_notify" && data.pendingNotify) pendingNotifyRef.current = data.pendingNotify;
       if (data.mode === "created" && data.task && data.dimensions) onTaskCreated(data.task as VoiceCreatedTask, data.dimensions);
       if (data.mode === "next" && data.nextTaskId != null) onOpenTask(data.nextTaskId);
       await speak(answer);
