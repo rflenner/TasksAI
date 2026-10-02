@@ -129,6 +129,32 @@ button { cursor: pointer; }
 .fold-all button { border: 0; background: transparent; color: var(--navy); font-weight: 700; cursor: pointer; padding: 3px 6px; border-radius: 6px; font-size: 12px; }
 .fold-all button:hover { background: #e8edf3; }
 .pdf-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; font-size: 14px; }
+.vx-btn { position: fixed; z-index: 60; bottom: 22px; right: 22px; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #d7dce3; background: #fff; color: var(--navy); font-weight: 700; font-size: 14px; box-shadow: 0 8px 30px rgba(16,47,89,.18); cursor: pointer; }
+.vx-btn:hover { border-color: var(--navy); }
+.vx-panel { position: fixed; z-index: 60; bottom: 22px; right: 22px; width: min(320px, calc(100vw - 32px)); background: #fff; border: 1px solid #e3e8ee; border-radius: 16px; box-shadow: 0 8px 30px rgba(16,47,89,.2); padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.vx-panel.left, .vx-btn.left { right: auto; left: 22px; }
+.vx-head { display: flex; align-items: center; gap: 8px; }
+.vx-head h2 { font-size: 14px; color: var(--dark); margin: 0; flex: 1; }
+.vx-dot { width: 10px; height: 10px; border-radius: 50%; background: #c96539; flex: none; }
+.vx-dot.on { background: var(--green); animation: vxpulse 1.6s infinite; }
+.vx-dot.bad { background: #a84235; }
+@keyframes vxpulse { 50% { opacity: .45; } }
+.vx-x { border: 0; background: transparent; width: 28px; height: 28px; border-radius: 50%; color: #697181; font-size: 16px; cursor: pointer; }
+.vx-x:hover { background: #f1f3f7; }
+.vx-screen { font-size: 11px; font-weight: 700; color: var(--navy); background: #eef3fa; border-radius: 6px; padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vx-feed { max-height: 34vh; min-height: 56px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.vx-feed .vx-hint { color: #8b929d; font-size: 12px; }
+.vx-item { max-width: 90%; border-radius: 9px; padding: 6px 10px; line-height: 1.4; }
+.vx-item.heard { align-self: flex-end; background: var(--navy); color: #fff; }
+.vx-item.heard.pending { opacity: .8; }
+.vx-item.result { align-self: flex-start; background: #f1f3f7; color: var(--ink); }
+.vx-item.said { align-self: flex-start; background: #eef3fa; color: var(--dark); }
+.vx-asked { align-self: flex-end; font-size: 11px; font-style: italic; color: #8b929d; max-width: 90%; }
+.vx-foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #8b929d; }
+.vx-mic { width: 32px; height: 32px; border-radius: 50%; border: 0; color: #fff; background: var(--navy); cursor: pointer; flex: none; }
+.vx-mic.stop { background: #c96539; }
+.vx-err { color: #a84235; font-size: 12px; }
+@media print { .vx-btn, .vx-panel { display: none !important; } }
 .cur-tag { background: var(--navy); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .4px; border-radius: 999px; padding: 3px 9px; }
 
 .cards { display: grid; gap: 9px; }
@@ -952,7 +978,7 @@ function freshStore() { return { plans: [seed()], current: "meridian" }; }
 let store = IN_APP ? { plans: [], current: null } : (load() || freshStore());
 let state = IN_APP ? null : (store.plans.find(x => x.id === store.current) || store.plans[0]);
 const B = () => (state && state.account) || "Customer";
-function switchPlan(id) { state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); }
+function switchPlan(id) { if (voice.open) voiceClose(); state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); }
 let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null };
 try { const t = localStorage.getItem(STORE_KEY + ":tab"); if (t === "plan" || t === "people") ui.tab = t; } catch (e) {}
 try { const m = localStorage.getItem(STORE_KEY + ":mode"); if (m === "buyer" || m === "seller") ui.mode = m; } catch (e) {}
@@ -1038,6 +1064,7 @@ function render() {
   wirePage();
   renderDrawer();
   growAll();
+  renderVoice();
 }
 
 function sellerShell() {
@@ -3035,6 +3062,257 @@ async function pollLink() {
     if (r.ok && data.plan && data.version !== (state && state._v)) { const open = ui.open; adoptLinkPlan(data.plan, data.version); ui.open = state.tasks.some(t => t.id === open) ? open : null; render(); }
   } catch (e) {}
 }
+// ---------- Voice assistant (iSEEit team, inside Task AI) ----------
+// The Task AI Live Voice Assistant, for the close plan on screen: one click opens the panel, turns the mic on
+// and greets. The live voice (OpenAI Realtime over WebRTC) calls two tools; this page answers them through
+// /api/close-plans/voice, which reads the plan and says what to do. Changes are applied here, through the same
+// functions and access rules as a click, so saving and the activity log work exactly as for manual edits.
+// Closing a task and moving a milestone ask for a yes first. Not offered on personal links (customers) yet.
+const VX_STALE_MS = 30000;
+const voice = { open: false, min: false, status: "idle", error: "", feed: [], seq: 0, pc: null, dc: null, stream: null, audio: null,
+  history: [], listIds: [], pending: null, activeSince: 0, wantResponse: false, followUp: false, greeting: false, kinds: new Map(), said: new Map(), session: "", transcribing: true };
+const voiceAvailable = () => IN_APP && !LINK && Boolean(APP_ME) && Boolean(state) && !state._demo && !ui.wizard;
+function voiceAudit(...events) {
+  if (!voice.session) return;
+  try { fetch("/api/voice-audit", { method: "POST", credentials: "same-origin", keepalive: true, headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId: voice.session, source: "live", events: events.map(e => ({ ...e, detail: { surface: "close_plan", planId: state ? state.id : null, ...(e.detail || {}) } })) }) }).catch(() => {}); } catch (e) {}
+}
+function voiceGreeting(firstName) {
+  const name = String(firstName || "").replace(/[^\p{L}\p{M}'’ -]/gu, "").trim().slice(0, 40);
+  return `Hi${name ? ` ${name}` : ""}, I am your voice assistant. How can I help with this plan?`;
+}
+function voiceFeed(kind, text) { if (!String(text || "").trim()) return; voice.feed = [...voice.feed, { id: "v" + (++voice.seq), kind, text }].slice(-60); renderVoice(); }
+function voiceHeard(id, change) {
+  const old = voice.feed.find(i => i.id === id), text = change.text !== undefined ? change.text : (old ? old.text : "") + (change.append || "");
+  if (change.done && !text.trim()) voice.feed = voice.feed.filter(i => i.id !== id);
+  else if (old) voice.feed = voice.feed.map(i => i.id === id ? { ...i, text, pending: !change.done } : i);
+  else voice.feed = [...voice.feed, { id, kind: "heard", text, pending: !change.done }].slice(-60);
+  renderVoice();
+}
+function voiceTeardown() {
+  try { voice.dc && voice.dc.close(); } catch (e) {} try { voice.pc && voice.pc.close(); } catch (e) {}
+  if (voice.stream) voice.stream.getTracks().forEach(t => t.stop());
+  Object.assign(voice, { dc: null, pc: null, stream: null, activeSince: 0, wantResponse: false });
+}
+const voiceBusy = () => voice.activeSince > 0 && Date.now() - voice.activeSince < VX_STALE_MS;
+function voiceRequest(body) {
+  const dc = voice.dc; if (!dc || dc.readyState !== "open") return;
+  if (voiceBusy()) { voice.wantResponse = true; return; }
+  voice.activeSince = Date.now();
+  dc.send(JSON.stringify(body ? { type: "response.create", response: body } : { type: "response.create" }));
+}
+function voiceReply(callId, text) {
+  const spoken = String(text || "").trim();
+  voiceFeed("result", spoken);
+  voice.history = [...voice.history, { role: "assistant", text: spoken }].slice(-12);
+  const dc = voice.dc; if (!dc || dc.readyState !== "open") return;
+  dc.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ spokenAnswer: spoken }) } }));
+  voice.followUp = true; voiceRequest();
+}
+const VX_YES = /^\s*(yes|yeah|yep|yup|sure|correct|confirm(ed)?|do it|go ahead|please do|ok(ay)?|right)\b[\s,.!]*(please|do it|go ahead|thanks?|thank you)?[\s.!]*$/i;
+const VX_NO = /^\s*(no|nope|cancel|don'?t|stop|never mind|leave it)\b[\s,.!]*$/i;
+async function voiceAsk(callId, utterance) {
+  let text = String(utterance || "").trim();
+  if (!text) { voiceReply(callId, ""); return; }
+  voiceFeed("asked", text);
+  voice.history = [...voice.history, { role: "you", text }].slice(-12);
+  let prefix = "";
+  if (!voice.pending && /^\s*(next|next one|the next one|skip( this one| it)?)[\s.!?]*$/i.test(text)) { voice.feed = voice.feed.filter(i => !(i.kind === "asked" && i.text === text)); await voiceNext(callId); return; }
+  if (voice.pending) {
+    const pending = voice.pending; voice.pending = null;
+    if (VX_YES.test(text)) { voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "sent", utterance: text }); voiceReply(callId, voiceApply(pending)); return; }
+    voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "declined", utterance: text });
+    if (VX_NO.test(text)) { voiceReply(callId, "Okay, I'll leave it."); return; }
+    prefix = "Okay, I'll leave that. ";
+  }
+  try {
+    const r = await fetch("/api/close-plans/voice", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planId: state.id, utterance: text, focusTaskId: ui.open || null, listIds: voice.listIds, history: voice.history.slice(-6), sessionId: voice.session }) });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) { voiceReply(callId, prefix + (res.error || "Sorry, something went wrong.")); return; }
+    voiceReply(callId, prefix + voiceHandle(res));
+  } catch (e) {
+    voiceAudit({ event: "error", outcome: "failed", utterance: text, spokenAnswer: "Could not reach the close plan assistant." });
+    voiceReply(callId, prefix + "I couldn't reach the plan. Check your connection.");
+  }
+}
+function voiceShowTask(id) {
+  const t = state.tasks.find(x => x.id === id); if (!t) return;
+  setPhaseOpen([t.phase], true); if (t.parent) ui.expanded.add(t.parent);
+  ui.open = id; ui.addSub = false; render();
+}
+// Applies the server's answer on the page and returns what to say.
+function voiceHandle(res) {
+  switch (res.mode) {
+    case "answer": if (res.taskId) voiceShowTask(res.taskId); return res.spokenAnswer;
+    case "open_task": voiceShowTask(res.taskId); return res.spokenAnswer;
+    case "list":
+      ui.filter = res.filter === "person" && res.personId ? `person:${res.personId}` : res.filter || "all";
+      voice.listIds = res.listIds || [];
+      if (res.phaseId) setPhaseOpen([res.phaseId], true);
+      if (res.taskId) voiceShowTask(res.taskId); else { ui.open = null; render(); }
+      return res.spokenAnswer;
+    case "confirm": voice.pending = { taskId: res.taskId, actions: res.actions || [] }; voiceShowTask(res.taskId); return res.spokenAnswer;
+    case "act": voiceShowTask(res.taskId); return voiceApply({ taskId: res.taskId, actions: res.actions || [] }, res.spokenAnswer);
+    case "add_task": return voiceAdd(res.newTask);
+    default: return res.spokenAnswer || "Sorry, I didn't get that.";
+  }
+}
+function voiceApply(change, said) {
+  const t = state.tasks.find(x => x.id === change.taskId);
+  if (!t) return "I couldn't find that task any more.";
+  if (!canUpdate(t)) return "You can't change that task.";
+  const edit = canEdit(t), today = new Date().toISOString().slice(0, 10), done = [];
+  let skipped = 0;
+  for (const a of change.actions) {
+    if (a.type === "set_status") {
+      if (t.status === a.status) continue;
+      t.status = a.status; t.closedAt = a.status === "Closed" ? today : null;
+      log(a.status === "Closed" ? `closed “${t.title}” by voice` : `set “${t.title}” to ${a.status} by voice`, t.id);
+      if (parentOf(t) && a.status !== "Open") startWork(parentOf(t));
+      done.push(a.status === "Closed" ? `Closed "${t.title}".` : `Set "${t.title}" to ${a.status}.`);
+    } else if (a.type === "post_update") {
+      t.updates.push({ by: me(), at: today, text: a.text, viaVoice: true });
+      log(`posted an update on “${t.title}” by voice`, t.id); startWork(t);
+      done.push(`Posted your update on "${t.title}".`);
+    } else if (!edit) { skipped++; }
+    else if (a.type === "set_due") {
+      const from = t.due;
+      if (from && from !== a.date) t.dateChanges = [...(t.dateChanges || []), { from, to: a.date, at: today, by: me() }];
+      t.due = a.date;
+      log(`${t.milestone ? "moved milestone" : "moved"} “${t.title}” ${from ? `from ${fmt(from)} ` : ""}to ${fmtY(a.date)}`, t.id);
+      done.push(`Moved "${t.title}" to ${fmtY(a.date)}.`);
+    } else if (a.type === "set_owner") {
+      t.owner = a.personId; t.coworkers = (t.coworkers || []).filter(x => x !== a.personId);
+      log(`assigned “${t.title}” to ${person(a.personId).name}`, t.id); done.push(`${person(a.personId).name} now owns "${t.title}".`);
+    } else if (a.type === "add_coworker" || a.type === "add_requester") {
+      const key = a.type === "add_coworker" ? "coworkers" : "recipients";
+      if (!(t[key] || []).includes(a.personId)) { t[key] = [...(t[key] || []), a.personId]; log(`added ${person(a.personId).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); }
+      done.push(`Added ${person(a.personId).name} as ${key === "coworkers" ? "coworker" : "requested by"}.`);
+    } else if (a.type === "rename") {
+      log(`renamed “${t.title}” to “${a.text}”`, t.id); t.title = a.text; done.push(`Renamed it to "${a.text}".`);
+    } else if (a.type === "set_description") {
+      t.desc = a.text; log(`edited the description of “${t.title}”`, t.id); done.push(`Updated the details of "${t.title}".`);
+    }
+  }
+  save(); render();
+  const note = skipped ? " You can only post updates and change the status on that task." : "";
+  return (done.length ? done.join(" ") : said || "Nothing needed changing.") + note;
+}
+function voiceAdd(n) {
+  if (!n) return "I didn't catch the task.";
+  if (!canCreate()) return "You can't add tasks to this plan.";
+  const parent = n.parentId ? state.tasks.find(x => x.id === n.parentId) : null;
+  const ph = state.phases.find(x => x.id === (parent ? parent.phase : n.phaseId));
+  if (!ph) return "Which phase should it go in?";
+  const id = newTaskId();
+  state.tasks.push({ id, phase: ph.id, parent: parent ? parent.id : null, title: n.title, owner: n.ownerId || me(), due: n.due || (parent && parent.due) || ph.end, status: "Open",
+    shared: parent ? parent.shared : !n.internal, createdBy: me(), updates: [], coworkers: [], recipients: parent ? [...(parent.recipients || [])] : [] });
+  log(parent ? `added subtask “${n.title}” to “${parent.title}” by voice` : `added “${n.title}” by voice`, id);
+  save(); voiceShowTask(parent ? parent.id : id);
+  const t = state.tasks.find(x => x.id === id);
+  return `Added ${parent ? `the subtask "${n.title}" to "${parent.title}"` : `"${n.title}" to ${ph.name}`}, owner ${person(t.owner).name}, due ${fmtY(t.due)}${t.shared ? "" : ", internal"}.`;
+}
+// "Next" goes straight to the next task of the list, without asking the AI.
+async function voiceNext(callId) {
+  voiceFeed("asked", "Next");
+  try {
+    const r = await fetch("/api/close-plans/voice", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planId: state.id, utterance: "next", action: "next", focusTaskId: ui.open || null, listIds: voice.listIds, sessionId: voice.session }) });
+    const res = await r.json().catch(() => ({}));
+    voiceReply(callId, r.ok ? voiceHandle(res) : res.error || "Sorry, something went wrong.");
+  } catch (e) { voiceReply(callId, "I couldn't reach the plan. Check your connection."); }
+}
+function voiceEvent(m) {
+  if (m.type === "response.function_call_arguments.done" && m.call_id) {
+    if (m.name === "next_item") { voiceNext(m.call_id); return; }
+    let u = ""; try { u = JSON.parse(m.arguments || "{}").utterance || ""; } catch (e) {}
+    voiceAsk(m.call_id, u);
+  } else if (m.type === "input_audio_buffer.speech_started" && m.item_id && voice.transcribing) voiceHeard(m.item_id, {});
+  else if (m.type === "conversation.item.input_audio_transcription.delta" && m.item_id && m.delta) voiceHeard(m.item_id, { append: m.delta });
+  else if (m.type === "conversation.item.input_audio_transcription.completed") {
+    const text = String(m.transcript || "").trim();
+    if (m.item_id) voiceHeard(m.item_id, { text, done: true });
+    if (text) voiceAudit({ event: "heard", utterance: text });
+  } else if (m.type === "response.created" && m.response && m.response.id) {
+    voice.activeSince = Date.now();
+    voice.kinds.set(m.response.id, voice.greeting ? "greeting" : voice.followUp ? "tool_result" : "direct");
+    voice.greeting = false; voice.followUp = false;
+  } else if ((m.type === "response.output_audio_transcript.done" || m.type === "response.audio_transcript.done") && m.response_id && m.transcript) {
+    voice.said.set(m.response_id, m.transcript);
+  } else if (m.type === "response.done" && m.response && m.response.id) {
+    voice.activeSince = 0;
+    const r = m.response, kind = voice.kinds.get(r.id) || "direct"; voice.kinds.delete(r.id);
+    const transcript = (r.output || []).flatMap(o => o.content || []).map(c => c.transcript || "").filter(Boolean).join(" ").trim() || voice.said.get(r.id) || "";
+    voice.said.delete(r.id);
+    const tool = (r.output || []).some(o => o.type === "function_call");
+    if (transcript) { voiceAudit({ event: "said", spokenAnswer: transcript, detail: { kind: tool ? "with_tool_call" : kind } }); if (tool || kind !== "tool_result") voiceFeed("said", transcript); }
+    if (voice.wantResponse) { voice.wantResponse = false; voiceRequest(); }
+  } else if (m.type === "error") voiceAudit({ event: "error", outcome: "failed", spokenAnswer: `Realtime session error: ${(m.error && m.error.message) || "unknown"}` });
+}
+async function voiceStart() {
+  Object.assign(voice, { error: "", feed: [], status: "connecting", history: [], listIds: [], pending: null, kinds: new Map(), said: new Map(),
+    session: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "s" + Date.now() + Math.random().toString(36).slice(2, 8) });
+  renderVoice();
+  try {
+    const r = await fetch("/api/close-plans/voice/session", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: state.id }) });
+    const s = await r.json().catch(() => ({}));
+    if (!s.clientSecret) throw new Error(s.error || "Could not start the voice assistant.");
+    voice.transcribing = s.transcription !== false;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); voice.stream = stream;
+    const pc = new RTCPeerConnection(); voice.pc = pc;
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    if (!voice.audio) { voice.audio = document.createElement("audio"); voice.audio.autoplay = true; }
+    pc.ontrack = e => { voice.audio.srcObject = e.streams[0]; };
+    const dc = pc.createDataChannel("oai-events"); voice.dc = dc;
+    dc.onopen = () => { voice.greeting = true; voiceRequest({ instructions: `Greet the person by saying exactly this and nothing else: "${voiceGreeting(s.firstName)}"` }); };
+    dc.onmessage = e => { let m = {}; try { m = JSON.parse(e.data); } catch (x) { return; } voiceEvent(m); };
+    pc.onconnectionstatechange = () => { if (pc.connectionState === "failed") { voiceAudit({ event: "session", mode: "connection_lost", outcome: "failed" }); voiceTeardown(); voice.status = "error"; voice.error = "The connection dropped. Tap the mic to start again."; renderVoice(); } };
+    const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+    const sdp = await fetch("https://api.openai.com/v1/realtime/calls", { method: "POST", headers: { authorization: `Bearer ${s.clientSecret}`, "content-type": "application/sdp" }, body: offer.sdp });
+    if (!sdp.ok) throw new Error(`The voice connection failed (${sdp.status}).`);
+    await pc.setRemoteDescription({ type: "answer", sdp: await sdp.text() });
+    voice.status = "connected"; voiceAudit({ event: "session", mode: "started", detail: { model: s.model } }); renderVoice();
+  } catch (err) {
+    voiceTeardown(); voice.status = "error";
+    voice.error = err && err.name === "NotAllowedError" ? "Microphone access was blocked. Allow it for this site and try again." : err && err.name === "NotFoundError" ? "No microphone was found." : (err && err.message) || "Could not start the voice assistant.";
+    voiceAudit({ event: "session", mode: "start_failed", outcome: "failed", spokenAnswer: voice.error }); renderVoice();
+  }
+}
+function voiceClose() {
+  if (voice.pc) voiceAudit({ event: "session", mode: "stopped" });
+  voiceTeardown(); Object.assign(voice, { open: false, min: false, status: "idle", error: "", pending: null }); renderVoice();
+}
+function renderVoice() {
+  let root = document.getElementById("voice-root");
+  if (!root) { root = document.createElement("div"); root.id = "voice-root"; document.body.appendChild(root); }
+  if (!voiceAvailable()) { if (voice.open) voiceClose(); root.innerHTML = ""; return; }
+  const side = ui.open || ui.manage ? "left" : "";
+  if (!voice.open || voice.min) {
+    root.innerHTML = `<button type="button" class="vx-btn ${side}" data-vx-open>${voice.open ? `<span class="vx-dot on"></span>Listening` : "🎙 Voice assistant"}</button>`;
+    root.querySelector("[data-vx-open]").onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); };
+    return;
+  }
+  const t = ui.open && state.tasks.find(x => x.id === ui.open);
+  const items = voice.feed.map((i, n) => {
+    if (i.kind === "asked") { const b = voice.feed[n - 1]; if (b && b.kind === "heard" && b.text.toLowerCase().replace(/\W+/g, "") === i.text.toLowerCase().replace(/\W+/g, "")) return ""; return `<div class="vx-asked">asked the plan: “${esc(i.text)}”</div>`; }
+    return `<div class="vx-item ${i.kind} ${i.pending ? "pending" : ""}">${esc(i.text) || "…"}</div>`;
+  }).join("");
+  const live = voice.status === "connected" || voice.status === "connecting";
+  root.innerHTML = `<div class="vx-panel ${side}" role="dialog" aria-label="Voice assistant">
+    <div class="vx-head"><span class="vx-dot ${voice.status === "connected" ? "on" : voice.status === "error" ? "bad" : ""}"></span><h2>Voice assistant</h2>
+      <button type="button" class="vx-x" data-vx-min aria-label="Minimise (keeps listening)" title="Minimise (keeps listening)">▾</button><button type="button" class="vx-x" data-vx-close aria-label="Stop and close" title="Stop and close">×</button></div>
+    ${t ? `<div class="vx-screen" title="${esc(t.title)}">On screen: ${esc(t.title)}</div>` : ""}
+    <div class="vx-feed" aria-live="polite">${items || `<div class="vx-hint">${voice.status === "connecting" ? "Connecting…" : `Just talk. Try “where do we stand?”, “what is ${esc(B())} waiting on?” or “add a task to the current phase”.`}</div>`}</div>
+    ${voice.error ? `<div class="vx-err">${esc(voice.error)}</div>` : ""}
+    <div class="vx-foot">${live ? `<button type="button" class="vx-mic stop" data-vx-close aria-label="Stop">■</button>` : `<button type="button" class="vx-mic" data-vx-start aria-label="Start again">🎙</button>`}<span>${voice.status === "connecting" ? "Connecting…" : voice.status === "connected" ? "Listening, just talk" : "Tap the mic to start again"}</span></div>
+  </div>`;
+  const feed = root.querySelector(".vx-feed"); if (feed) feed.scrollTop = feed.scrollHeight;
+  root.querySelectorAll("[data-vx-close]").forEach(b => b.onclick = voiceClose);
+  const mn = root.querySelector("[data-vx-min]"); if (mn) mn.onclick = () => { voice.min = true; renderVoice(); };
+  const st = root.querySelector("[data-vx-start]"); if (st) st.onclick = () => voiceStart();
+}
+
 function openDemoPlan() {
   const demo = { ...seed(), _demo: true };
   store.plans = [...store.plans.filter(p => !p._demo), demo];
