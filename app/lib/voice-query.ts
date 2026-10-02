@@ -111,7 +111,7 @@ export function draftNotifyMessage(subject: string, due: string | null, toFirstN
 export function describeTaskForWalk(t: StoredTask): string {
   const parts = [`${t.subject}.`];
   const description = t.description.trim();
-  if (description) parts.push(/[.!?]$/.test(description) ? description : `${description}.`);
+  if (description) parts.push(`Details: ${/[.!?]$/.test(description) ? description : `${description}.`}`);
   parts.push(`Status: ${t.status}.`);
   parts.push(t.due ? `Due ${speakableDate(t.due)}.` : "No due date.");
   if (t.updates.length) parts.push(`Last update: ${t.updates[t.updates.length - 1].text}`);
@@ -229,7 +229,7 @@ export function computeMatches(f: Filters, visible: StoredTask[], actorName: str
     if (f.opportunity && t.opportunityName !== f.opportunity) return false;
     if (f.source && t.source !== f.source) return false;
     if (f.priority && t.priority !== f.priority) return false;
-    if (f.status && t.status !== f.status) return false;
+    if (f.status === "Not closed" ? t.status === "Closed" : f.status && t.status !== f.status) return false;
     if (f.textContains && !`${t.subject} ${t.description}`.toLowerCase().includes(f.textContains.toLowerCase())) return false;
     if (f.dueWithin === "overdue" && !(t.due && t.due < today && t.status !== "Closed")) return false;
     if (f.dueWithin === "week" && !(t.due && t.due >= today && t.due <= weekAhead && t.status !== "Closed")) return false;
@@ -256,7 +256,8 @@ export function describeFilterPhrase(f: Filters): string {
   if (f.opportunity) parts.push(`on the ${f.opportunity} opportunity`);
   if (f.source) parts.push(`from ${f.source}`);
   if (f.priority) parts.push(`marked ${f.priority} priority`);
-  if (f.status) parts.push(`with status ${f.status}`);
+  if (f.status === "Not closed") parts.push("still open or in progress");
+  else if (f.status) parts.push(`with status ${f.status}`);
   if (f.textContains) parts.push(`with "${f.textContains}" in the subject or description`);
   if (f.isNew) parts.push("flagged new");
   if (f.hasUnseenUpdate) parts.push("with a new status update");

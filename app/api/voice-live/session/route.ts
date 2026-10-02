@@ -1,3 +1,6 @@
+import { getDb } from "../../../../db";
+import { tasks } from "../../../../db/schema";
+import { canSeeTask } from "../../../lib/permissions";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
 
@@ -52,6 +55,14 @@ export async function POST(request: Request) {
   // defaults to the model OpenAI now recommends instead.
   const transcribeModel = process.env.OPENAI_REALTIME_TRANSCRIBE_MODEL || "gpt-transcribe";
 
+  // The names that come up on this person's tasks, so the model hears
+  // them right — a live audit (2026-10-02) had "Drew Klein" heard as
+  // "Brew Client". Only people on tasks they can already see (the same
+  // canSeeTask scoping as /api/voice-query), never the whole user list.
+  const rows = await getDb().select({ owner: tasks.owner, collaborators: tasks.collaborators, recipients: tasks.recipients, project: tasks.project, topic: tasks.topic, recurringMeeting: tasks.recurringMeeting, mergedIntoTaskId: tasks.mergedIntoTaskId }).from(tasks);
+  const names = [...new Set(rows.filter(t => !t.mergedIntoTaskId && canSeeTask(t, actor)).flatMap(t => [t.owner, ...t.collaborators, ...t.recipients]).map(n => String(n || "").trim()).filter(n => n && n.length <= 60))].slice(0, 150);
+  const namesText = names.length ? ` Names you may hear (spell them exactly like this when you pass on what the person said): ${names.join(", ")}.` : "";
+
   const mint = (withTranscription: boolean) => fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -66,7 +77,7 @@ export async function POST(request: Request) {
         // (so Task AI lost "my"/"overdue"), (c) chatting before the tool
         // returned and then colliding with the tool's own answer, and
         // (d) paraphrasing a send-this-message confirmation.
-        instructions: "You are Task AI's voice assistant, in a live spoken conversation with a colleague. Keep every reply short and natural — it is spoken aloud. You know nothing about their tasks yourself and never answer a question about tasks, people, due dates, lists or checklists from your own knowledge. For anything about tasks — looking something up, filtering, opening or reading a task, creating or changing one, checklist items, notifying someone — call ask_task_ai straight away. Do not say anything before calling it (no 'let me check', no 'sure'), and pass what the person said as close to word for word as you can, even when it is only a fragment like 'the first one', 'yes' or 'no, send it to Maya instead'. Never reword it, expand it or fill in details they did not say: Task AI keeps track of the list on their screen and of the task they are looking at, and works that out itself. When the person says 'next', 'next one', 'next task', 'skip this one' or 'what's next', call next_task instead. When a tool returns, speak its spokenAnswer: you may smooth the wording for speech but never change, add or drop a fact, name, date, number or count, and never add facts of your own. If spokenAnswer asks a question (confirming a message before it is sent, or a delete), read the question aloud exactly — including any message in quotes — then wait, and pass their reply to ask_task_ai word for word. Never say anything was changed, created, sent or checked off unless a tool result says so; if a result says something could not be done, say that plainly. Only greet the person when you are explicitly asked to.",
+        instructions: "You are Task AI's voice assistant, in a live spoken conversation with a colleague. Keep every reply short and natural — it is spoken aloud. You know nothing about their tasks yourself and never answer a question about tasks, people, due dates, lists or checklists from your own knowledge. For anything about tasks — looking something up, filtering, opening or reading a task, creating or changing one, checklist items, notifying someone — call ask_task_ai straight away. Do not say anything before calling it (no 'let me check', no 'sure'), and pass what the person said as close to word for word as you can, even when it is only a fragment like 'the first one', 'yes' or 'no, send it to Maya instead'. Never reword it, expand it or fill in details they did not say: Task AI keeps track of the list on their screen and of the task they are looking at, and works that out itself. When the person says 'next', 'next one', 'next task', 'skip this one' or 'what's next', call next_task instead. When a tool returns, speak its spokenAnswer: you may smooth the wording for speech but never change, add or drop a fact, name, date, number or count, and never add facts of your own. If spokenAnswer asks a question (confirming a message before it is sent, or a delete), read the question aloud exactly — including any message in quotes — then wait, and pass their reply to ask_task_ai word for word. Never say anything was changed, created, sent or checked off unless a tool result says so; if a result says something could not be done, say that plainly. Only greet the person when you are explicitly asked to. No small talk and no enthusiasm or filler ('Haha', 'So nice to chat', 'Awesome!'): when nothing needs doing, answer in one short sentence or simply say 'Okay.' If the person is clearly talking to someone else in the room or thinking aloud ('let me check', 'interesting', 'hmm', a question addressed to another person by name), do not call a tool and do not answer — at most say 'Okay.'" + namesText,
         tools: [{
           type: "function",
           name: "ask_task_ai",
