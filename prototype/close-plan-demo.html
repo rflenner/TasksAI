@@ -127,6 +127,7 @@ button { cursor: pointer; }
 .fold-all { display: flex; justify-content: flex-end; gap: 4px; margin: 18px 0 -14px; font-size: 12px; }
 .fold-all button { border: 0; background: transparent; color: var(--navy); font-weight: 700; cursor: pointer; padding: 3px 6px; border-radius: 6px; font-size: 12px; }
 .fold-all button:hover { background: #e8edf3; }
+.pdf-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; font-size: 14px; }
 .cur-tag { background: var(--navy); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .4px; border-radius: 999px; padding: 3px 9px; }
 
 .cards { display: grid; gap: 9px; }
@@ -1123,7 +1124,7 @@ function titleBlock() {
     </div>
     <div class="title-actions">
       ${ui.mode === "seller" ? `<button type="button" class="btn" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : ""}
-      ${canCreate() && ui.tab === "plan" ? `<button type="button" class="btn primary" id="new-task"><span class="i i-plus" style="width:16px;height:16px"></span>New task</button>` : ""}
+      <button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>
       ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
         ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${me() === state.planOwners.seller ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
@@ -1186,6 +1187,7 @@ function filterBar() {
 }
 
 
+const DOWNLOAD = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>`;
 const DOTS = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>`;
 const PENCIL = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
 const isCurrent = ph => TODAY >= d(ph.start) && TODAY <= d(ph.end);
@@ -1869,7 +1871,7 @@ function openReport() {
   ui.planMenu = false; render();
   const root = $("#report-root");
   root.innerHTML = `<div class="overlay em-overlay report-overlay" data-rclose-bg><div class="report-wrap">
-    <div class="report-bar"><b>Client PDF preview</b><span class="hint" style="margin:0">Shared tasks only · internal tasks are left out</span><span style="flex:1"></span><button type="button" class="btn sm" data-rclose>Close</button><button type="button" class="btn sm primary" data-rprint>Print / Save as PDF</button></div>
+    <div class="report-bar"><b>${ui.mode === "seller" ? `PDF for ${esc(B())}` : "Your close plan as PDF"}</b><span class="hint" style="margin:0">${ui.mode === "seller" ? "Shared tasks only · internal tasks are left out" : "Choose “Save as PDF” in the print dialog"}</span><span style="flex:1"></span><button type="button" class="btn sm" data-rclose>Close</button><button type="button" class="btn sm primary" data-rprint>Print / Save as PDF</button></div>
     ${reportHtml()}
   </div></div>`;
   const close = () => { root.innerHTML = ""; };
