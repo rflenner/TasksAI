@@ -666,6 +666,10 @@ button.wz-card { font: inherit; text-align: left; }
 .r-subtask td:nth-child(2) { padding-left: 22px; }
 .r-desc { color: #6f7885; font-size: .92em; margin-top: 2px; }
 .r-sub { color: #8a919c; font-size: .88em; }
+.r-phase-head { background: #eef2f7; border-left: 4px solid #173f76; border-radius: 6px; padding: 8px 12px; margin: 22px 0 8px; break-after: avoid; page-break-after: avoid; }
+.r-phase-head h3 { margin: 0; }
+.r-phase-head h3 em { margin-left: auto; font-style: normal; font-size: 11px; font-weight: 700; color: #5b6577; }
+.r-phase-head .r-goal { margin: 3px 0 0; }
 .r-phase .r-table { table-layout: fixed; }
 .r-phase .r-table th:nth-child(1) { width: 82px; }
 .r-phase .r-table th:nth-child(3), .r-phase .r-table th:nth-child(4) { width: 130px; }
@@ -1837,7 +1841,8 @@ function reportHtml() {
       return `<tr class="r-task"><td>${statusTag(t)}</td><td><b>${esc(t.title)}</b>${t.milestone ? ` <span class="r-ms">◆ Milestone</span>` : ""}${t.desc ? `<div class="r-desc">${esc(t.desc)}</div>` : ""}</td><td>${esc(person(t.owner).name)}${(t.coworkers || []).length ? `<div class="r-sub">with ${who(t.coworkers)}</div>` : ""}</td><td>${(t.recipients || []).length ? who(t.recipients) : "–"}</td><td class="r-due">${dueTxt(t)}</td></tr>`
         + subs.map(k => `<tr class="r-subtask"><td>${statusTag(k)}</td><td>↳ ${esc(k.title)}</td><td>${esc(person(k.owner).name)}</td><td></td><td class="r-due">${dueTxt(k)}</td></tr>`).join("");
     }).join("");
-    return `<section class="r-phase"><h3>${i + 1}. ${esc(p.name)} <span>${fmt(p.start)} – ${fmtY(p.end)}</span></h3>${p.goal ? `<p class="r-goal">${esc(p.goal)}</p>` : ""}
+    const inPhase = tasks.filter(k => k.phase === p.id), done = inPhase.filter(k => k.status === "Closed").length;
+    return `<section class="r-phase"><div class="r-phase-head"><h3>${i + 1}. ${esc(p.name)} <span>${fmt(p.start)} – ${fmtY(p.end)}</span><em>${done}/${inPhase.length} closed</em></h3>${p.goal ? `<p class="r-goal">${esc(p.goal)}</p>` : ""}</div>
       <table class="r-table"><thead><tr><th>Status</th><th>Step</th><th>Owner</th><th>Requested by</th><th>Due</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join("");
   const team = side => state.people.filter(p => p.side === side && !/Shared mailbox/.test(p.title || "")).map(p => `<tr><td><b>${esc(p.name)}</b>${state.planOwners[side] === p.id ? ` <span class="r-owner">Plan owner</span>` : ""}</td><td>${esc(p.title && !/Placeholder|No title/.test(p.title) ? p.title : "")}</td><td>${esc(p.role || "")}</td></tr>`).join("");
