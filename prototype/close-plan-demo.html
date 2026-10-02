@@ -64,13 +64,14 @@ button { cursor: pointer; }
 .demo-bar .link { border: 0; background: none; color: #b9c7da; text-decoration: underline; font-size: 12px; }
 
 /* Page title */
-.title { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 30px; flex-wrap: wrap; }
+.title { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 30px; }
+.title > div:first-child { flex: 1; min-width: 0; }
 .title label { color: var(--navy); font-size: 11px; letter-spacing: 1.5px; font-weight: 800; }
 .title h1 { font-size: 34px; color: var(--dark); margin: 8px 0; line-height: 1.15; text-wrap: balance; }
 .title p { color: var(--muted); margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .title p b { color: var(--ink); }
 .crm-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef4fc; color: var(--navy); border: 1px solid #dce7f5; border-radius: 14px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
-.title-actions { display: flex; gap: 10px; align-items: center; }
+.title-actions { display: flex; gap: 10px; align-items: center; flex: none; }
 .btn { height: 42px; border: 1px solid #d7dce3; background: #fff; border-radius: 8px; padding: 0 18px; font-weight: 700; color: var(--navy); display: inline-flex; align-items: center; gap: 8px; }
 .btn.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
 .btn.sm { height: 34px; padding: 0 12px; font-size: 13px; }
