@@ -72,7 +72,7 @@ export default function VoiceLiveClient() {
   async function start() {
     setError(""); setLog([]); setStatus("connecting");
     try {
-      const sessionRes = await fetch("/api/voice-test-realtime/session", { method: "POST" });
+      const sessionRes = await fetch("/api/voice-live/session", { method: "POST" });
       const session = await sessionRes.json() as { clientSecret?: string; error?: string };
       if (!session.clientSecret) throw new Error(session.error || "Could not start a realtime session");
 

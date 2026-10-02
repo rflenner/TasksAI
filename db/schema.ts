@@ -302,3 +302,26 @@ export const closePlanDocuments = pgTable("close_plan_documents", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, table => [index("close_plan_documents_updated_idx").on(table.updatedAt)]);
+// Voice audit trail (drizzle/0022_voice_audit.sql): one row per thing that
+// happened in a voice session — what was heard, what Task AI did with it
+// (or why it didn't), what was said back, how a confirmation turned out.
+// `source` is which assistant ("live" = Live Voice Assistant, "ask" =
+// Deepgram-based Ask Task AI); `event` is the kind of row (see
+// app/lib/voice-audit.ts for the vocabulary). Free-text columns hold
+// transcripts, so rows are pruned on a retention window and only site
+// admins can read them.
+export const voiceAudit = pgTable("voice_audit", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull(),
+  sessionId: text("session_id").notNull().default(""),
+  source: text("source").notNull().default("ask"),
+  event: text("event").notNull(),
+  utterance: text("utterance").notNull().default(""),
+  mode: text("mode"),
+  outcome: text("outcome"),
+  taskIds: jsonb("task_ids").$type<number[]>().notNull().default([]),
+  spokenAnswer: text("spoken_answer").notNull().default(""),
+  detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+}, table => [index("voice_audit_created_idx").on(table.createdAt), index("voice_audit_session_idx").on(table.sessionId)]);
