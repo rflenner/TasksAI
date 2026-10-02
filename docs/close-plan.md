@@ -263,6 +263,13 @@ screen uses the plan's account name instead of a hard-coded customer.
   reorder (up/down), add and delete phases, all from a three-dot menu on the phase header. Deleting a phase never deletes tasks:
   an empty phase is removed straight away; a phase with tasks asks where its
   tasks go (default: the neighbouring phase), then asks once more to confirm.
+- **Phases fold away.** Open by default: the current phase(s), past phases that
+  still have open tasks, and any phase with an overdue task; with nothing current,
+  the next phase to start. Future and finished phases are folded into one line
+  (open count, overdue count, next due task). With a filter on, phases with a
+  match are open. Each viewer's own open/fold choice wins and is remembered per
+  plan in their browser; "Expand all" / "Collapse all" sit above the phases, and
+  jumping from the timeline or adding a task opens that phase.
 - Timeline: when no phases overlap, one compact lane with every phase placed by
   date (name and dates inside the bar). As soon as any two overlap, it switches
   to a Gantt view: one row per phase in plan order on a shared

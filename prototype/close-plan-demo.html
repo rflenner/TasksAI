@@ -114,6 +114,19 @@ button { cursor: pointer; }
 .group-title .gt-right { margin-left: auto; text-align: right; font-size: 11px; color: #9097a1; white-space: nowrap; }
 .pbar { width: 110px; height: 5px; border-radius: 5px; background: #e4eaf1; overflow: hidden; margin: 5px 0 0 auto; }
 .pbar i { display: block; height: 100%; background: var(--green); }
+.ph-fold { border: 0; background: transparent; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: #6b7482; cursor: pointer; flex: none; padding: 0; }
+.ph-fold:hover { background: #e8edf3; color: var(--navy); }
+.ph-fold svg { transition: transform .15s; }
+.group.folded .ph-fold svg { transform: rotate(-90deg); }
+.ph-head { min-width: 0; cursor: pointer; }
+.group.folded { margin-top: 12px; }
+.group.folded .group-title { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 10px 8px; margin: 0; }
+.group.folded .group-title:hover { border-color: var(--soft-line); }
+.ph-sum { color: #697181; display: block; font-size: 12px; }
+.ph-sum .late { color: var(--late); font-weight: 700; }
+.fold-all { display: flex; justify-content: flex-end; gap: 4px; margin: 18px 0 -14px; font-size: 12px; }
+.fold-all button { border: 0; background: transparent; color: var(--navy); font-weight: 700; cursor: pointer; padding: 3px 6px; border-radius: 6px; font-size: 12px; }
+.fold-all button:hover { background: #e8edf3; }
 .cur-tag { background: var(--navy); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .4px; border-radius: 999px; padding: 3px 9px; }
 
 .cards { display: grid; gap: 9px; }
@@ -1261,20 +1274,60 @@ function deletePhaseNow(id, to) {
   save(); render(); toast(`Phase “${ph.name}” deleted${moved ? `, ${moved} tasks moved` : ""}`);
 }
 
+// Phases fold away to keep long plans digestible. By default the current phase(s), past phases with open
+// tasks and any phase with an overdue task are open; future and finished phases are folded. When no phase is current (before the plan starts or
+// between phases) the next phase to start is open. With a filter on, phases with a match are open. A viewer's
+// own choice wins and is remembered per plan in this browser only.
+const CHEVRON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+function phaseChoices() {
+  if (ui.foldFor !== state.id) {
+    ui.foldFor = state.id; ui.fold = {};
+    try { ui.fold = JSON.parse(localStorage.getItem(`${STORE_KEY}:fold:${state.id}`) || "{}") || {}; } catch (e) {}
+  }
+  return ui.fold;
+}
+function setPhaseOpen(ids, open) {
+  const c = phaseChoices(); ids.forEach(id => { c[id] = open; });
+  try { localStorage.setItem(`${STORE_KEY}:fold:${state.id}`, JSON.stringify(c)); } catch (e) {}
+}
+function phaseOpenByDefault(ph, all, tops) {
+  if (ui.filter !== "all") return tops.length > 0;
+  if (isCurrent(ph) || all.some(t => t.status !== "Closed" && matches(t, "overdue"))) return true;
+  if (d(ph.end) < TODAY) return all.some(t => t.status !== "Closed");
+  if (state.phases.some(isCurrent)) return false;
+  const next = state.phases.filter(p => d(p.start) > TODAY).sort((a, b) => d(a.start) - d(b.start))[0];
+  return next === ph;
+}
+function phaseIsOpen(ph, all, tops) {
+  if (ui.editPhase === ph.id || ui.inlineAdd === ph.id) return true;
+  const c = phaseChoices()[ph.id];
+  return c === undefined ? phaseOpenByDefault(ph, all, tops) : c;
+}
+function phaseSummary(all) {
+  const open = all.filter(t => t.status !== "Closed"), late = open.filter(t => matches(t, "overdue")).length;
+  const next = open.filter(t => t.due).sort((a, b) => d(a.due) - d(b.due))[0];
+  if (!all.length) return "No tasks yet";
+  if (!open.length) return "All tasks closed";
+  return `${open.length} open${late ? ` · <span class="late">${late} overdue</span>` : ""}${next ? ` · next: ${esc(next.title)}, ${fmt(next.due)}` : ""}`;
+}
+
 function phasesBlock() {
   const owner = canEditPhases();
   const n = state.phases.length;
-  return state.phases.map((ph, i) => {
+  const foldAll = n > 1 ? `<div class="fold-all"><button type="button" data-foldall="1">Expand all</button><button type="button" data-foldall="0">Collapse all</button></div>` : "";
+  return foldAll + state.phases.map((ph, i) => {
     const all = state.tasks.filter(t => t.phase === ph.id && visible(t));
     const tops = all.filter(t => !t.parent && (ui.filter === "all" || matches(t) || children(t.id).filter(visible).some(k => matches(k))));
     const closed = all.filter(t => t.status === "Closed").length;
     const cur = isCurrent(ph);
     const complete = all.length && closed === all.length;
     const editing = ui.editPhase === ph.id;
-    return `<section class="group ${cur ? "current" : ""} ${complete ? "complete" : ""}" id="ph-${ph.id}">
+    const open = phaseIsOpen(ph, all, tops);
+    return `<section class="group ${cur ? "current" : ""} ${complete ? "complete" : ""} ${open ? "" : "folded"}" id="ph-${ph.id}">
       <div class="group-title">
+        <button type="button" class="ph-fold" data-phfold="${ph.id}" aria-expanded="${open}" aria-controls="cards-${ph.id}" aria-label="${open ? "Collapse" : "Expand"} ${esc(ph.name)}" title="${open ? "Collapse" : "Expand"} phase">${CHEVRON}</button>
         <span class="avatar">${complete ? "✓" : i + 1}</span>
-        <div style="min-width:0"><h2>${esc(ph.name)} ${cur ? `<span class="cur-tag">CURRENT PHASE</span>` : ""}</h2><small>${esc(ph.goal)}</small></div>
+        <div class="ph-head" data-phfold-head="${ph.id}"><h2>${esc(ph.name)} ${cur ? `<span class="cur-tag">CURRENT PHASE</span>` : ""}</h2>${open ? `<small>${esc(ph.goal)}</small>` : `<span class="ph-sum">${phaseSummary(all)}</span>`}</div>
         <div class="gt-right">${fmt(ph.start)} – ${fmtY(ph.end)}<div class="pbar"><i style="width:${all.length ? closed / all.length * 100 : 0}%"></i></div>${closed}/${all.length} closed</div>
         ${owner ? `<div class="ph-tools">
           <button type="button" class="ph-btn ${ui.phaseMenu === ph.id || editing ? "on" : ""}" data-phmenu="${ph.id}" aria-haspopup="menu" aria-expanded="${ui.phaseMenu === ph.id}" aria-label="Phase options for ${esc(ph.name)}" title="Phase options">${DOTS}</button>
@@ -1287,14 +1340,14 @@ function phasesBlock() {
         </div>` : ""}
       </div>
       ${editing ? phaseEditForm(ph) : ""}
-      <div class="cards" data-phase="${ph.id}">
+      ${!open ? "" : `<div class="cards" id="cards-${ph.id}" data-phase="${ph.id}">
         ${tops.map(cardHtml).join("") || `<div class="empty">No tasks in this phase match the filter.</div>`}
         ${!canCreate() ? "" : ui.inlineAdd === ph.id ? `<form class="card inline-new" data-inline="${ph.id}">
             <input type="checkbox" class="card-check" disabled aria-hidden="true" tabindex="-1">
             <div class="card-body"><input class="inline-title" id="inline-${ph.id}" placeholder="Task name" autocomplete="off" aria-label="Name of the new task in ${esc(ph.name)}">
               <div class="inline-foot"><span class="hint" style="margin:0">Enter adds it and starts the next one · Esc cancels</span><span class="inline-btns"><button type="button" class="btn sm" data-inline-cancel>Cancel</button><button type="submit" class="btn sm primary">Add task</button></span></div></div>
           </form>` : `<button type="button" class="add-task-btn" data-inline-open="${ph.id}"><span class="i i-plus"></span>Add a task</button>`}
-      </div>
+      </div>`}
     </section>`;
   }).join("") + (owner ? (ui.editPhase === "new" ? `<section class="group"><div class="group-title"><span class="avatar">${n + 1}</span><div><h2>New phase</h2></div></div>${phaseEditForm(null)}</section>` : `<button type="button" class="add-phase" data-phedit="new"><span class="i i-plus"></span>Add phase</button>`) : "");
 }
@@ -2103,7 +2156,11 @@ function closeDrawer() { ui.open = null; ui.addSub = false; ui.picker = null; re
 function wirePage() {
   const app = $("#app");
   app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { ui.filter = ui.filter === b.dataset.f && b.classList.contains("stat") ? "all" : b.dataset.f; render(); });
-  app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => document.getElementById("ph-" + b.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { setPhaseOpen([b.dataset.jump], true); render(); document.getElementById("ph-" + b.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
+  const fold = id => { const open = !document.getElementById("ph-" + id).classList.contains("folded"); setPhaseOpen([id], !open); render(); };
+  app.querySelectorAll("[data-phfold]").forEach(b => b.onclick = e => { e.stopPropagation(); fold(b.dataset.phfold); });
+  app.querySelectorAll("[data-phfold-head]").forEach(h => h.onclick = () => fold(h.dataset.phfoldHead));
+  app.querySelectorAll("[data-foldall]").forEach(b => b.onclick = () => { setPhaseOpen(state.phases.map(p => p.id), b.dataset.foldall === "1"); render(); });
   app.querySelectorAll(".card[data-open]").forEach(c => {
     c.onclick = () => { ui.open = c.dataset.open; render(); };
     c.onkeydown = e => { if ((e.key === "Enter" || e.key === " ") && e.target === c) { e.preventDefault(); ui.open = c.dataset.open; render(); } };
@@ -2902,6 +2959,7 @@ function addTask(phase, parent, title, focusTitle = false) {
 // to another phase. The order is the order of the tasks list itself; subtasks travel with their main task.
 function openInlineAdd(phaseId, scroll = false) {
   ui.inlineAdd = phaseId; if (ui.filter !== "all") ui.filter = "all";
+  setPhaseOpen([phaseId], true);
   render();
   const inp = document.getElementById("inline-" + phaseId);
   if (inp) { if (scroll) inp.scrollIntoView({ behavior: "smooth", block: "center" }); inp.focus({ preventScroll: scroll }); }
