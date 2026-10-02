@@ -52,3 +52,23 @@ test("pickRequestName reuses a known name only when it shares words with what wa
   assert.equal(pickRequestName("Who Changed A Task", "Task History By Voice", known, "who changed this task? I want to see its history"), "Task History By Voice");
   assert.equal(pickRequestName("Meeting Agenda", "Made Up Name", known, "prepare the agenda"), "Meeting Agenda");
 });
+
+test("Task AI's voice: help list, and the audit counts unsupported requests as not done", async () => {
+  const { taskAiCapabilities, isHelpRequest: help } = await import("../app/lib/voice-help");
+  const { outcomeForResponse } = await import("../app/lib/voice-audit");
+  const groups = taskAiCapabilities("Drew");
+  assert.ok(groups.find(g => g.group === "Tell someone")!.items.includes("Notify the owner"));
+  assert.ok(groups.flatMap(g => g.items).includes("Show new tasks"));
+  assert.equal(help("What can you do?"), true);
+  assert.equal(outcomeForResponse(true, { mode: "unsupported" }).outcome, "not_done");
+  assert.equal(outcomeForResponse(true, { mode: "wish" }).outcome, "shown");
+  assert.equal(outcomeForResponse(true, { mode: "help" }).outcome, "shown");
+});
+
+test("an unrelated known name copied by the AI is not used", async () => {
+  const { pickRequestName, nameFromWords } = await import("../app/lib/voice-requests");
+  const known = ["Task History By Voice"];
+  assert.equal(pickRequestName("Task History By Voice", "Task History By Voice", known, "Please invite Drew to Task AI"), "Invite Drew To Task AI");
+  assert.equal(pickRequestName("Invite Users", null, known, "Please invite Drew to Task AI"), "Invite Users");
+  assert.equal(nameFromWords("Can you please export this to Excel?"), "Export This To Excel");
+});

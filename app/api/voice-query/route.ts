@@ -8,7 +8,9 @@ import { resolveTaskNames } from "../../lib/name-resolution";
 import { resolvePrefs } from "../../lib/notification-prefs";
 import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
-import { auditRowForVoiceQuery, recordVoiceAudit, type VoiceAuditCollector } from "../../lib/voice-audit";
+import { auditRowForVoiceQuery, cleanSessionId, recordVoiceAudit, type VoiceAuditCollector } from "../../lib/voice-audit";
+import { isHelpRequest, TASK_AI_HELP } from "../../lib/voice-help";
+import { knownRequestNames, pickRequestName, recordRequestAsk } from "../../lib/voice-requests";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
 import { resolveDueDate } from "../../lib/task-defaults";
@@ -38,9 +40,13 @@ import {
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["mode", "filters", "navigateTarget", "target", "actions", "notifyPersonName", "notifyMessage", "answer"],
+  required: ["mode", "filters", "navigateTarget", "target", "actions", "notifyPersonName", "notifyMessage", "answer", "requestName", "sameAsKnownRequest"],
   properties: {
-    mode: { type: "string", enum: ["filter", "answer", "navigate", "open_task", "act", "next", "walk", "briefing", "create_task", "notify", "unclear"] },
+    mode: { type: "string", enum: ["filter", "answer", "navigate", "open_task", "act", "next", "walk", "briefing", "create_task", "notify", "unsupported", "wish", "unclear"] },
+    // For "unsupported"/"wish" only: the product request it gets filed under
+    // (see app/lib/voice-requests.ts and /voice-requests).
+    requestName: { type: ["string", "null"] },
+    sameAsKnownRequest: { type: ["string", "null"] },
     filters: {
       type: "object",
       additionalProperties: false,
@@ -234,6 +240,8 @@ async function handleVoiceQuery(request: Request, collector: VoiceAuditCollector
   }
 
   if (!transcript?.trim() && !wantsNextAction) return Response.json({ error: "Nothing was asked" }, { status: 400 });
+  // "What can you do?" is answered from the capability list (app/lib/voice-help.ts), never by the model.
+  if (transcript && isHelpRequest(transcript)) return Response.json({ mode: "help", filters: null, spokenAnswer: TASK_AI_HELP });
   // Confirmed live 2026-09-08: "it doesn't seem to remember what was
   // chatted before" — every turn was previously classified in total
   // isolation (only currentTaskId/workingList carried over, which is
@@ -373,6 +381,7 @@ async function handleVoiceQuery(request: Request, collector: VoiceAuditCollector
     people = userRows.map(u => ({ name: u.name, role: u.role, lastActive: describeLastActive(lastActiveByUser.get(u.id) ?? null) }));
   }
 
+  const requestNames = await knownRequestNames().catch(() => [] as string[]);
   const model = process.env.OPENAI_MODEL || "gpt-5-mini";
   // Confirmed live 2026-09-08: after this route's schema/prompt grew a
   // lot (account/opportunity/source, briefing, create_task, six new act
@@ -429,10 +438,13 @@ Decide exactly one of:
   goto_next: only when they also say to move on ("...then next one") — one further entry, every field null, put last, never combined with delete_task or with target.applyToWorkingList (bulk commands don't have a single "next" to advance to).
 - "notify": let someone connected to the current task know something, by email or Slack — "let Shankar know this is overdue", "notify the owner", "remind Pavneet about the playbook task", "ping whoever owns this." Needs a task currently open/in focus — if none is, use "unclear" instead and say so. Set notifyPersonName to who they named, or leave it null for "the owner"/"them"/"whoever owns this" (the common, unnamed case). Set notifyMessage ONLY when they dictated specific wording to say ("tell them I need this by Friday") — leave it null to let the caller draft an ordinary reminder. This NEVER sends anything itself — the caller drafts the actual message and asks for a spoken yes/no first. Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
 - "next": move on to the following task of the list on screen, with no other change requested ("next task", "what's next", "skip this one"). ALSO use "next" when your own last turn (see the conversation history above) just asked "want me to walk you through them?" (a briefing ends with exactly that question) and the user now agrees in any way ("yes", "sure", "go ahead", "walk me through them") — that opens the first task from the briefing's own list, the same mechanism "next task" already uses. Leave every filters field null/false, actions empty, navigateTarget null, answer empty.
+- "unsupported": they want something none of the modes above can do — for example the task history ("who changed this", "what happened on this task", "show the history"; this is always unsupported, never "answer"), opening the filter panel or other screens than the three navigate ones, exporting, deleting several tasks at once, inviting a user, changing someone's access, scheduling a meeting, anything outside Task AI. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing one of the modes above CAN do. Never suggest anything else. requestName: your own NEW short name for the feature they want in THIS request, 2 to 6 words, Title Case (e.g. "Task History By Voice"); never copy a known request name into requestName. sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
+- "wish": they tell you what they'd like you or Task AI to do ("I wish you could…", "it would be great if…", "feature request: …", "can you learn to…"). requestName/sameAsKnownRequest as for "unsupported". answer: a short thank-you saying it's noted.
 - "unclear": none of the above fit. Leave answer as an empty string.
+requestName and sameAsKnownRequest are null in every mode except "unsupported" and "wish". Never mention a request name in any answer.
 For owner/coworker/recipient names, prefer the exact spelling from the known people list above when you can tell which person is meant; a first name or close match is fine otherwise — the caller does its own matching. If the user refers to their own tasks ("my tasks", "what do I have"), set mineOnly true and leave owner null. If they ask about tasks where THEY are specifically a coworker or a recipient/reporter (not owner) — "what am I a recipient on", "tasks where I'm a reporter" — set myRole to "collaborator" or "recipient" respectively instead of mineOnly. "Created today"/"closed today" map to createdWithin/closedWithin "today" respectively.`,
       }, ...recentHistory, {
-        role: "user", content: `Visible tasks:\n${JSON.stringify(summary)}\n\nPeople:\n${JSON.stringify(people)}\n\nSpoken question: ${transcript}`,
+        role: "user", content: `Visible tasks:\n${JSON.stringify(summary)}\n\nPeople:\n${JSON.stringify(people)}\n\nKnown request names: ${JSON.stringify(requestNames)}\n\nSpoken question: ${transcript}`,
       }],
       text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "voice_query", strict: true, schema } },
     }),
@@ -440,7 +452,7 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
   if (!response.ok) return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 });
   const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
   const outputText = result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "";
-  let parsed: { mode: "filter" | "answer" | "navigate" | "open_task" | "act" | "next" | "walk" | "briefing" | "create_task" | "notify" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; notifyPersonName: string | null; notifyMessage: string | null; answer: string };
+  let parsed: { mode: "filter" | "answer" | "navigate" | "open_task" | "act" | "next" | "walk" | "briefing" | "create_task" | "notify" | "unsupported" | "wish" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; notifyPersonName: string | null; notifyMessage: string | null; answer: string; requestName?: string | null; sameAsKnownRequest?: string | null };
   try { parsed = JSON.parse(outputText); } catch { return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 }); }
 
   const actedOnNothing = parsed.mode === "act" && !(parsed.actions || []).some(a => a.type);
@@ -453,6 +465,16 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
     };
   }
 
+  // Something it can't do yet, or a wish: filed as a product request (see /voice-requests).
+  if (parsed.mode === "unsupported" || parsed.mode === "wish") {
+    const name = parsed.requestName ? pickRequestName(parsed.requestName, parsed.sameAsKnownRequest ?? null, requestNames, transcript ?? "") : "";
+    if (name) {
+      try { await recordRequestAsk({ id: actor.id, name: actor.name }, { sessionId: cleanSessionId((body as { sessionId?: unknown }).sessionId), surface: "task_ai", requestName: name, kind: parsed.mode, utterance: transcript ?? "" }); }
+      catch (error) { console.error("Voice request could not be recorded:", error instanceof Error ? error.message : error); }
+    }
+    return Response.json({ mode: parsed.mode, filters: null, requestName: name || null,
+      spokenAnswer: parsed.mode === "wish" ? (parsed.answer || "Thanks, I've noted that.") : `${(parsed.answer || "I can't do that yet").trim().replace(/([^.!?])$/, "$1.")}${name ? " I've noted it as a request." : ""}` });
+  }
   if (parsed.mode === "unclear") {
     return Response.json({ mode: "unclear", filters: null, spokenAnswer: parsed.answer || "I'm not sure what you're asking — try something like \"show me tasks with Shankar\" or \"what's overdue this week\"." });
   }

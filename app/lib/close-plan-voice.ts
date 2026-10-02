@@ -8,6 +8,9 @@
 // a customer contact's view (internal tasks removed, see customerView in
 // close-plan-share.ts) can use the same assistant later.
 
+import { isHelpRequest, type Capability } from "./voice-help";
+export type { Capability } from "./voice-help";
+
 type Obj = Record<string, unknown>;
 const arr = (v: unknown): Obj[] => Array.isArray(v) ? v.filter(x => x && typeof x === "object") as Obj[] : [];
 const strs = (v: unknown): string[] => Array.isArray(v) ? v.filter(x => typeof x === "string") as string[] : [];
@@ -226,7 +229,6 @@ export function describeActions(data: Obj, taskId: string, actions: VoiceAction[
 // One list for the "What can I say?" panel, the spoken answer to "what can you
 // do?" and (later) the guided tour, so help never promises more than exists.
 // Lines with "…" are patterns to say, not to tap.
-export type Capability = { group: string; items: string[] };
 export function capabilities(customer: string, phase: string, person: string): Capability[] {
   return [
     { group: "Ask", items: ["Where do we stand?", "What should I do next?", "What's overdue?"] },
@@ -237,4 +239,4 @@ export function capabilities(customer: string, phase: string, person: string): C
   ];
 }
 export const HELP_SPOKEN = (customer: string) => `I can tell you where the plan stands and what to do next, show lists like what ${customer} is waiting on or what's overdue, open and walk through tasks, post updates, change status, dates and owners, and add tasks or subtasks. The full list is in the panel under "What can I say?". And if you wish I could do something else, just tell me.`;
-export const isHelpRequest = (u: string) => /\b(what can (you|i) (do|say|ask)|what are you able to do|how (can|do) (you|i) (help|use you)|what do you (do|know))\b|^\s*help\b/i.test(u);
+export { isHelpRequest };
