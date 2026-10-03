@@ -415,6 +415,12 @@ help with this plan?").
   from Company settings and the Voice Audit) ranks them: different people ×5,
   wishes ×3, asked again in one session ×2, plus every ask; each gets a status
   (new / planned / built / won't do) and a note.
+- **Same in Task AI's own voice assistants** (Live Voice Assistant and Ask Task
+  AI): "What can I say?" in both panels (`/api/voice-help`, list in
+  `app/lib/voice-help.ts`), "what can you do?" answered from it, a one-time hint in
+  the first Live greeting, and unsupported requests / wishes filed under
+  `surface: task_ai` in the same Voice requests list. On `/voice-requests`,
+  "Merge into…" folds a request into another one that means the same thing.
 - Sessions show up in the Voice Audit (detail `surface: close_plan`).
 - **Not yet:** customers on their personal link. The plan context already has an
   `audience` switch so the customer view (no internal tasks) can be used later.

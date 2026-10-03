@@ -1,4 +1,4 @@
-import { desc, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../../db";
 import { voiceRequestAsks, voiceRequestStatus } from "../../db/schema";
 
@@ -49,11 +49,23 @@ export function rankRequests(asks: Ask[], statuses: Map<string, { status: string
 const GENERIC = new Set(["voice", "by", "the", "a", "an", "to", "for", "of", "and", "in", "on", "with", "from", "plan", "close", "task", "tasks", "can", "you"]);
 const stems = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 3 && !GENERIC.has(w)).map(w => w.slice(0, 5));
 export function pickRequestName(ownName: string, sameAs: string | null, known: string[], utterance: string): string {
-  const fresh = cleanRequestName(ownName);
+  const said = new Set(stems(utterance));
+  const fits = (name: string) => stems(name).some(w => said.has(w));
   const match = sameAs ? known.find(k => k === sameAs) : null;
-  if (!match) return fresh;
-  const said = new Set(stems(utterance)), name = stems(match);
-  return name.some(w => said.has(w)) ? match : fresh;
+  if (match && fits(match)) return match;
+  // The AI's own name, unless it just copied an unrelated known name (a live
+  // test filed "invite Drew" under "Task History By Voice").
+  const fresh = cleanRequestName(ownName);
+  if (fresh && (fits(fresh) || !known.some(k => k.toLowerCase() === fresh.toLowerCase()))) return fresh;
+  return nameFromWords(utterance);
+}
+
+// Last resort: a name made from what was said ("Invite Drew To Task AI").
+const FILLER = new Set(["please", "can", "could", "would", "you", "me", "i", "want", "to", "the", "a", "an", "just", "now", "hey", "okay", "ok", "so"]);
+export function nameFromWords(utterance: string): string {
+  const words = utterance.replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
+  const kept = words.filter((w, i) => !(FILLER.has(w.toLowerCase()) && i < 3)).slice(0, 6);
+  return cleanRequestName(kept.map(w => w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1)).join(" ")) || "Other Request";
 }
 
 export async function recordRequestAsk(actor: { id?: number; name: string }, ask: { sessionId: string; surface: string; requestName: string; kind: "unsupported" | "wish"; utterance: string }) {
@@ -75,6 +87,13 @@ export async function loadRankedRequests(): Promise<RankedRequest[]> {
     db.select().from(voiceRequestStatus),
   ]);
   return rankRequests(asks, new Map(statuses.map(s => [s.requestName, { status: s.status, note: s.note }])));
+}
+
+// Folds one request into another (same feature, different name): its asks move over, its status goes.
+export async function mergeRequests(from: string, into: string) {
+  if (!from || !into || from === into) return;
+  await getDb().update(voiceRequestAsks).set({ requestName: into }).where(eq(voiceRequestAsks.requestName, from));
+  await getDb().delete(voiceRequestStatus).where(eq(voiceRequestStatus.requestName, from));
 }
 
 export async function setRequestStatus(name: string, status: RequestStatus, note: string, userId: number | null) {

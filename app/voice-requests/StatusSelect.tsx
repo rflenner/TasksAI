@@ -4,7 +4,7 @@ import { useState } from "react";
 const OPTIONS: Array<[string, string]> = [["new", "New"], ["planned", "Planned"], ["built", "Built"], ["wont_do", "Won't do"]];
 
 // The team's decision on a request: saved straight away, with an optional note.
-export default function StatusSelect({ name, status, note }: { name: string; status: string; note: string }) {
+export default function StatusSelect({ name, status, note, others }: { name: string; status: string; note: string; others: string[] }) {
   const [value, setValue] = useState(status);
   const [text, setText] = useState(note);
   const [state, setState] = useState<"" | "saving" | "saved" | "failed">("");
@@ -19,6 +19,17 @@ export default function StatusSelect({ name, status, note }: { name: string; sta
         {OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
       <input aria-label={`Note on ${name}`} value={text} placeholder="Note" onChange={e => setText(e.target.value)} onBlur={() => { if (text !== note) void save(value, text); }} className="border border-[#d7dce3] rounded-md px-2 py-1 text-xs w-44" />
+      {others.length > 0 && (
+        <select aria-label={`Merge ${name} into another request`} value="" onChange={async e => {
+          const into = e.target.value; if (!into) return;
+          setState("saving");
+          const res = await fetch("/api/voice-requests", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, mergeInto: into }) }).catch(() => null);
+          if (res && res.ok) window.location.reload(); else setState("failed");
+        }} className="border border-[#d7dce3] rounded-md px-2 py-1 text-xs bg-white w-44 text-[#697181]">
+          <option value="">Merge into…</option>
+          {others.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      )}
       <span className="text-[11px] text-[#8b929d] h-3">{state === "saving" ? "Saving…" : state === "saved" ? "Saved" : state === "failed" ? "Not saved" : ""}</span>
     </div>
   );

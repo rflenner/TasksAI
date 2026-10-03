@@ -4,6 +4,8 @@ import { createPortal } from "react-dom";
 import { interpretConfirmReply } from "../lib/voice-confirm";
 import type { PendingNotify, VoiceCreatedTask, VoiceDimensions, VoiceFilters, VoiceNavigateTarget, VoiceTaskUpdate } from "./VoiceAsk";
 import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./voice-audit-client";
+import { FIRST_TIME_HINT } from "../lib/voice-help";
+import { firstTimeFor, useVoiceCapabilities, VoiceHelpList } from "./VoiceHelp";
 
 // "Live Voice Assistant" (requested 2026-10-02) — the true voice-to-voice
 // alternative to the Deepgram-based "Ask Task AI" (VoiceAsk.tsx), sitting
@@ -61,9 +63,10 @@ type RealtimeEvent = {
 
 // Spoken as soon as the session opens. The first name comes from the
 // session route; it's cleaned so it can't change the greeting instruction.
-function greeting(firstName: string | undefined) {
+// The first time someone uses it, it also says once what it can do.
+function greeting(firstName: string | undefined, firstTime = false) {
   const name = String(firstName || "").replace(/[^\p{L}\p{M}'’ -]/gu, "").trim().slice(0, 40);
-  return `Hi${name ? ` ${name}` : ""}, I am your voice assistant. How can I help?`;
+  return `Hi${name ? ` ${name}` : ""}, I am your voice assistant. ${firstTime ? `${FIRST_TIME_HINT} ` : ""}How can I help?`;
 }
 // A response that never reports back as finished must not block the
 // conversation forever — after this long it no longer counts as active.
@@ -98,6 +101,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [help, setHelp] = useState(false);
+  const caps = useVoiceCapabilities(open);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -469,7 +474,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       // as an answer given without asking Task AI.
       dc.onopen = () => {
         greetingPendingRef.current = true;
-        requestResponse({ instructions: `Greet the person by saying exactly this and nothing else: "${greeting(session.firstName)}"` });
+        requestResponse({ instructions: `Greet the person by saying exactly this and nothing else: "${greeting(session.firstName, firstTimeFor("task-ai-live"))}"` });
       };
       dc.onmessage = event => {
         let msg: RealtimeEvent = {};
@@ -504,6 +509,17 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       setError(message);
       audit({ event: "session", mode: "start_failed", outcome: "failed", spokenAnswer: message });
     }
+  }
+
+  // Tapping a line in "What can I say?" says it for you, into the live
+  // conversation, so the assistant handles and answers it out loud.
+  function sayForMe(text: string) {
+    setHelp(false);
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== "open") return;
+    addFeed("heard", text);
+    dc.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text }] } }));
+    requestResponse();
   }
 
   function closePanel() {
@@ -582,6 +598,9 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
             </div>
           )}
 
+          {help && caps.length > 0 ? (
+            <div className="overflow-y-auto max-h-[32vh] min-h-[3.5rem] mb-2 pr-0.5"><VoiceHelpList caps={caps} onPick={sayForMe} /></div>
+          ) : (
           <div ref={feedBoxRef} className="overflow-y-auto max-h-[32vh] min-h-[3.5rem] mb-2 flex flex-col gap-1.5 pr-0.5" aria-live="polite">
             {feed.length === 0 && <p className="text-xs text-[#8b929d]">{status === "connecting" ? "Connecting…" : `Just talk — interrupt whenever you like. Try "my overdue tasks," "check off call the client," or "notify the owner."`}</p>}
             {feed.map((item, i) => {
@@ -606,6 +625,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
             })}
           </div>
 
+          )}
+
           {error && <div className="text-xs text-[#a84235] mb-2">{error}</div>}
 
           <div className="flex items-center gap-2">
@@ -615,6 +636,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
               <button type="button" onClick={() => void start()} className="h-8 w-8 shrink-0 rounded-full bg-[#173f76] text-white text-sm" aria-label="Start again">🎙️</button>
             )}
             <div className="text-[11px] text-[#8b929d]">{status === "idle" || status === "error" ? "Tap the mic to start again" : statusText}</div>
+            {caps.length > 0 && <button type="button" onClick={() => setHelp(h => !h)} className="ml-auto text-[11px] font-bold text-[#173f76] rounded px-1.5 py-0.5 hover:bg-[#eef3fa]">{help ? "Back" : "What can I say?"}</button>}
           </div>
         </div>
       )}

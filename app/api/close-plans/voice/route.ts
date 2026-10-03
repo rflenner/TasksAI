@@ -56,10 +56,10 @@ Modes:
 - "next": also for "next", "next one", "skip this one".
 - "act": change one existing task. taskId is the task (null means the task open on screen, focusTaskId). actions: set_status (Open / In progress / Closed; "done", "tick off", "complete" mean Closed), post_update (only when this request itself contains the words of an update: text = exactly those words; never add an update of your own, never repeat an earlier one), set_due (date YYYY-MM-DD, worked out from today), set_owner / add_coworker / add_requester (personId), rename (text), set_description (text, only their words). Several actions are fine.
 - "add_task": create a task or subtask. newTask: title (their words), phaseId (the phase they name; the current phase when they don't), parentId (for a subtask: the task it belongs under), ownerId (personId when named, else null), due (YYYY-MM-DD or null), internal (true only when they say internal or "just for us").
-- "unsupported": they want something this assistant can't do: inviting someone or sharing the plan ("invite Olivia", "send her the link"), sending emails or messages, deleting a task or phase, changing access rights, exporting, scheduling a meeting, the task history, anything outside this plan. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing from what you CAN do (the modes above: answer, list, open, change status/dates/owner/coworkers/requested by of a task, post an update, add a task or subtask). Never suggest anything else. requestName: your own short name for the feature they want, 2 to 6 words, Title Case (e.g. "Task History By Voice"). sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
+- "unsupported": they want something this assistant can't do: inviting someone or sharing the plan ("invite Olivia", "send her the link"), sending emails or messages, deleting a task or phase, changing access rights, exporting, scheduling a meeting, the task history, anything outside this plan. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing from what you CAN do (the modes above: answer, list, open, change status/dates/owner/coworkers/requested by of a task, post an update, add a task or subtask). Never suggest anything else. requestName: your own NEW short name for the feature they want in THIS request, 2 to 6 words, Title Case (e.g. "Task History By Voice"); never copy a known request name into requestName. sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
 - "wish": they tell you what they'd like you or the app to do ("I wish you could…", "it would be great if…", "feature request: …", "can you learn to…"). requestName as above. answer: a short thank-you saying it's noted.
 - "unclear": you can't tell what they want, or they're talking to someone else. Put a short question or "Okay." in answer.
-requestName and sameAsKnownRequest are null in every other mode.
+requestName and sameAsKnownRequest are null in every other mode. Never mention a request name in any answer.
 Use the exact ids from the plan JSON. People are matched by name; "me"/"I" is "you" in the JSON. Dates: use the calendar you're given to turn "Friday", "next Tuesday" or "in two weeks" into YYYY-MM-DD; a bare weekday means the next one after today.`;
 
 export async function POST(request: Request) {
@@ -169,7 +169,7 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
       const question = confirmQuestion(data, checked.taskId!, checked.actions, today);
       return { mode: question ? "confirm" : "act", taskId: checked.taskId, actions: checked.actions, spokenAnswer: question || describeActions(data, checked.taskId!, checked.actions, today) };
     }
-    case "unsupported": return { mode: "unsupported", spokenAnswer: `${p.answer || "I can't do that yet."} I've noted it as a request.` };
+    case "unsupported": return { mode: "unsupported", spokenAnswer: `${(p.answer || "I can't do that yet").trim().replace(/([^.!?])$/, "$1.")} I've noted it as a request.` };
     case "wish": return { mode: "wish", spokenAnswer: p.answer || "Thanks, I've noted that." };
     default: return { mode: "unclear", spokenAnswer: p.answer || "Sorry, I didn't get that." };
   }

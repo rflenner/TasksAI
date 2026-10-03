@@ -51,7 +51,7 @@ export default async function VoiceRequestsPage() {
               </div>
               <div className="text-right">
                 <div className={`text-xs font-bold mb-1 ${STATUS_TONE[r.status]}`}>{STATUS_LABEL[r.status]}</div>
-                <StatusSelect name={r.name} status={r.status} note={r.note} />
+                <StatusSelect name={r.name} status={r.status} note={r.note} others={requests.map(o => o.name).filter(n => n !== r.name)} />
               </div>
             </div>
           </li>

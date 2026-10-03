@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { splitIntoSpeechChunks } from "../lib/speech-chunks";
 import { interpretConfirmReply } from "../lib/voice-confirm";
 import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./voice-audit-client";
+import { useVoiceCapabilities, VoiceHelpList } from "./VoiceHelp";
 
 // The lightweight alternative to a full conversational voice agent — see
 // app/api/voice-query/route.ts for the reasoning. Reuses the exact mic/
@@ -121,6 +122,8 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
   const [error, setError] = useState("");
   const [liveText, setLiveText] = useState("");
   const [typed, setTyped] = useState("");
+  const [help, setHelp] = useState(false);
+  const caps = useVoiceCapabilities(open);
   const [log, setLog] = useState<Turn[]>([]);
   // Mirrors log for ask() to read synchronously — confirmed live
   // 2026-09-08: "it doesn't seem to remember what was chatted before."
@@ -695,6 +698,9 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
             </div>
           )}
 
+          {help && caps.length > 0 ? (
+            <div className="flex-1 overflow-y-auto mb-3 min-h-[80px]"><VoiceHelpList caps={caps} onPick={text => { setHelp(false); void ask(text); }} /></div>
+          ) : (
           <div className="flex-1 overflow-y-auto mb-3 flex flex-col gap-2 min-h-[80px]">
             {log.length === 0 && <p className="text-sm text-[#8b929d]">{`Try "Give me my morning briefing," "Create a task to send the invoice by Friday," or "Push this to Friday and assign it to Maya."`}</p>}
             {log.map((turn, i) => (
@@ -704,6 +710,7 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
             ))}
             {status === "recording" && liveText && <div className="self-end text-sm text-[#9299a3] italic">{liveText}…</div>}
           </div>
+          )}
 
           {error && <div className="text-xs text-[#a84235] mb-2">{error}</div>}
 
@@ -724,11 +731,14 @@ export default function VoiceAsk({ onApplyFilters, onNavigate, onTaskUpdated, on
               className="flex-1 h-10 px-3 rounded-lg border border-[#d9dee5] text-sm outline-none focus:border-[#7898be]"
             />
           </div>
-          <div className="text-xs text-[#8b929d] mt-2 h-4">
+          <div className="text-xs text-[#8b929d] mt-2 h-4 flex items-center gap-2">
+            <span className="flex-1">
             {status === "connecting" && "Connecting…"}
             {status === "recording" && "● Listening — pauses automatically, or tap ■ to stop for good"}
             {status === "processing" && "Thinking…"}
             {status === "speaking" && "🔊 Speaking — tap ⏭ to skip and keep going"}
+            </span>
+            {caps.length > 0 && <button type="button" onClick={() => setHelp(h => !h)} className="font-bold text-[#173f76] rounded px-1.5 hover:bg-[#eef3fa]">{help ? "Back" : "What can I say?"}</button>}
           </div>
         </div>
       )}
