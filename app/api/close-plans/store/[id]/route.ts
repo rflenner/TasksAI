@@ -38,7 +38,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   return Response.json({ id, version: row.version, updatedAt: row.updatedAt.toISOString() });
 }
 
-// Delete a plan (soft): the iSEEit plan owner or a Site Admin.
+// Delete a plan (soft): the iSEEit plan owner or an administrator (Site or Area Admin).
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
   const actor = await currentActor();
@@ -46,7 +46,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const { id } = await params;
   const [existing] = await getDb().select().from(closePlanDocuments).where(and(eq(closePlanDocuments.id, id), isNull(closePlanDocuments.deletedAt))).limit(1);
   if (!existing) return Response.json({ ok: true });
-  if (!canAccessPlan(actor, existing) || !canDeletePlan(actor, existing.data)) return Response.json({ error: "Only the iSEEit plan owner can delete this plan" }, { status: 403 });
+  if (!canAccessPlan(actor, existing) || !canDeletePlan(actor, existing.data)) return Response.json({ error: "Only the iSEEit plan owner or an administrator can delete this plan" }, { status: 403 });
   await getDb().update(closePlanDocuments).set({ deletedAt: new Date(), updatedBy: actor.id }).where(eq(closePlanDocuments.id, id));
   return Response.json({ ok: true });
 }

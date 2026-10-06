@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAccessPlan, canCreatePlan, canDeletePlan, memberEmails, sellerOwnerEmail, validatePlan } from "../app/lib/close-plan-store";
+import { canAccessPlan, canCreatePlan, canDeletePlan, canManagePlanLinks, memberEmails, sellerOwnerEmail, validatePlan } from "../app/lib/close-plan-store";
 
 // Fictional data only — this repository is public.
 const plan = {
@@ -36,10 +36,13 @@ test("canCreatePlan is limited to admins", () => {
   assert.equal(canCreatePlan({ email: "a", role: "readonly" }), false);
 });
 
-test("canDeletePlan: the iSEEit plan owner or a site admin", () => {
+test("canDeletePlan: the iSEEit plan owner or an administrator; links stay with the owner and site admins", () => {
   assert.equal(sellerOwnerEmail(plan), "owner@iseeit.example");
   assert.equal(canDeletePlan({ email: "owner@iseeit.example", role: "collaborator" }, plan), true);
-  assert.equal(canDeletePlan({ email: "member@iseeit.example", role: "area_admin" }, plan), false);
+  assert.equal(canDeletePlan({ email: "member@iseeit.example", role: "area_admin" }, plan), true);
+  assert.equal(canDeletePlan({ email: "member@iseeit.example", role: "collaborator" }, plan), false);
+  assert.equal(canManagePlanLinks({ email: "member@iseeit.example", role: "area_admin" }, plan), false);
+  assert.equal(canManagePlanLinks({ email: "owner@iseeit.example", role: "collaborator" }, plan), true);
   assert.equal(canDeletePlan({ email: "anyone@iseeit.example", role: "site_admin" }, plan), true);
   assert.equal(canDeletePlan({ email: "", role: "collaborator" }, { people: [], planOwners: {} }), false);
 });

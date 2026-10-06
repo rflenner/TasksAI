@@ -252,7 +252,7 @@ Out-of-the-box templates:
 
 Later: "Save as template" on any plan, and company templates managed by admins.
 
-**Deleting a plan**: the selling-side plan owner can delete a plan from the ⋮
+**Deleting a plan** (e.g. demo drafts): the selling-side plan owner, a Site Admin or an Area Admin can delete a plan from the ⋮
 menu next to its title, after a second confirmation that names how many phases
 and tasks go and whose personal links stop working. With no plans left, the
 page offers "New close plan".
@@ -347,7 +347,7 @@ can work on the same plan.
 - `PUT /api/close-plans/store/:id` with the version last loaded: creates (Site and
   Area Admins only) or updates (anyone who can see it). A version mismatch returns
   409 with the latest plan; the page shows it and asks to redo the change.
-- `DELETE /api/close-plans/store/:id`: soft delete, iSEEit plan owner or Site Admin.
+- `DELETE /api/close-plans/store/:id`: soft delete, iSEEit plan owner, Site Admin or Area Admin.
 - The page saves 0.6 s after a change, shows "Saving… / Saved / Not saved", and
   checks for others' changes every 30 s while nobody is typing.
 - Someone not yet on a plan (e.g. a Site Admin) who changes it is added to the

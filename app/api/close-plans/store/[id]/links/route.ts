@@ -3,7 +3,7 @@ import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
 import { createPlanLink, revokePlanLinks } from "../../../../../lib/close-plan-links";
 import { customerPerson } from "../../../../../lib/close-plan-share";
-import { canAccessPlan, canDeletePlan } from "../../../../../lib/close-plan-store";
+import { canAccessPlan, canManagePlanLinks } from "../../../../../lib/close-plan-store";
 import { appLinkUrl, requireSameOrigin } from "../../../../../lib/request";
 import { currentActor } from "../../../../../lib/session";
 
@@ -17,7 +17,7 @@ async function guard(request: Request, id: string) {
   if (!actor) return { error: Response.json({ error: "Sign in required" }, { status: 401 }) };
   const [row] = await getDb().select().from(closePlanDocuments).where(eq(closePlanDocuments.id, id)).limit(1);
   if (!row || row.deletedAt || !canAccessPlan(actor, row)) return { error: Response.json({ error: "Plan not found" }, { status: 404 }) };
-  if (!canDeletePlan(actor, row.data)) return { error: Response.json({ error: "Only the iSEEit plan owner can manage personal links" }, { status: 403 }) };
+  if (!canManagePlanLinks(actor, row.data)) return { error: Response.json({ error: "Only the iSEEit plan owner can manage personal links" }, { status: 403 }) };
   return { actor, row };
 }
 

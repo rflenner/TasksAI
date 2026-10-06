@@ -36,9 +36,14 @@ export function canAccessPlan(actor: StoreActor, row: { memberEmails: string[]; 
 // New plans: admins only, the same people who can search Sales AI in the guide.
 export const canCreatePlan = (actor: StoreActor) => actor.role === "site_admin" || actor.role === "area_admin";
 
-// Deleting: the iSEEit plan owner or a Site Admin.
-export function canDeletePlan(actor: StoreActor, data: PlanData): boolean {
+// Personal links for customer contacts: the iSEEit plan owner or a Site Admin.
+export function canManagePlanLinks(actor: StoreActor, data: PlanData): boolean {
   return actor.role === "site_admin" || (Boolean(sellerOwnerEmail(data)) && sellerOwnerEmail(data) === lower(actor.email));
+}
+
+// Deleting a whole plan (e.g. demo drafts): the iSEEit plan owner or an administrator (Site or Area Admin).
+export function canDeletePlan(actor: StoreActor, data: PlanData): boolean {
+  return actor.role === "site_admin" || actor.role === "area_admin" || (Boolean(sellerOwnerEmail(data)) && sellerOwnerEmail(data) === lower(actor.email));
 }
 
 // A plan document must be an object whose id matches the URL, with phases, tasks and people lists, and fit the size limit.

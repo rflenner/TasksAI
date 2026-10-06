@@ -1169,13 +1169,15 @@ function titleBlock() {
       ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn" data-vx-title><span aria-hidden="true">🎙</span> Voice assistant</button>` : ""}
       <button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>
       ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
-        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${me() === state.planOwners.seller ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
+        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
   </div>
   ${ui.deletePlan ? deletePlanBox() : ""}`;
 }
 
-// Deleting a whole plan: only the iSEEit plan owner, and only after a second confirmation.
+// Deleting a whole plan (e.g. a demo draft): the iSEEit plan owner or an administrator (Site or Area Admin in
+// Task AI), and only after a second confirmation. The server checks the same rule.
+function canDeleteThisPlan() { return me() === state.planOwners.seller || Boolean(APP_ME && (APP_ME.role === "site_admin" || APP_ME.role === "area_admin")); }
 function deletePlanBox() {
   const tasks = state.tasks.length, buyers = state.people.filter(p => p.side === "buyer").length, invited = state.people.filter(p => p.side === "buyer" && p.invite && p.invite.status !== "none").length;
   return `<div class="del-box confirm plan-del" role="alertdialog" aria-label="Confirm plan deletion">
