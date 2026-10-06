@@ -131,3 +131,17 @@ test("markOpened sets the invitation to opened once", () => {
   assert.equal((b1.invite as { status: string }).status, "active");
   assert.equal(markOpened(opened, "b1", "2026-10-03"), null);
 });
+
+test("a contact can delete only tasks they added themselves", () => {
+  const p = plan();
+  p.tasks.push({ id: "cx1", phase: "p1", parent: null, title: "Mine", owner: "b1", status: "Open", shared: true, createdBy: "b1", updates: [] } as never);
+  p.tasks.push({ id: "cx2", phase: "p1", parent: "cx1", title: "Mine too", owner: "b1", status: "Open", shared: true, createdBy: "b1", updates: [] } as never);
+  const { data, applied, ignored } = applyCustomerChanges(p, "b1", { deleted: ["cx1", "t1", "t2"] }, "2026-10-06");
+  const ids = (data.tasks as { id: string }[]).map(t => t.id);
+  assert.equal(ids.includes("cx1"), false);
+  assert.equal(ids.includes("cx2"), false);
+  assert.equal(ids.includes("t1"), true);
+  assert.equal(ids.includes("t2"), true);
+  assert.equal(applied, 1);
+  assert.equal(ignored, 2);
+});

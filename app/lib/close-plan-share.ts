@@ -10,7 +10,7 @@
 
 type Obj = Record<string, unknown>;
 export type Access = { level: "view" | "own" | "all"; create: boolean };
-export type CustomerChanges = { tasks?: unknown; activity?: unknown };
+export type CustomerChanges = { tasks?: unknown; deleted?: unknown; activity?: unknown };
 
 export const STATUSES = ["Open", "In progress", "Closed"] as const;
 const MAX_TITLE = 300, MAX_TEXT = 20_000, MAX_UPDATE = 10_000, MAX_ACTIVITY_TEXT = 500, MAX_TASKS_PER_SAVE = 200, ACTIVITY_KEEP = 40;
@@ -136,6 +136,15 @@ export function applyCustomerChanges(data: Obj, personId: string, changes: Custo
     });
     applied++;
     if (parent && status !== "Open") started.add(id);
+  }
+
+  // Deleting: only tasks the contact added themselves (with every subtask theirs too), never anyone else's.
+  for (const id of strs(changes.deleted).slice(0, 50)) {
+    const t = tasks.find(y => y.id === id);
+    if (!t || !isShared(t, tasks) || !access.create || t.createdBy !== personId || tasks.some(k => k.parent === id && k.createdBy !== personId)) { ignored++; continue; }
+    const gone = new Set([id, ...tasks.filter(k => k.parent === id).map(k => k.id)]);
+    for (let i = tasks.length - 1; i >= 0; i--) if (gone.has(tasks[i].id)) tasks.splice(i, 1);
+    applied++;
   }
 
   // Work on a task (an update, or leaving Open) starts its main task too: the page's startWork rule, applied here

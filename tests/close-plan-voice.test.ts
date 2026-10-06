@@ -118,3 +118,10 @@ test("who is waiting on whom comes from the sentence, not the AI", async () => {
   assert.equal(addressedToSomeoneElse("Assign it to Drew, please", people), false);
   assert.equal(addressedToSomeoneElse("Okay, mark it done", people), false);
 });
+
+test("deleting by voice always asks first and names the subtasks", () => {
+  const del = [{ type: "delete_task" as const, status: null, text: null, date: null, personId: null }];
+  const r = checkProposal(plan(), { ...none, taskId: "t3", actions: del }, null, "delete the security review");
+  assert.equal(r.ok, true);
+  assert.equal(confirmQuestion(plan(), "t3", del, "2026-10-06"), `Delete "Security review" and its 1 subtask? This can't be undone. Say yes to confirm.`);
+});
