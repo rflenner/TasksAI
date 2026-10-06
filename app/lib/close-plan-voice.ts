@@ -20,7 +20,7 @@ const str = (v: unknown, max = 300) => typeof v === "string" ? v.slice(0, max) :
 export const LIST_FILTERS = ["all", "mine", "tracking", "overdue", "buyer", "seller", "internal", "person"] as const;
 export type ListFilter = (typeof LIST_FILTERS)[number];
 export const STATUSES = ["Open", "In progress", "Closed"] as const;
-export const ACTION_TYPES = ["set_status", "post_update", "set_due", "set_owner", "rename", "set_description", "add_coworker", "add_requester"] as const;
+export const ACTION_TYPES = ["set_status", "post_update", "set_due", "set_owner", "rename", "set_description", "add_coworker", "add_requester", "delete_task"] as const;
 
 export type VoiceAction = { type: (typeof ACTION_TYPES)[number]; status: string | null; text: string | null; date: string | null; personId: string | null };
 export type NewTask = { title: string; phaseId: string | null; parentId: string | null; ownerId: string | null; due: string | null; internal: boolean };
@@ -189,6 +189,7 @@ export function checkProposal(data: Obj, p: Proposal, focusTaskId: string | null
       case "post_update": case "rename": case "set_description": return Boolean(a.text && a.text.trim()) && (!utterance || grounded(a.text!, utterance));
       case "set_due": return Boolean(a.date && DATE.test(a.date));
       case "set_owner": case "add_coworker": case "add_requester": return hasPerson(a.personId);
+      case "delete_task": return true;
       default: return false;
     }
   }).map(a => ({ ...a, text: a.text ? a.text.trim().slice(0, 2000) : null }));
@@ -200,6 +201,10 @@ export function checkProposal(data: Obj, p: Proposal, focusTaskId: string | null
 // session closed a task on a misheard "tick this off").
 export function confirmQuestion(data: Obj, taskId: string, actions: VoiceAction[], today: string): string | null {
   const t = arr(data.tasks).find(x => x.id === taskId); if (!t) return null;
+  if (actions.some(a => a.type === "delete_task")) {
+    const kids = arr(data.tasks).filter(k => k.parent === taskId).length;
+    return `Delete "${str(t.title)}"${kids ? ` and its ${kids} subtask${kids > 1 ? "s" : ""}` : ""}? This can't be undone. Say yes to confirm.`;
+  }
   const closing = actions.some(a => a.type === "set_status" && a.status === "Closed");
   const move = actions.find(a => a.type === "set_due") ;
   if (closing) return `Close "${str(t.title)}"? Say yes to confirm.`;
@@ -221,6 +226,7 @@ export function describeActions(data: Obj, taskId: string, actions: VoiceAction[
       case "set_description": return `Updated the details of "${title}".`;
       case "add_coworker": return `Added ${name(a.personId)} as coworker.`;
       case "add_requester": return `Added ${name(a.personId)} under requested by.`;
+      case "delete_task": return `Deleted "${title}".`;
     }
   }).join(" ");
 }
@@ -233,7 +239,7 @@ export function capabilities(customer: string, phase: string, person: string): C
   return [
     { group: "Ask", items: ["Where do we stand?", "What should I do next?", "What's overdue?"] },
     { group: "Find", items: [`What is ${customer} waiting on?`, `What are we waiting on from ${customer}?`, "Show my tasks", `What's left in ${phase}?`, "Show the internal tasks", "Next"] },
-    { group: "Change a task", items: ["Open the … task", "Post an update: …", "Mark it done", "Move it to next Friday", `Assign it to ${person}`, `Add ${person} as coworker`] },
+    { group: "Change a task", items: ["Open the … task", "Post an update: …", "Mark it done", "Move it to next Friday", `Assign it to ${person}`, `Add ${person} as coworker`, "Delete it"] },
     { group: "Add", items: [`Add a task to ${phase}: …`, "Add a subtask: …, due …"] },
     { group: "Ideas", items: ["I wish you could …"] },
   ];

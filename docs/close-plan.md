@@ -83,6 +83,16 @@ match, arrow keys move through the list, Esc closes. This replaces the plain
 dropdowns Task AI uses for coworkers and recipients today; worth bringing back to
 Task AI.
 
+## Deleting a task
+
+"Delete task" (or "Delete subtask") at the bottom of a task's details, after a
+second confirmation that says how many subtasks go with it and whether the customer
+sees it. Who may delete: someone with "edits all tasks" access or whoever created
+the task; customer contacts only tasks they added themselves (checked on the
+server for personal links, `applyCustomerChanges` → `deleted`). The activity keeps
+one line ("deleted “…” and its 2 subtasks"); activity about a deleted task never
+shows in the customer view. By voice: "delete it", always confirmed.
+
 ## Next up and client PDF
 
 - **Next up** (top of the side panel): open tasks that are overdue or due in the
@@ -382,7 +392,8 @@ password, no Task AI account, no Task AI navigation.
 ## Voice assistant (iSEEit team, since 2026-10)
 
 The Task AI Live Voice Assistant, for the close plan on screen: "🎙 Voice
-assistant" (bottom right, inside Task AI, saved plans only) opens a small panel,
+assistant" next to "Download PDF" (inside Task AI, saved plans only) opens a small panel
+(minimised it stays as a "Listening" pill bottom right),
 turns the mic on and greets ("Hi Rizan, I am your voice assistant. How can I
 help with this plan?").
 
