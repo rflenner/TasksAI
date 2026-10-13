@@ -207,3 +207,22 @@ span.checklist-text:hover{background:#f6f8fa}
 .voice-wave-live line:nth-child(4){animation-delay:-.15s}
 @keyframes voice-wave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
 @media(prefers-reduced-motion:reduce){.voice-wave-live line{animation:none}}
+
+/* Task drawer clean-up (2026-10-13). */
+/* The heading is edited where it stands (app/components/EditableTitle.tsx): a
+   borderless text area that looks like the h2 — outlined on hover, more so while
+   editing. The padding is cancelled with a negative margin so the text does not
+   move when the outline appears. */
+.drawer-title textarea{display:block;width:calc(100% + 20px);margin:-3px -10px;padding:3px 10px;font:inherit;line-height:inherit;color:inherit;background:transparent;border:1px solid transparent;border-radius:8px;resize:none;overflow:hidden;cursor:text;outline:0}
+.drawer-title textarea:hover{border-color:#dce7f5;background:#f7f9fc}
+.drawer-title textarea:focus{border-color:#7898be;background:#fff;box-shadow:0 0 0 3px #edf3fb}
+/* A tagged person shows just their name; the × to remove them only appears
+   while the chip is hovered or has keyboard focus (always on touch screens,
+   which have no hover). The chip's right padding grows back as the × appears. */
+.chip-hover{padding-right:10px;transition:padding-right .12s}
+.chip-hover button{width:0;margin-left:-6px;opacity:0;overflow:hidden;transition:width .12s,margin-left .12s,opacity .12s}
+.chip-hover:hover,.chip-hover:focus-within{padding-right:6px}
+.chip-hover:hover button,.chip-hover:focus-within button{width:16px;margin-left:0;opacity:1}
+@media(hover:none){.chip-hover{padding-right:6px}.chip-hover button{width:16px;margin-left:0;opacity:1}}
+/* Source / Created now sit under Status updates, before Task History. */
+.updates + .details.compact{margin-top:28px}
