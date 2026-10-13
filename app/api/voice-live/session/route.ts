@@ -7,22 +7,19 @@ import { currentActor } from "../../../lib/session";
 // Mints a short-lived (~1 minute) client secret the browser uses to open
 // a direct WebRTC connection to OpenAI's Realtime API — the backend for
 // the "Live Voice Assistant" button (app/components/VoiceAskRealtime.tsx),
-// sitting alongside the existing Deepgram-based "Ask Task AI" rather than
-// replacing it (requested 2026-10-02, after trying /voice-test-realtime,
-// the throwaway comparison page this route was first proven against —
-// that page still exists and now points here too, so there's exactly one
-// place this mint logic lives).
+// now Task AI's only voice assistant (requested 2026-10-02, after trying
+// /voice-test-realtime, the throwaway comparison page this route was first
+// proven against — that page still exists and points here too, so there's
+// exactly one place this mint logic lives).
 //
 // Session config (model/voice/instructions/tools) is set HERE, at mint
 // time, via OpenAI's POST /v1/realtime/client_secrets — not something the
 // browser can send afterward, so nothing running in a signed-in user's
 // dev tools can swap the model or add tools. Confirmed against OpenAI's
 // current (Oct 2026) docs: the old POST /v1/realtime/sessions beta
-// endpoint was retired; this is the GA replacement, and unlike app/api/
-// dictate/token's Deepgram key (which has to hand out the real, long-
-// lived project key because that account's key lacks the keys:write
-// scope needed for Deepgram's own short-lived keys), the real
-// OPENAI_API_KEY never reaches the browser here at all.
+// endpoint was retired; this is the GA replacement, and the real
+// OPENAI_API_KEY never reaches the browser here at all (the removed
+// Deepgram dictation route had to hand its long-lived key to the client).
 //
 // Two tools: ask_task_ai (everything) and next_task (a dedicated, no-
 // classification shortcut for walking a list — added 2026-10-02 because

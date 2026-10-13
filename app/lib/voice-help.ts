@@ -8,15 +8,14 @@ export type Capability = { group: string; items: string[] };
 
 export const isHelpRequest = (u: string) => /\b(what can (you|i) (do|say|ask)|what are you able to do|how (can|do) (you|i) (help|use you)|what do you (do|know))\b|^\s*help\b/i.test(u);
 
-// Task AI's own voice assistants (Live Voice Assistant and Ask Task AI), which
-// share /api/voice-query.
+// Task AI's Live Voice Assistant, which talks to /api/voice-query.
 export function taskAiCapabilities(person: string): Capability[] {
   return [
     { group: "Ask", items: ["Give me my briefing", "What's due today?", "What's overdue?", `When was ${person} last online?`] },
     { group: "Find", items: ["Show my tasks", "Show new tasks", "What's due this week?", "Tasks I requested", "Has anything been updated?", `Show tasks with ${person}`] },
     { group: "Go through a list", items: ["Go through my overdue tasks", "Next", "Open the first one", "Open task …"] },
     { group: "Change a task", items: ["Post an update: …", "Mark it done", "Move it to Friday", `Assign it to ${person}`, "Set the priority to high", "Check off …", "Add … to the checklist"] },
-    { group: "Create", items: ["Create a task: …, due …", "Dictate a task", "Paste meeting minutes"] },
+    { group: "Create", items: ["Create a task: …, due …", "Paste meeting minutes"] },
     { group: "Tell someone", items: ["Notify the owner", `Let ${person} know …`] },
     { group: "Ideas", items: ["I wish you could …"] },
   ];

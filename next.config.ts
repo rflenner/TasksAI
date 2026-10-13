@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       // microphone=(self) — the app itself is the only allowed origin, and
-      // only because of "Dictate task" / the voice-test comparison page;
+      // only because of the Live Voice Assistant / the voice-test comparison page;
       // this was camera=(), microphone=(), geolocation=() from the very
       // first commit, long before any voice feature existed. It silently
       // blocked mic access on every page, in every browser that actually

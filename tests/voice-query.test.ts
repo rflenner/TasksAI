@@ -485,12 +485,9 @@ test("resolveNext + listAnchor: asking about an off-list task mid-walk and then 
 });
 
 test("navigationAllowed: a screen change needs the person's own words to name that screen", () => {
-  assert.equal(navigationAllowed("dictate", "open dictate task"), true);
-  assert.equal(navigationAllowed("dictate", "let me dictate a task"), true);
-  assert.equal(navigationAllowed("dictate", "open the first one"), false);
-  assert.equal(navigationAllowed("dictate", "open the first task"), false);
   assert.equal(navigationAllowed("new_task", "start a new action item"), true);
   assert.equal(navigationAllowed("new_task", "open the first task"), false);
+  assert.equal(navigationAllowed("new_task", "open the first one"), false);
   assert.equal(navigationAllowed("paste_minutes", "paste meeting minutes"), true);
   assert.equal(navigationAllowed("paste_minutes", "open it"), false);
 });

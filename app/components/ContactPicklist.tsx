@@ -108,6 +108,9 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
 
   function close() { setOpen(false); setQuery(""); setHi(-1); }
   function openPanel() { setOpen(true); }
+  // Clicking the field again (or Enter/Space on it) closes the open panel —
+  // it used to only ever open it, so the only way out was clicking elsewhere.
+  function togglePanel() { if (open) close(); else openPanel(); }
   function toggle(name: string) {
     if (single) {
       onChange(value.includes(name) ? [] : [name]);
@@ -137,8 +140,9 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
           inside this even though it's role="button" itself (it's a div,
           not a native <button> — nesting real buttons in it is valid).
           Each chip button stops its own click from bubbling here, so a
-          plain unconditional onClick on the row is enough to "click
-          anywhere that isn't a chip's × opens the panel." */}
+          plain onClick on the row is enough to "click anywhere that
+          isn't a chip's × toggles the panel." The × itself only shows
+          while the chip is hovered or focused (see .chip-hover). */}
       <div
         id={triggerId}
         className={`pl-trigger${open ? " open" : ""}`}
@@ -148,15 +152,15 @@ export default function ContactPicklist({ label, value, options, onChange, hint,
         aria-expanded={open}
         aria-controls={panelId}
         aria-labelledby={labelId}
-        onClick={openPanel}
+        onClick={togglePanel}
         onKeyDown={event => {
-          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPanel(); }
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); togglePanel(); }
           else if (event.key === "Backspace" && value.length) { toggle(value[value.length - 1]); }
         }}
       >
         {value.length === 0 && <span className="pl-placeholder">None selected</span>}
         {value.map(name => (
-          <span className="chip" key={name}>
+          <span className="chip chip-hover" key={name}>
             <span>{name}</span>
             <button type="button" aria-label={`Remove ${name}`} onClick={event => { event.stopPropagation(); toggle(name); }}>×</button>
           </span>

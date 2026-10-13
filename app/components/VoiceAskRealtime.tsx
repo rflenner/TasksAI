@@ -2,33 +2,30 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { interpretConfirmReply } from "../lib/voice-confirm";
-import type { PendingNotify, VoiceCreatedTask, VoiceDimensions, VoiceFilters, VoiceNavigateTarget, VoiceTaskUpdate } from "./VoiceAsk";
+import type { PendingNotify, VoiceCreatedTask, VoiceDimensions, VoiceFilters, VoiceNavigateTarget, VoiceTaskUpdate } from "./voice-types";
 import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./voice-audit-client";
 import { FIRST_TIME_HINT } from "../lib/voice-help";
 import { firstTimeFor, useVoiceCapabilities, VoiceHelpList } from "./VoiceHelp";
+import VoiceWaveIcon from "./VoiceWaveIcon";
 
-// "Live Voice Assistant" (requested 2026-10-02) — the true voice-to-voice
-// alternative to the Deepgram-based "Ask Task AI" (VoiceAsk.tsx), sitting
-// side by side with it rather than replacing it. Talks directly to
-// OpenAI's Realtime API over WebRTC (continuous, interruptible, no
-// record-then-wait turn-taking) instead of VoiceAsk's record -> transcribe
-// -> classify -> speak loop — first proven out on the throwaway
-// /voice-test-realtime comparison page, which now shares this component's
-// session-minting route (app/api/voice-live/session/route.ts).
+// "Live Voice Assistant" (requested 2026-10-02) — true voice-to-voice over
+// OpenAI's Realtime API (WebRTC: continuous, interruptible, no
+// record-then-wait turn-taking). It is now Task AI's only voice assistant:
+// the Deepgram-based "Ask Task AI" panel and the "Dictate task" page were
+// removed (2026-10-13). First proven out on the throwaway /voice-test-realtime
+// comparison page, which shares this component's session-minting route
+// (app/api/voice-live/session/route.ts).
 //
 // The realtime session itself has two tools it can call — ask_task_ai
 // (utterance) and next_task — defined server-side at session-mint time, so
 // all the actual thinking (classify, permission checks, DB reads/writes)
-// stays in app/api/voice-query/route.ts, shared with VoiceAsk. This
-// component's runTool() below is deliberately the same dispatch shape as
-// VoiceAsk's ask(): same request body, same mode-by-mode handling of the
-// response, same onX screen-sync callbacks, same pendingDelete/
-// pendingNotify confirm-then-execute gates for the two actions that reach
-// outside Task AI itself (deleting a task, messaging someone). The only
-// real difference is HOW the answer reaches the person: VoiceAsk calls
-// Deepgram TTS and plays it back itself; here, the answer is handed back
-// as the tool's own output and OpenAI's realtime model speaks it as part
-// of the live conversation.
+// stays in app/api/voice-query/route.ts. This component's runTool() below
+// sends each utterance there, applies the response to the screen through the
+// onX callbacks, and keeps the pendingDelete/pendingNotify confirm-then-
+// execute gates for the two actions that reach outside Task AI itself
+// (deleting a task, messaging someone). The answer goes back to the realtime
+// model as the tool's own output and it speaks it as part of the live
+// conversation.
 //
 // Reworked the same day after the first real sessions (see the voice audit
 // trail): the realtime model keeps no list state of its own, so THIS
@@ -121,17 +118,16 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   const listLabelRef = useRef<string | null>(null);
   const listFiltersRef = useRef<VoiceFilters | null>(null);
   const cursorRef = useRef<number | null>(null);
-  // Same staleness problem VoiceAsk's currentTaskIdRef solves — runTool
-  // fires from a WebRTC data-channel callback that can outlive several
-  // re-renders, so a plain closure over the prop would see whatever task
-  // was open when the session started, not whatever's open right now.
+  // runTool fires from a WebRTC data-channel callback that can outlive
+  // several re-renders, so a plain closure over the prop would see whatever
+  // task was open when the session started, not whatever's open right now.
   const currentTaskIdRef = useRef(currentTaskId);
   useEffect(() => { currentTaskIdRef.current = currentTaskId; }, [currentTaskId]);
   const currentTaskLabelRef = useRef(currentTaskLabel);
   useEffect(() => { currentTaskLabelRef.current = currentTaskLabel; }, [currentTaskLabel]);
-  // Same confirm-then-execute gates as VoiceAsk.tsx, same reasoning —
-  // deleting a task and messaging someone outside Task AI both reach
-  // past a model's own read of "that sounded like a yes."
+  // Confirm-then-execute gates: deleting a task and messaging someone
+  // outside Task AI both reach past a model's own read of "that sounded
+  // like a yes."
   const pendingDeleteRef = useRef<{ id: number; subject: string } | null>(null);
   const pendingNotifyRef = useRef<PendingNotify | null>(null);
   // Voice audit trail (app/lib/voice-audit.ts). One id per live session
@@ -270,16 +266,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       // what is said and what is shown stay on the same task.
       if ((data.mode === "open_task" || data.mode === "answer") && data.openTaskId != null) openTask(data.openTaskId);
       if (data.mode === "navigate" && data.navigateTarget) {
-        if (data.navigateTarget === "dictate") {
-          // A real full-page navigation leaves this screen entirely and
-          // ends the live session — so close the session cleanly first,
-          // rather than navigating out from under a live connection.
-          addFeed("result", answer);
-          audit({ event: "session", mode: "stopped", spokenAnswer: "Left the page to open voice dictation." });
-          teardown(); setOpen(false); setStatus("idle");
-          onNavigate(data.navigateTarget);
-          return;
-        }
+        // Both targets open a form on this same screen, so the live
+        // session carries on while it does.
         onNavigate(data.navigateTarget);
         finish(callId, answer, prefix);
         return;
@@ -305,7 +293,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   }
 
   // The realtime session's main tool — called with whatever the person
-  // just said. Same dispatch shape as VoiceAsk.ask(): resolve a pending
+  // just said. Resolve a pending
   // delete/notify confirmation first if one's outstanding, otherwise
   // classify the utterance fresh. Every branch ends by handing
   // spokenAnswer back as the tool's output instead of calling a TTS
@@ -542,6 +530,9 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   // stays fully visible.
   const dock = drawerOpen ? "left-6 min-[621px]:left-auto min-[621px]:right-[calc(var(--drawer-w)_+_1.5rem)]" : "right-6";
   const lastLine = feed.length ? feed[feed.length - 1].text : "";
+  // Green while it is listening, red when it has stopped on an error,
+  // orange while it is connecting.
+  const statusColor = status === "connected" ? "text-[#25784b]" : status === "error" ? "text-[#a84235]" : "text-[#c96539]";
   const statusText = status === "connecting" ? "Connecting…" : status === "connected" ? "Listening — just talk" : status === "error" ? "Stopped" : "Not listening";
 
   return (
@@ -554,7 +545,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
             : "relative z-30 h-11 px-5 rounded-lg font-bold text-[#173f76] bg-white border border-[#d7dce3]"
         }
       >
-        🔴 Live Voice Assistant
+        <span className="inline-flex items-center gap-2"><VoiceWaveIcon className="h-[18px] w-[18px]" live={open && status === "connected"} />Live Voice Assistant</span>
       </button>
       {/* Always rendered (even while minimised) — it is what plays the assistant's voice. */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live two-way voice audio, nothing to caption */}
@@ -565,7 +556,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       {open && createPortal(<>
       {minimized && (
         <div className={`fixed bottom-6 z-50 flex items-center gap-2 max-w-[calc(100%-3rem)] bg-white rounded-full shadow-[0_8px_30px_rgba(16,47,89,0.2)] border border-[#e3e8ee] pl-3 pr-1.5 py-1.5 ${dock}`}>
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${status === "connected" ? "bg-[#25784b] animate-pulse" : status === "error" ? "bg-[#a84235]" : "bg-[#c96539]"}`} aria-hidden="true" />
+          <span className={`shrink-0 ${statusColor}`}><VoiceWaveIcon className="h-5 w-5" live={status === "connected"} /></span>
           <button type="button" onClick={() => setMinimized(false)} className="text-left min-w-0" aria-label="Expand the Live Voice Assistant">
             <span className="block text-xs font-bold text-[#102f59]">Live · {statusText}</span>
             {lastLine && <span className="block text-[11px] text-[#697181] truncate max-w-[14rem]">{lastLine}</span>}
@@ -583,7 +574,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
         >
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${status === "connected" ? "bg-[#25784b] animate-pulse" : status === "error" ? "bg-[#a84235]" : "bg-[#c96539]"}`} aria-hidden="true" />
+              <span className={`shrink-0 ${statusColor}`}><VoiceWaveIcon className="h-5 w-5" live={status === "connected"} /></span>
               <h2 className="text-sm font-bold text-[#102f59] truncate">Live Voice Assistant</h2>
             </div>
             <div className="flex items-center shrink-0">
@@ -633,9 +624,9 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
             {status === "connected" || status === "connecting" ? (
               <button type="button" onClick={closePanel} className="h-8 w-8 shrink-0 rounded-full bg-[#c96539] text-white text-xs" aria-label="Stop">■</button>
             ) : (
-              <button type="button" onClick={() => void start()} className="h-8 w-8 shrink-0 rounded-full bg-[#173f76] text-white text-sm" aria-label="Start again">🎙️</button>
+              <button type="button" onClick={() => void start()} className="h-8 w-8 shrink-0 rounded-full bg-[#173f76] text-white flex items-center justify-center" aria-label="Start again"><VoiceWaveIcon className="h-4 w-4" /></button>
             )}
-            <div className="text-[11px] text-[#8b929d]">{status === "idle" || status === "error" ? "Tap the mic to start again" : statusText}</div>
+            <div className="text-[11px] text-[#8b929d]">{status === "idle" || status === "error" ? "Tap to start again" : statusText}</div>
             {caps.length > 0 && <button type="button" onClick={() => setHelp(h => !h)} className="ml-auto text-[11px] font-bold text-[#173f76] rounded px-1.5 py-0.5 hover:bg-[#eef3fa]">{help ? "Back" : "What can I say?"}</button>}
           </div>
         </div>

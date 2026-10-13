@@ -23,20 +23,15 @@ import {
   type ActionStep, type ActTarget, type Filters, type StoredTask,
 } from "../../lib/voice-query";
 
-// The lightweight alternative to Deepgram's bundled Voice Agent product
-// (STT+LLM+TTS+function-calling over one always-open, ~$4.50/hr
-// WebSocket session): this app already has real-time STT (app/api/
-// dictate/token) and TTS (app/api/dictate/speak) for the existing
-// dictation feature, both billed per-use, not per-session. All that was
-// missing for "ask a question, hear an answer, see an action" was this
-// one classify-and-ground step — a single request/response call, same
-// shape (and same OpenAI Responses API + strict JSON Schema pattern) as
-// app/lib/task-extraction.ts, just answering a different kind of
-// question. No new vendor, no new pricing model, no open session to
-// manage — the tradeoff is no true multi-turn conversation (each
-// utterance is independent), which is fine for single-shot commands
-// like "what are my tasks this week" and not worth the cost until real
-// back-and-forth ("no, the other project") is actually needed.
+// The brain behind the Live Voice Assistant (app/components/
+// VoiceAskRealtime.tsx), which sends each thing the person says here: one
+// classify-and-ground step — a single request/response call, same shape (and
+// same OpenAI Responses API + strict JSON Schema pattern) as
+// app/lib/task-extraction.ts, answering "understand this request against the
+// tasks I can currently see, then filter the screen, answer, change something
+// or open a form." Each call is independent: the realtime session keeps the
+// conversation, and the client sends back what this step needs (the open
+// task, the list being walked, the last few turns).
 const schema = {
   type: "object",
   additionalProperties: false,
@@ -71,10 +66,10 @@ const schema = {
         hasUnseenUpdate: { type: "boolean", description: "True for 'have there been updates on X', 'what's been updated', 'anything new posted on my tasks' — a status update landed since the asker last opened that task, and they didn't post it themselves. The same flag the on-screen green 'New status update' badge uses." },
       },
     },
-    // For mode="navigate" only — opening a specific screen/form rather
-    // than answering or filtering ("open dictate task", "start a new
-    // action item", "paste meeting minutes").
-    navigateTarget: { type: ["string", "null"], enum: ["dictate", "new_task", "paste_minutes", null] },
+    // For mode="navigate" only — opening a specific form rather than
+    // answering or filtering ("start a new action item", "paste meeting
+    // minutes").
+    navigateTarget: { type: ["string", "null"], enum: ["new_task", "paste_minutes", null] },
     // For mode="act" only — which task(s) the actions below apply to.
     // Almost always both fields stay at their default (null/false),
     // meaning "whichever task is currently open" — the ONLY two cases
@@ -418,10 +413,10 @@ Decide exactly one of:
 - "filter": the user wants the on-screen task list narrowed down — this includes any "what/which tasks are X" phrasing where X maps to a filters field, NOT a question for "answer": "identify/find/show me all tasks with X in the subject" (textContains), "what tasks am I a recipient/reporter on" or "what am I a coworker on" (myRole), "have there been updates on the tasks I reported?"/"has anything been updated?"/"any new updates on my tasks?" (hasUnseenUpdate, usually combined with myRole/mineOnly) — these are ALL filter requests phrased as plain yes/no or "what" questions, not factual lookups, even though a yes/no phrasing instinctively reads like something to just answer in a sentence. Other examples: "show me tasks with Shankar", "what's due this week", "high priority tasks in the pilot project", "tasks for the Acme Corp account", "tasks from Sales AI", "what got created today", "what's new"/"show me new tasks"/"anything new assigned to me" (isNew). The distinguishing test: if the answer is "a list of tasks matching some criteria" — including a yes/no question whose real answer is really just "N tasks do/don't match" — it's "filter" (or "walk"), even when phrased as a question. "answer" below is only for questions that are NOT just "list the tasks matching X" (a single task's own field value, a count comparison, something that isn't itself a task list). Fill in filters with whatever criteria apply; leave answer as an empty string — the caller generates the spoken confirmation itself from the real filtered count, never trust a count you say here.
 - "walk": the user wants to be guided through a whole list of tasks one at a time, starting right now ("walk me through my overdue tasks", "go through my tasks for the pilot project"). Fill in filters exactly like "filter" mode. Leave actions empty and answer empty — the caller reports how many match, opens the first one, and reads it aloud itself.
 - "briefing": a quick spoken rundown of their day, not a specific filter — "give me my morning briefing", "what's my day look like", "brief me". Leave every filters field null/false, actions empty, answer empty — the caller computes real counts and speaks the summary itself.
-- "create_task": describing a brand-new task to create RIGHT NOW, not asking to open a form — "create a task to send the invoice by Friday", "add a task: follow up with legal, assign it to Maya". Leave every filters field null/false, actions empty, navigateTarget null, answer empty — the caller re-reads the original spoken request itself to extract the task's content.
+- "create_task": describing a brand-new task to create RIGHT NOW, not asking to open a form — "create a task to send the invoice by Friday", "add a task: follow up with legal, assign it to Maya", and "dictate a task: …" with the task's content spoken in the same breath (there is no separate dictation screen any more; "let me dictate a task" with NO content yet is "unclear" with a short answer asking what the task should say). Leave every filters field null/false, actions empty, navigateTarget null, answer empty — the caller re-reads the original spoken request itself to extract the task's content.
 - "answer": a factual question the task or people data can answer, about something OTHER than "list every task matching X" (that's "filter" above) — "is anyone overdue on the pilot", "what's the latest update on the CRM task", "how many tasks does Shankar have", "when was Drew last online". Put the answer in answer, grounded ONLY in the provided data — never invent a task, person, date, or detail not present in it. If the answer is about exactly ONE specific task, also set target.taskId to that task's id so the person's screen shows the task being discussed (and "this one" means it afterwards); otherwise leave target.taskId null. Leave every filters field null/false and navigateTarget null.
 - "open_task": bring ONE existing task up on screen and tell the person about it — "open the first one", "open task 389", "show me the second one", "what's the first one", "go to the Acme task", "tell me about that task". Set target.taskId to the exact id (ordinals refer to the list on screen when there is one; otherwise find it in the visible tasks). Leave every filters field null/false, actions empty, navigateTarget null and answer empty — the caller opens it and reads it out. Opening an EXISTING task is NEVER "navigate".
-- "navigate": ONLY when the person explicitly asks for one of three screens by name — the voice dictation screen ("open dictate task", "let me dictate a task") -> "dictate"; a brand-new blank task form ("start a new action item") with genuinely no content spoken to extract -> "new_task"; the meeting-minutes paster ("paste meeting minutes") -> "paste_minutes". "Open"/"show"/"go to" followed by an ordinal, a task number, a task name, or "it"/"that"/"the first one" is NEVER navigate — that is "open_task". "dictate" in particular leaves the page and ends the live conversation, so never choose it unless they actually said dictate. Put the target in navigateTarget, leave answer empty and every filters field null/false.
+- "navigate": ONLY when the person explicitly asks for one of two forms by name — a brand-new blank task form ("start a new action item", "open a new task") with genuinely no content spoken to extract -> "new_task"; the meeting-minutes paster ("paste meeting minutes") -> "paste_minutes". "Open"/"show"/"go to" followed by an ordinal, a task number, a task name, or "it"/"that"/"the first one" is NEVER navigate — that is "open_task". Put the target in navigateTarget, leave answer empty and every filters field null/false.
 - "act": change one or more tasks. One utterance can chain several field changes ("push this to Friday, assign it to Maya, add an update saying the redlines are in, and go to the next task") — one actions[] entry per change, in the order requested, each with exactly one type plus its one matching field (every other field in that entry stays null). Leave every filters field null/false, navigateTarget null, answer empty.
   WHICH task(s) — fill in target: almost always leave both fields at their default (taskId:null, applyToWorkingList:false), meaning "whichever task is currently open/in focus" (see above) — that covers ordinary "push this to Friday" while a task is open. Two exceptions: (1) the user names or numbers a task that is NOT the one open right now, e.g. "change the due date on task 175", "mark the pricing sheet task done" when that's not what's open -> set target.taskId to that task's exact id from the visible list. (2) the user wants the change applied to EVERY task in the most recent list you discussed with them (a prior "filter"/"walk"/"briefing" result, or a list you just read out in an "answer") — "add this to all of these", "tag every one of them", "update all the ones you just found" -> set target.applyToWorkingList true. If neither a task is open nor a specific one was named nor a working list exists to apply to, use "unclear" instead.
   set_due(dueDate): "push to Friday"/"set the deadline to Sept 20"/"clear the due date" — deadline/close date/completion date all mean this field. Resolve any relative phrase to YYYY-MM-DD against today: "next week"=Monday of the following week, "tomorrow"=the next calendar day, a bare weekday=its next upcoming occurrence, "ASAP"=next business day. dueDate:null clears it — a valid instruction, not a missing value.
@@ -452,7 +447,7 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
   if (!response.ok) return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 });
   const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
   const outputText = result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "";
-  let parsed: { mode: "filter" | "answer" | "navigate" | "open_task" | "act" | "next" | "walk" | "briefing" | "create_task" | "notify" | "unsupported" | "wish" | "unclear"; filters: Filters; navigateTarget: "dictate" | "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; notifyPersonName: string | null; notifyMessage: string | null; answer: string; requestName?: string | null; sameAsKnownRequest?: string | null };
+  let parsed: { mode: "filter" | "answer" | "navigate" | "open_task" | "act" | "next" | "walk" | "briefing" | "create_task" | "notify" | "unsupported" | "wish" | "unclear"; filters: Filters; navigateTarget: "new_task" | "paste_minutes" | null; target: ActTarget; actions: ActionStep[]; notifyPersonName: string | null; notifyMessage: string | null; answer: string; requestName?: string | null; sameAsKnownRequest?: string | null };
   try { parsed = JSON.parse(outputText); } catch { return Response.json({ error: "Could not understand that", code: "ai_failed" }, { status: 502 }); }
 
   const actedOnNothing = parsed.mode === "act" && !(parsed.actions || []).some(a => a.type);
@@ -476,7 +471,10 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
       spokenAnswer: parsed.mode === "wish" ? (parsed.answer || "Thanks, I've noted that.") : `${(parsed.answer || "I can't do that yet").trim().replace(/([^.!?])$/, "$1.")}${name ? " I've noted it as a request." : ""}` });
   }
   if (parsed.mode === "unclear") {
-    return Response.json({ mode: "unclear", filters: null, spokenAnswer: parsed.answer || "I'm not sure what you're asking — try something like \"show me tasks with Shankar\" or \"what's overdue this week\"." });
+    // The separate dictation screen is gone; someone who still asks for it is
+    // pointed at the way to do the same thing here — just say the task.
+    const dictationHint = /\bdictat/i.test(transcript ?? "") ? "Just tell me the task — for example, \"create a task to call Bernd tomorrow\"." : "";
+    return Response.json({ mode: "unclear", filters: null, spokenAnswer: dictationHint || parsed.answer || "I'm not sure what you're asking — try something like \"show me tasks with Shankar\" or \"what's overdue this week\"." });
   }
   if (parsed.mode === "answer") {
     // An answer about one specific task also puts that task on screen, so
@@ -498,12 +496,12 @@ For owner/coworker/recipient names, prefer the exact spelling from the known peo
     });
   }
   if (parsed.mode === "navigate") {
-    const label: Record<string, string> = { dictate: "Opening voice dictation.", new_task: "Opening a new action item.", paste_minutes: "Opening the meeting minutes paster." };
+    const label: Record<string, string> = { new_task: "Opening a new action item.", paste_minutes: "Opening the meeting minutes paster." };
     if (!parsed.navigateTarget) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I'm not sure what you'd like me to open." });
     // The classifier proposed a screen change; only honour it when the
     // person's own words name that screen (see navigationAllowed).
     if (!navigationAllowed(parsed.navigateTarget, transcript ?? "")) {
-      return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I wasn't sure what you wanted me to open — say the task's number or part of its name, or say \"dictate a task\" for voice dictation." });
+      return Response.json({ mode: "unclear", filters: null, spokenAnswer: "I wasn't sure what you wanted me to open — say the task's number or part of its name, or say \"create a task\" followed by what it should say." });
     }
     return Response.json({ mode: "navigate", navigateTarget: parsed.navigateTarget, spokenAnswer: label[parsed.navigateTarget] });
   }

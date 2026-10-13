@@ -17,7 +17,8 @@ const TONE: Record<RowTone, string> = {
   good: "bg-[#e4f4eb] text-[#25784b]", neutral: "bg-[#f2f4f7] text-[#202735]",
   warn: "bg-[#fff1d6] text-[#9b5d00]", bad: "bg-[#fdf1ef] text-[#a84235]", info: "bg-[#eef3fa] text-[#173f76]",
 };
-const SOURCE_LABEL: Record<string, string> = { live: "🔴 Live Voice Assistant", ask: "🗣️ Ask Task AI" };
+// "ask" rows are history from the retired Deepgram "Ask Task AI" panel (kept 90 days).
+const SOURCE_LABEL: Record<string, string> = { live: "Live Voice Assistant", ask: "Ask Task AI (retired)" };
 const PERIODS: Array<[string, number]> = [["24 hours", 1], ["7 days", 7], ["30 days", 30], [`${VOICE_AUDIT_RETENTION_DAYS} days`, VOICE_AUDIT_RETENTION_DAYS]];
 const MAX_SESSIONS = 100;
 
@@ -74,7 +75,7 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Assistant</span>
           <Choice label="Both" active={source === "all"} to={href({ source: "all", show, days })} />
           <Choice label="Live Voice" active={source === "live"} to={href({ source: "live", show, days })} />
-          <Choice label="Ask Task AI" active={source === "ask"} to={href({ source: "ask", show, days })} />
+          <Choice label="Ask Task AI (retired)" active={source === "ask"} to={href({ source: "ask", show, days })} />
         </div>
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Show</span>
           <Choice label="Everything" active={show === "all"} to={href({ source, show: "all", days })} />
