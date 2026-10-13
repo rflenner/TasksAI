@@ -35,7 +35,7 @@ pnpm check   # lint + test + build, what CI-equivalent verification runs before 
 - **Next.js 16** (App Router), **PostgreSQL**, **Drizzle ORM** — no separate backend service; API routes under `app/api/*` are the entire server.
 - **OpenAI Responses API** (strict JSON Schema output) for all AI extraction — meeting minutes, dictation, and forwarded email all go through the same prompt/schema in `app/lib/task-extraction.ts`. A deterministic browser-side fallback parser covers pasted-minutes extraction when the API is unavailable.
 - **Resend** for all outbound email (invitations, digests, nudges) and, since September 2026, inbound email receiving (see "Creating tasks by forwarding an email" below).
-- **Deepgram / OpenAI Whisper** for voice dictation transcription (`app/dictate`).
+- **OpenAI Realtime API** for the Live Voice Assistant (`app/components/VoiceAskRealtime.tsx`, session minted by `app/api/voice-live/session`), the app's only voice assistant. **Deepgram** is only used by the throwaway `/voice-test` speech-to-text comparison page.
 - Sessions are opaque, HMAC-signed random tokens; only their SHA-256 hash is stored. Every webhook (Resend delivery-status, Resend inbound-email) is Svix-signature-verified before anything touches the database. Passwords (the admin-issued fallback only — see below) are hashed with `scrypt`, never stored or transmitted in plaintext outside the one-time response to the admin who generated them.
 - Deployed on Render via `render.yaml` (a Blueprint): one web service, one Postgres database, and four Cron Jobs — see "Scheduled jobs" below.
 

@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   if (!minutes?.trim()) return Response.json({ error: "Meeting minutes are required" }, { status: 400 });
   if (minutes.length > 120_000) return Response.json({ error: "Meeting minutes are too long" }, { status: 413 });
 
-  // Dictation (app/dictate) shares this endpoint but is never checked for
+  // Dictation (the retired app/dictate page) shared this endpoint but is never checked for
   // duplicates — spoken text naturally varies run to run, so an exact-text
   // match there is far more likely to be a genuine repeat than an
   // accidental re-paste, unlike copy/pasting the same summary twice.

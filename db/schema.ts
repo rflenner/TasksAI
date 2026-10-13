@@ -141,8 +141,8 @@ export const tasks = pgTable("tasks", {
 // One row per distinct pasted-minutes submission (keyed by a hash of the
 // raw text, not the resulting tasks) — lets "Paste meeting minutes" warn
 // before silently re-creating the same tasks from text that's already been
-// pasted once. Deliberately not applied to dictation (app/dictate), which
-// shares the same /api/extract endpoint: spoken text naturally varies
+// pasted once. Deliberately not applied to dictation (the retired app/dictate
+// page), which shared the same /api/extract endpoint: spoken text naturally varies
 // run to run, so an exact-text duplicate there is far more likely to be a
 // genuine repeat than an accidental one, and duplicate detection isn't
 // worth the false-positive risk there. onConflictDoNothing on insert means

@@ -254,7 +254,7 @@ export async function loadVoiceAuditSessions(filters: VoiceAuditFilters, session
   return { sessions: groupIntoSessions(rows as VoiceAuditRecord[]).filter(session => sessionMatches(session, filters.show)), rowLimitHit: rows.length >= VOICE_AUDIT_MAX_ROWS };
 }
 
-const SOURCE_NAME: Record<string, string> = { live: "Live Voice Assistant", ask: "Ask Task AI" };
+const SOURCE_NAME: Record<string, string> = { live: "Live Voice Assistant", ask: "Ask Task AI (retired)" };
 const utcStamp = (date: Date) => date.toISOString().slice(0, 19).replace("T", " ");
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 

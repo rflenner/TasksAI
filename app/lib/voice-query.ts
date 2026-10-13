@@ -149,16 +149,16 @@ export function listAnchor(currentTaskId: number | null, cursorTaskId: number | 
 }
 
 // "open the first one" was classified as navigate -> Dictate twice in one
-// live session (2026-10-02), which leaves the page entirely and ends the
-// live session — it looked like a crash. A screen change is only honoured
-// when the person's own words actually name that screen; anything else the
-// classifier proposed is treated as a mistake.
-const NAVIGATE_WORDS: Record<"dictate" | "new_task" | "paste_minutes", RegExp> = {
-  dictate: /\bdictat/i,
+// live session (2026-10-02), which left the page and ended the live session —
+// it looked like a crash. (The dictation screen is gone now, but the rule
+// stays.) A form is only opened when the person's own words actually name it;
+// anything else the classifier proposed is treated as a mistake.
+type NavigateTarget = "new_task" | "paste_minutes";
+const NAVIGATE_WORDS: Record<NavigateTarget, RegExp> = {
   new_task: /\b(new|create|add|start)\b.*\b(task|action|item)\b/i,
   paste_minutes: /\bminutes\b|\bmeeting notes\b/i,
 };
-export function navigationAllowed(target: "dictate" | "new_task" | "paste_minutes", spoken: string): boolean {
+export function navigationAllowed(target: NavigateTarget, spoken: string): boolean {
   return NAVIGATE_WORDS[target].test(spoken);
 }
 
