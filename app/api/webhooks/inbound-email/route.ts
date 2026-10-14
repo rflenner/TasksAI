@@ -2,7 +2,7 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { contacts, dimensionValues, tasks, users } from "../../../../db/schema";
 import { collapseToSingleTask, detectsMultiTaskTrigger } from "../../../lib/dictate-intent";
-import { bareEmail, classifyReplyStatus, extractEmailNameHints, findReplyToken, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
+import { addressDomain, bareEmail, classifyReplyStatus, extractEmailNameHints, findReplyToken, inboundEmailDomain, isAddressedToDomain, recipientAddresses, resolveViaEmailHint, stripHtml, stripQuotedReply } from "../../../lib/inbound-email";
 import { getKnownPersonNames } from "../../../lib/known-people";
 import { canCreateTask, type Actor } from "../../../lib/permissions";
 import { resolveTaskNames } from "../../../lib/name-resolution";
@@ -19,7 +19,7 @@ type DimensionType = "project" | "meeting" | "topic" | "person";
 // `from` behaves. Read defensively below (bareEmail on every entry,
 // tolerate a single string too) so a shape that's slightly off just
 // fails to match rather than throwing.
-type InboundEvent = { type?: string; data?: { email_id?: string; from?: string; to?: string[] | string; subject?: string } };
+type InboundEvent = { type?: string; data?: { email_id?: string; from?: string; to?: string[] | string; cc?: string[] | string; bcc?: string[] | string; subject?: string } };
 
 // Forwarding an email to tasks@tasks.iseeit.ai (or any address at the
 // receiving subdomain — see the DNS setup) creates tasks the same way
@@ -42,6 +42,21 @@ export async function POST(request: Request) {
   if (event.type !== "email.received") return Response.json({ ok: true });
   const emailId = event.data?.email_id, fromHeader = event.data?.from;
   if (!emailId || !fromHeader) return Response.json({ ok: true });
+
+  // Only mail addressed to THIS app's receiving domain is ours. Resend sends
+  // every inbound email of the account to this webhook, whichever domain it
+  // arrived on, so without this check mail meant for another product that
+  // shares the account (the gofibu invoice inbox, 2026-10-14) was processed
+  // here too — and became a task whenever its sender happened to be a
+  // registered Task AI user. See app/lib/inbound-email.ts. Answered 200: a
+  // retry would change nothing, and it is not an error.
+  const domain = inboundEmailDomain();
+  const recipients = recipientAddresses(event.data);
+  if (!isAddressedToDomain(recipients, domain)) {
+    // Only the domains are logged, not the addresses — it is somebody else's mail.
+    console.log(`Inbound email ${emailId} ignored: not addressed to @${domain} (recipient domains: ${[...new Set(recipients.map(addressDomain).filter(Boolean))].join(", ") || "none given"})`);
+    return Response.json({ ok: true, ignored: "not addressed to this app's receiving domain" });
+  }
 
   // Reply-to-update-a-task path (piloted on manual notify only,
   // 2026-09-15): checked before anything else below, including the

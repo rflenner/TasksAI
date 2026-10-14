@@ -12,6 +12,7 @@
 // fails the task write that triggered it, and never surfaces to the
 // person who made the change — same "each recipient is independent, log
 // and move on" shape the email crons already use.
+import { inboundEmailDomain } from "./inbound-email";
 import { inArray } from "drizzle-orm";
 import { getDb } from "../../db";
 import { users } from "../../db/schema";
@@ -27,7 +28,7 @@ import { createTaskReplyToken } from "./task-update-tokens";
 // sending and inbound receiving are two different Resend-configured
 // domains in this app, and a reply-to address only works if it's on the
 // one Resend actually routes inbound mail for.
-const INBOUND_EMAIL_DOMAIN = process.env.INBOUND_EMAIL_DOMAIN || "tasks.iseeit.ai";
+const INBOUND_EMAIL_DOMAIN = inboundEmailDomain();
 
 type NotifiableTask = { id: number; subject: string; description: string; status: string; due: string | null; owner: string; collaborators: string[]; recipients: string[] };
 
