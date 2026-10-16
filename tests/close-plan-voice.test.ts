@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calendar, checkProposal, confirmQuestion, grounded, describeTask, listLabel, listMatches, planContext, type Proposal, speakable, viewerId } from "../app/lib/close-plan-voice";
+import { calendar, checkProposal, completeDraft, confirmQuestion, describeActions, grounded, describeTask, listLabel, listMatches, type NewTask, planContext, type Proposal, sanitizeDraft, speakable, type VoiceAction, viewerId } from "../app/lib/close-plan-voice";
 
 // Fictional data only — this repository is public.
 const plan = () => ({
@@ -72,11 +72,65 @@ test("checkProposal keeps only real tasks, people, statuses and dates", () => {
   assert.equal(checkProposal(plan(), { ...none, taskId: "t1", actions: [] }, null).ok, false);
 });
 
-test("checkProposal for a new task: a subtask takes its parent's phase, unknown owner is dropped", () => {
-  const r = checkProposal(plan(), { ...none, mode: "add_task", newTask: { title: " Send report ", phaseId: "p1", parentId: "t3", ownerId: "zz", due: "2026-10-09", internal: false } }, null);
-  assert.equal(r.ok, true);
-  if (r.ok) assert.deepEqual(r.newTask, { title: "Send report", phaseId: "p2", parentId: "t3", ownerId: null, due: "2026-10-09", internal: false });
-  assert.equal(checkProposal(plan(), { ...none, mode: "add_task", newTask: { title: "X", phaseId: "nope", parentId: null, ownerId: null, due: null, internal: false } }, null).ok, false);
+const nt = (o: Partial<NewTask> = {}): NewTask => ({ title: "Send report", phaseId: null, parentId: null, ownerId: null, due: null, description: null, internal: false, done: false, ...o });
+const ask = (r: ReturnType<typeof completeDraft>) => { assert.equal(r.kind, "ask"); return r.kind === "ask" ? r : (undefined as never); };
+
+test("a new task: the phase is checked first, offering the current one", () => {
+  const r = ask(completeDraft(plan(), null, nt(), "add a task send report", "2026-10-02"));
+  assert.match(r.question, /^Which phase should "Send report" go in\? You're in Align right now\.$/);
+  assert.equal(r.draft.askedPhase, true);
+});
+
+test("a new task with a named phase asks once for the owner, due date and description that are missing", () => {
+  const first = ask(completeDraft(plan(), null, nt({ phaseId: "p2" }), "add a task to Validate send report", "2026-10-02"));
+  assert.equal(first.question, `For "Send report" in Validate: Who should own it, when it's due and anything for the description? Or say skip.`);
+  // They answer with owner and date only: not asked again, created with the description empty.
+  const done = completeDraft(plan(), first.draft, nt({ title: "", ownerId: "b1", due: "2026-10-09" }), "Olivia, due next Friday", "2026-10-02");
+  assert.equal(done.kind, "create");
+  if (done.kind === "create") assert.deepEqual(done.newTask, { title: "Send report", phaseId: "p2", parentId: null, ownerId: "b1", due: "2026-10-09", description: null, internal: false });
+});
+
+test("a new task is created straight away when everything was said", () => {
+  const r = completeDraft(plan(), null, nt({ phaseId: "p1", ownerId: "s1", due: "2026-10-09", description: "the report for the board" }), "add send report to align, owner Sam, due Friday, the report for the board", "2026-10-02");
+  assert.equal(r.kind, "create");
+});
+
+test("skip ends the questions: current phase, no owner or date (the page fills in defaults)", () => {
+  const first = ask(completeDraft(plan(), null, nt(), "add a task send report", "2026-10-02"));
+  const r = completeDraft(plan(), first.draft, nt({ title: "", done: true }), "skip", "2026-10-02");
+  assert.equal(r.kind, "create");
+  if (r.kind === "create") { assert.equal(r.newTask.phaseId, "p1"); assert.equal(r.newTask.ownerId, null); assert.equal(r.newTask.due, null); }
+});
+
+test("a subtask takes its parent's phase and is not asked for a description; unknown people and dates are dropped", () => {
+  const r = ask(completeDraft(plan(), null, nt({ title: "Book the room", phaseId: "p1", parentId: "t3", ownerId: "zz", due: "next week" }), "add a subtask book the room", "2026-10-02"));
+  assert.match(r.question, /^For "Book the room" in Validate: Who should own it and when it's due\? Or say skip\.$/);
+  assert.equal(r.draft.phaseId, "p2");
+  assert.equal(completeDraft(plan(), null, nt({ title: "Something else entirely" }), "add a task", "2026-10-02").kind, "error");
+  assert.equal(completeDraft(plan(), null, nt({ parentId: "nope" }), "add a subtask send report", "2026-10-02").kind, "error");
+});
+
+test("a draft sent back by the page is cleaned: unknown ids drop out", () => {
+  const d = sanitizeDraft(plan(), { title: " Send report ", phaseId: "nope", ownerId: "s1", parentId: "zzz", due: "soon", description: "", internal: true, askedPhase: true, askedDetails: "yes" });
+  assert.deepEqual(d, { title: "Send report", phaseId: null, ownerId: "s1", parentId: null, due: null, description: null, internal: true, askedPhase: true, askedDetails: false });
+  assert.equal(sanitizeDraft(plan(), { title: "  " }), null);
+});
+
+test("every task field has an action: phase, internal/shared, milestone, remove people, subtask checkboxes", () => {
+  const a = (o: Partial<VoiceAction>): VoiceAction => ({ type: "set_status", status: null, text: null, date: null, personId: null, phaseId: null, flag: null, ...o });
+  const ok = checkProposal(plan(), { ...none, taskId: "t3", actions: [
+    a({ type: "set_phase", phaseId: "p1" }), a({ type: "set_shared", flag: false }), a({ type: "set_milestone", flag: true }),
+    a({ type: "remove_coworker", personId: "b1" }), a({ type: "remove_requester", personId: "zz" }), a({ type: "set_shared", flag: null }), a({ type: "set_phase", phaseId: "nope" }),
+  ] }, null);
+  assert.equal(ok.ok && ok.actions.map(x => x.type).join(), "set_phase,set_shared,set_milestone,remove_coworker");
+  const sub = checkProposal(plan(), { ...none, taskId: "t5", actions: [a({ type: "set_phase", phaseId: "p1" })] }, null);
+  assert.equal(sub.ok, false);
+  assert.match(!sub.ok ? sub.reason : "", /stays in the phase of its main task/);
+  const tick = [a({ type: "set_status", status: "Closed" })];
+  assert.equal(confirmQuestion(plan(), "t5", tick, "2026-10-02"), null);
+  assert.equal(describeActions(plan(), "t5", tick, "2026-10-02"), `Ticked off the subtask "SOC 2".`);
+  assert.equal(describeActions(plan(), "t5", [a({ type: "set_status", status: "Open" })], "2026-10-02"), `Unticked the subtask "SOC 2".`);
+  assert.equal(describeActions(plan(), "t3", [a({ type: "set_phase", phaseId: "p1" }), a({ type: "set_shared", flag: false })], "2026-10-02"), `Moved "Security review" to Align. "Security review" is now internal.`);
 });
 
 test("closing a task and moving a milestone ask for a yes; other changes don't", () => {
@@ -95,7 +149,7 @@ test("text written into a task must come from what was said", () => {
     { type: "post_update", status: null, text: "Marked complete per your request.", date: null, personId: null },
   ] }, null, "mark it done");
   assert.equal(r.ok && r.actions.map(a => a.type).join(), "set_status");
-  assert.equal(checkProposal(plan(), { ...none, mode: "add_task", newTask: { title: "Prepare onboarding deck", phaseId: "p1", parentId: null, ownerId: null, due: null, internal: false } }, null, "add a task").ok, false);
+  assert.equal(completeDraft(plan(), null, { title: "Prepare onboarding deck", phaseId: "p1", parentId: null, ownerId: null, due: null, internal: false }, "add a task", "2026-10-02").kind, "error");
 });
 
 test("the calendar names each date's weekday", () => {
@@ -124,4 +178,25 @@ test("deleting by voice always asks first and names the subtasks", () => {
   const r = checkProposal(plan(), { ...none, taskId: "t3", actions: del }, null, "delete the security review");
   assert.equal(r.ok, true);
   assert.equal(confirmQuestion(plan(), "t3", del, "2026-10-06"), `Delete "Security review" and its 1 subtask? This can't be undone. Say yes to confirm.`);
+});
+
+test("the AI can't fill in what nobody said: phase, owner and parent task need the person's own words", () => {
+  const guessed = nt({ title: "Send report", phaseId: "p2", parentId: "t3", ownerId: "b1" });
+  const r = ask(completeDraft(plan(), null, guessed, "add a task send report", "2026-10-02", "s1"));
+  assert.match(r.question, /^Which phase should "Send report" go in\?/);
+  assert.equal(r.draft.parentId, null);
+  assert.equal(r.draft.ownerId, null);
+  // Named in their words: accepted. "Me" means the viewer.
+  const said = completeDraft(plan(), null, nt({ phaseId: "p2", ownerId: "s1", due: "2026-10-09", description: "for the board" }), "add send report to Validate, owner me, due Friday, for the board", "2026-10-02", "s1");
+  assert.equal(said.kind, "create");
+  if (said.kind === "create") { assert.equal(said.newTask.phaseId, "p2"); assert.equal(said.newTask.ownerId, "s1"); }
+  const sub = ask(completeDraft(plan(), null, nt({ title: "Book room", parentId: "t3" }), "add a subtask book room", "2026-10-02", "s1"));
+  assert.equal(sub.draft.parentId, "t3");
+});
+
+test("a due date the AI made up is dropped; one that was said is kept", () => {
+  const made = ask(completeDraft(plan(), null, nt({ phaseId: "p2", ownerId: "s1", due: "2026-10-28", description: "for the board" }), "add send report to Validate, owner me, for the board", "2026-10-02", "s1"));
+  assert.match(made.question, /when it's due/i);
+  const said = completeDraft(plan(), null, nt({ phaseId: "p2", ownerId: "s1", due: "2026-10-09", description: "for the board" }), "add send report to Validate, owner me, due next Friday, for the board", "2026-10-02", "s1");
+  assert.equal(said.kind, "create");
 });
