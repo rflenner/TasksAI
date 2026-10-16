@@ -14,14 +14,14 @@ export function taskAiCapabilities(person: string): Capability[] {
     { group: "Ask", items: ["Give me my briefing", "What's due today?", "What's overdue?", `When was ${person} last online?`] },
     { group: "Find", items: ["Show my tasks", "Show new tasks", "What's due this week?", "Tasks I requested", "Has anything been updated?", `Show tasks with ${person}`] },
     { group: "Go through a list", items: ["Go through my overdue tasks", "Next", "Open the first one", "Open task …"] },
-    { group: "Change a task", items: ["Post an update: …", "Mark it done", "Move it to Friday", `Assign it to ${person}`, "Set the priority to high", "Check off …", "Add … to the checklist"] },
-    { group: "Create", items: ["Create a task: …, due …", "Paste meeting minutes"] },
+    { group: "Change a task", items: ["Post an update: …", "Mark it done", "Set it to in progress", "Move it to Friday", `Assign it to ${person}`, `Add ${person} as coworker`, `Take ${person} off as coworker`, "Set the priority to high", "Change the description to …", "Put it under the … project", "Put it under the … meeting", "Check off …", "Uncheck …", "Add … to the checklist"] },
+    { group: "Create", items: ["Create a task: …", `Create a task for ${person}: …, due Friday`, "Paste meeting minutes"] },
     { group: "Tell someone", items: ["Notify the owner", `Let ${person} know …`] },
     { group: "Ideas", items: ["I wish you could …"] },
   ];
 }
 
-export const TASK_AI_HELP = "I can give you your briefing, find tasks, like what's overdue, new or due this week, walk through a list with you, update, move, assign and check off tasks, create tasks, and notify people about a task. The full list is in the panel under \"What can I say?\". And if you wish I could do something else, just tell me.";
+export const TASK_AI_HELP = "I can give you your briefing, find tasks, like what's overdue, new or due this week, walk through a list with you, change any field of a task like status, owner, due date, priority, project and description, check off checklist items, create tasks, asking you for the project, owner, due date and description if you leave them out, and notify people about a task. The full list is in the panel under \"What can I say?\". And if you wish I could do something else, just tell me.";
 
 // The first time someone uses a voice assistant, the greeting also says what it can do, once.
 export const FIRST_TIME_HINT = "You can ask me what's overdue, go through your tasks with me, or tell me to update one. Say \"what can you do\" any time.";

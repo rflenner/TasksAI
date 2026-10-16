@@ -51,7 +51,7 @@ const MODE_OUTCOME: Record<string, VoiceAuditOutcome> = {
   act: "changed", created: "changed", deleted: "changed",
   confirm_delete: "awaiting_confirmation", confirm_notify: "awaiting_confirmation",
   unclear: "not_done", unsupported: "not_done",
-  filter: "shown", walk: "shown", briefing: "shown", navigate: "shown", next: "shown", answer: "shown", help: "shown", wish: "shown",
+  filter: "shown", walk: "shown", briefing: "shown", navigate: "shown", next: "shown", answer: "shown", help: "shown", wish: "shown", ask_more: "shown",
 };
 
 // An HTTP failure, or a body that isn't JSON at all, is a real failure; a

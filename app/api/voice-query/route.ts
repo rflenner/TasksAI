@@ -10,6 +10,8 @@ import { canCreateTask, canSeeTask, canWriteTask } from "../../lib/permissions";
 import { requireSameOrigin } from "../../lib/request";
 import { auditRowForVoiceQuery, cleanSessionId, recordVoiceAudit, type VoiceAuditCollector } from "../../lib/voice-audit";
 import { isHelpRequest, TASK_AI_HELP } from "../../lib/voice-help";
+import { calendar } from "../../lib/voice-grounding";
+import { declinesMore, draftFromExtraction, type AnswerFill, type KnownLists, mergeAnswer, nextStep, sanitizeTaskDraft, type DraftStep, type TaskDraft } from "../../lib/voice-task-draft";
 import { knownRequestNames, pickRequestName, recordRequestAsk } from "../../lib/voice-requests";
 import { currentActor } from "../../lib/session";
 import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/task-activity";
@@ -109,7 +111,7 @@ const schema = {
         properties: {
           type: {
             type: ["string", "null"],
-            enum: ["set_due", "set_status", "set_priority", "set_owner", "set_subject", "set_description", "set_project", "set_topic", "add_collaborator", "remove_collaborator", "add_recipient", "remove_recipient", "add_update", "add_checklist_item", "set_checklist_item_done", "delete_task", "goto_next", null],
+            enum: ["set_due", "set_status", "set_priority", "set_owner", "set_subject", "set_description", "set_project", "set_topic", "set_meeting", "add_collaborator", "remove_collaborator", "add_recipient", "remove_recipient", "add_update", "add_checklist_item", "set_checklist_item_done", "set_meeting", "delete_task", "goto_next", null],
           },
           dueDate: { type: ["string", "null"], description: "YYYY-MM-DD, resolved from any relative phrase against today's date; null means clear the due date" },
           status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
@@ -164,6 +166,28 @@ function toActionSummary(t: StoredTask) {
 // into the drawer by hand. Added 2026-09-08 alongside set_project/
 // set_topic specifically so a brand-new project/topic name spoken by
 // voice doesn't silently fail to register.
+// Reads the person's ANSWER to "which project, who owns it, when is it due, any description?" into those fields.
+// Small and fast; everything it returns is checked against the person's own words again (mergeAnswer).
+async function fillTaskDraft(key: string, answer: string, draft: TaskDraft, lists: KnownLists, today: string): Promise<AnswerFill | null> {
+  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+  const isGpt5 = model.startsWith("gpt-5");
+  const nullable = { type: ["string", "null"] };
+  const schema = { type: "object", additionalProperties: false, required: ["project", "owner", "due", "description", "topic", "recurringMeeting"], properties: { project: nullable, owner: nullable, due: nullable, description: nullable, topic: nullable, recurringMeeting: nullable } };
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model, ...(isGpt5 ? { reasoning: { effort: "minimal" } } : {}),
+        input: [{ role: "system", content: `A task is being created by voice: "${draft.subject}". The assistant asked which project it belongs to, who should own it, when it's due and for a description. Read what the person said into the fields (it may be the first request or their answer). Use ONLY what it says; null for anything not said. project / topic / recurringMeeting: the exact known name when the answer clearly names it, else null. owner: the exact known person when named ("me" = the speaker, leave null and it is handled), else null. due: YYYY-MM-DD from the calendar ("Friday" = the next Friday after today). description: only the person's own words describing the task, else null. Today is ${today}. Calendar: ${calendar(today)}. Known projects: ${JSON.stringify(lists.projects)}. Known topics: ${JSON.stringify(lists.topics)}. Known meetings: ${JSON.stringify(lists.meetings)}. Known people: ${JSON.stringify(lists.people)}.` }, { role: "user", content: answer }],
+        text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "task_draft_answer", strict: true, schema } },
+      }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
+    return JSON.parse(result.output_text || result.output?.flatMap(item => item.content || []).map(item => item.text || "").join("") || "{}") as AnswerFill;
+  } catch { return null; }
+}
+
 async function registerDimensionsFor(t: { project: string; recurringMeeting: string; topic: string; owner: string; collaborators: string[]; recipients: string[] }) {
   const entries: Array<[string, string]> = [
     ["project", t.project] as [string, string], ["meeting", t.recurringMeeting] as [string, string],
@@ -218,6 +242,8 @@ async function handleVoiceQuery(request: Request, collector: VoiceAuditCollector
     // short, deterministic path rather than trusting the model with an
     // irreversible action.
     confirmDeleteTaskId?: number;
+    // A task being created over several turns (see app/lib/voice-task-draft.ts): what is known so far.
+    draft?: unknown;
   };
   const { transcript, currentTaskId, workingList, history, confirmDeleteTaskId, listLabel, listFilters } = body;
   const cursorTaskId = typeof body.cursorTaskId === "number" ? body.cursorTaskId : null;
@@ -377,6 +403,61 @@ async function handleVoiceQuery(request: Request, collector: VoiceAuditCollector
   }
 
   const requestNames = await knownRequestNames().catch(() => [] as string[]);
+
+  // ---- Creating a task takes a short conversation ----
+  // Asks once for the project, owner, due date and description that are missing;
+  // "skip" creates it with defaults. See app/lib/voice-task-draft.ts.
+  const draftLists = async (): Promise<KnownLists> => ({ people: [...new Set([...knownPeople, ...await getKnownPersonNames()])], projects: knownProjects, topics: knownTopics, meetings: knownMeetings });
+  const respondToStep = async (step: DraftStep): Promise<Response> => {
+    if (step.kind === "ask") return Response.json({ mode: "ask_more", filters: null, draft: step.draft, spokenAnswer: step.question });
+    const d = step.draft;
+    const createdAt = new Date().toISOString();
+    const values = {
+      subject: d.subject.slice(0, 140), description: d.description || d.subject, owner: d.owner || actor.name,
+      collaborators: d.collaborators, recipients: d.recipients, due: resolveDueDate(d.due, createdAt),
+      source: "Voice dictation", topic: d.topic || "", project: d.project || "", recurringMeeting: d.recurringMeeting || "",
+      status: "Open" as const, created: createdAt, updates: [] as Array<{ text: string; at: string; by?: string }>, createdBy: actor.name, closedAt: null,
+    };
+    // Same permission gate POST /api/tasks itself applies: a voice request doesn't get to create something the
+    // same person couldn't create by clicking "New action item".
+    if (!canCreateTask(values, actor)) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have permission to create that task." });
+    const [created] = await getDb().insert(tasks).values(values).returning();
+    const dimensionEntries: Array<[string, string]> = [
+      ["project", created.project] as [string, string], ["meeting", created.recurringMeeting] as [string, string],
+      ["topic", created.topic] as [string, string], ["person", created.owner] as [string, string],
+      ...created.collaborators.map((c): [string, string] => ["person", c]),
+      ...created.recipients.map((r): [string, string] => ["person", r]),
+    ].filter(([, v]) => v);
+    for (const [type, value] of dimensionEntries) await getDb().insert(dimensionValues).values({ type, value }).onConflictDoNothing();
+    const dimRows = await getDb().select().from(dimensionValues).orderBy(dimensionValues.value);
+    const dimensionsPayload = {
+      project: dimRows.filter(x => x.type === "project").map(x => x.value),
+      meeting: dimRows.filter(x => x.type === "meeting").map(x => x.value),
+      topic: dimRows.filter(x => x.type === "topic").map(x => x.value),
+      person: dimRows.filter(x => x.type === "person").map(x => x.value),
+    };
+    collector.taskIds.push(created.id);
+    const dueLine = created.due ? `due ${speakableDate(created.due)}` : "no due date set";
+    const used = step.defaults.length ? ` I used the default ${step.defaults.map(x => x === "due" ? "due date" : x).join(" and ")}; tell me to change it.` : "";
+    return Response.json({
+      mode: "created", task: created, dimensions: dimensionsPayload,
+      spokenAnswer: `Created a task: ${created.subject}${created.project ? ` in ${created.project}` : ""}. Assigned to ${created.owner}, ${dueLine}.${used}`,
+    });
+  };
+
+  // The person's answer to the last question about a task being created.
+  const draftIn = sanitizeTaskDraft(body.draft);
+  if (draftIn && transcript?.trim()) {
+    if (declinesMore(transcript)) return respondToStep(nextStep(draftIn, true, knownProjects));
+    const lists = await draftLists();
+    const fill = await fillTaskDraft(key, transcript, draftIn, lists, today);
+    if (fill) {
+      const merged = mergeAnswer(draftIn, transcript, fill, actor.name, lists);
+      if (merged.changed) return respondToStep(nextStep(merged.draft, false, knownProjects));
+    }
+    // Not an answer to the question: the person moved on, so this is handled as a new request below.
+  }
+
   const model = process.env.OPENAI_MODEL || "gpt-5-mini";
   // Confirmed live 2026-09-08: after this route's schema/prompt grew a
   // lot (account/opportunity/source, briefing, create_task, six new act
@@ -424,6 +505,7 @@ Decide exactly one of:
   set_priority(priority). set_owner(owner): "assign to Maya" — use the exact known-people spelling when it matches who's meant; the owner must be a real person from the known people list. If the name doesn't match anyone there, use mode "unclear" and put "I don't know anyone called X" in answer — never write a made-up or product name (like "Sales AI") as an owner.
   WRITE ONLY WHAT WAS SAID: every textValue (updates, descriptions, subjects, checklist items) must be the person's own words, tidied for spelling at most — never your own summary, never a name, date, number or outcome they didn't say ("spoke to Bernd", "sent the deck"), never a question turned into a statement. If they ask for an update or note but haven't said what it should say yet, use mode "unclear" and ask what it should say.
   set_subject(textValue): "change/rename the subject to...". set_description(textValue): REPLACES the whole existing description — use it only when they clearly say to replace/rewrite/change the description itself. To add something ("add a note", "mention that...", "also say...") use add_update instead; never use set_description to append. Never put the existing description's text in set_description unless they asked to keep part of it. set_project(textValue): "set the project to...", "tag this to the X project" — use the exact known-project spelling when it matches. set_topic(textValue): "set the topic to...", same idea for topics.
+  set_meeting(textValue): the task's recurring meeting — "put it under the weekly delivery call"; use the exact known meeting name when it matches.
   add_collaborator/remove_collaborator(personName): coworkers — "add/take off Maya as a coworker".
   add_recipient/remove_recipient(personName): "reporter" and "recipient" are the same field.
   add_update(textValue): "add an update saying..."/"note that...".
@@ -541,58 +623,20 @@ This is a spoken request to create ONE new task right now, not a written meeting
 
     const registeredNames = await getKnownPersonNames();
     const resolved = resolveTaskNames(items[0], registeredNames, actor.name);
-    // Same "no owner said -> the person speaking" default as Dictate
-    // Task — a spoken creation request is almost always either a
-    // personal reminder or a direct assignment to someone else.
-    const owner = resolved.owner || actor.name;
-    const createdAt = new Date().toISOString();
-    const values = {
-      subject: String(resolved.subject || resolved.description || "New task").slice(0, 140),
-      description: String(resolved.description || resolved.subject || ""),
-      owner,
-      collaborators: Array.isArray(resolved.collaborators) ? resolved.collaborators : [],
-      recipients: Array.isArray(resolved.recipients) ? resolved.recipients : [],
-      due: resolveDueDate(resolved.due, createdAt),
-      source: "Voice dictation",
-      topic: String(resolved.topic || ""),
-      project: String(resolved.project || ""),
-      recurringMeeting: String(resolved.recurringMeeting || ""),
-      status: "Open" as const,
-      created: createdAt,
-      updates: [] as Array<{ text: string; at: string; by?: string }>,
-      createdBy: actor.name,
-      closedAt: null,
-    };
-    // Same permission gate POST /api/tasks itself applies — a voice
-    // request doesn't get to create something the same person couldn't
-    // create by clicking "New action item" (e.g. a readonly recipient,
-    // or a scoped collaborator/area-admin creating outside their scope).
-    if (!canCreateTask(values, actor)) return Response.json({ mode: "unclear", filters: null, spokenAnswer: "You don't have permission to create that task." });
-    // A direct insert, not a call to POST /api/tasks — Next.js route
-    // files can only export HTTP-method handlers, so there's nothing
-    // there to import. Same pattern the Sales AI sync already uses for
-    // the same reason (see app/lib/sales-ai-sync.ts): its own minimal
-    // insert plus its own dimension-registration, not a self-fetch.
-    const [created] = await getDb().insert(tasks).values(values).returning();
-    const dimensionEntries: Array<[string, string]> = [
-      ["project", created.project] as [string, string], ["meeting", created.recurringMeeting] as [string, string],
-      ["topic", created.topic] as [string, string], ["person", created.owner] as [string, string],
-      ...created.collaborators.map((c): [string, string] => ["person", c]),
-      ...created.recipients.map((r): [string, string] => ["person", r]),
-    ].filter(([, v]) => v);
-    for (const [type, value] of dimensionEntries) await getDb().insert(dimensionValues).values({ type, value }).onConflictDoNothing();
-    const dimRows = await getDb().select().from(dimensionValues).orderBy(dimensionValues.value);
-    const dimensionsPayload = {
-      project: dimRows.filter(x => x.type === "project").map(x => x.value),
-      meeting: dimRows.filter(x => x.type === "meeting").map(x => x.value),
-      topic: dimRows.filter(x => x.type === "topic").map(x => x.value),
-      person: dimRows.filter(x => x.type === "person").map(x => x.value),
-    };
-    const dueLine = created.due ? `due ${speakableDate(created.due)}` : "no due date set";
-    return Response.json({
-      mode: "created", task: created, dimensions: dimensionsPayload,
-      spokenAnswer: `Created a task: ${created.subject}. Assigned to ${created.owner}, ${dueLine}.`,
-    });
+    const lists = await draftLists();
+    // What the person actually said becomes the draft; the rest is asked for once (project, owner, due date,
+    // description), and "skip" creates it with defaults. The extraction also fills in what nobody said, so only
+    // what the person's own words support is kept (see draftFromExtraction).
+    const draft = draftFromExtraction({
+      subject: String(resolved.subject || resolved.description || "New task"), description: String(resolved.description || ""),
+      owner: resolved.owner || null, collaborators: Array.isArray(resolved.collaborators) ? resolved.collaborators : [], recipients: Array.isArray(resolved.recipients) ? resolved.recipients : [],
+      due: resolved.due || null, topic: resolved.topic || null, project: resolved.project || null, recurringMeeting: resolved.recurringMeeting || null,
+    }, transcript ?? "", actor.name, lists);
+    // The extraction can't turn "due Wednesday" into a date, so the same date-aware reader that handles answers
+    // also reads the first sentence; both are checked against the person's own words.
+    const first = await fillTaskDraft(key, transcript ?? "", draft, lists, today);
+    const merged = first ? mergeAnswer(draft, transcript ?? "", first, actor.name, lists, true).draft : draft;
+    return respondToStep(nextStep(merged, false, knownProjects));
   }
 
   // mode === "act": one or more writes against one or more target

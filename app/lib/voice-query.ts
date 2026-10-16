@@ -276,7 +276,7 @@ export function describeFilterPhrase(f: Filters): string {
 // the same resolveNext/workingList machinery standalone "next" uses —
 // both stay in the route itself.
 export type ActionStep = {
-  type: "set_due" | "set_status" | "set_priority" | "set_owner" | "set_subject" | "set_description" | "set_project" | "set_topic"
+  type: "set_due" | "set_status" | "set_priority" | "set_owner" | "set_subject" | "set_description" | "set_project" | "set_topic" | "set_meeting"
       | "add_collaborator" | "remove_collaborator" | "add_recipient" | "remove_recipient"
       | "add_update" | "add_checklist_item" | "set_checklist_item_done" | "delete_task" | "goto_next" | null;
   dueDate: string | null; status: string | null; priority: string | null; owner: string | null;
@@ -304,7 +304,7 @@ export type ActionStep = {
 export type ActionResult = {
   updated: {
     subject: string; description: string; owner: string; collaborators: string[]; recipients: string[];
-    due: string; status: string; priority: string; project: string; topic: string;
+    due: string; status: string; priority: string; project: string; topic: string; recurringMeeting: string;
     updates: Array<{ text: string; at: string; by?: string }>;
     checklist: ChecklistItem[];
   };
@@ -327,7 +327,7 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
     subject: current.subject, description: current.description, owner: current.owner,
     collaborators: [...current.collaborators], recipients: [...current.recipients],
     due: current.due, status: current.status, priority: current.priority,
-    project: current.project, topic: current.topic,
+    project: current.project, topic: current.topic, recurringMeeting: current.recurringMeeting,
     updates: [...current.updates],
     checklist: [...current.checklist],
   };
@@ -381,6 +381,10 @@ export function applyActionSteps(current: StoredTask, steps: ActionStep[], actor
       if (!a.textValue?.trim()) return fail("I didn't catch the new topic.");
       updated.topic = a.textValue.trim();
       confirmations.push(`Set the topic to ${updated.topic}.`);
+    } else if (a.type === "set_meeting") {
+      if (!a.textValue?.trim()) return fail("I didn't catch the new recurring meeting.");
+      updated.recurringMeeting = a.textValue.trim();
+      confirmations.push(`Set the recurring meeting to ${updated.recurringMeeting}.`);
     } else if (a.type === "add_collaborator") {
       if (!a.personName?.trim()) return fail("I didn't catch who to add as a coworker.");
       const name = resolvePerson(a.personName.trim());
