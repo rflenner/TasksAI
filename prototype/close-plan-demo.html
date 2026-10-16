@@ -2335,9 +2335,16 @@ function wirePage() {
   app.querySelectorAll("[data-opentask]").forEach(b => b.onclick = () => { ui.open = b.dataset.opentask; render(); });
   const viewer = $("#viewer"); if (viewer) viewer.onchange = e => { ui.viewer = e.target.value; render(); };
   const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || state.phases[0]; if (cur) openInlineAdd(cur.id, true); };
-  const sa = $("#share-all"); if (sa) sa.onclick = () => toast(`In the real module this emails each ${B()} contact their personal link`);
+  // Inside Task AI sharing is real: each customer contact gets a personal link from the People tab (invitation
+  // emails come later). The stand-alone demo keeps explaining what it would do.
+  const sa = $("#share-all"); if (sa) sa.onclick = () => {
+    if (!IN_APP || state._demo) { toast(`In the real module this emails each ${B()} contact their personal link`); return; }
+    ui.tab = "people"; render(); window.scrollTo({ top: 0, behavior: "smooth" });
+    toast(`Copy each ${B()} contact's personal link here and send it in your own email`);
+  };
   app.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => {
     const p = person(b.dataset.link);
+    if (IN_APP && !state._demo) { b.disabled = true; await copyPersonalLink(p); b.disabled = false; return; }
     const url = `https://tasks-ai.onrender.com/p/${btoa(p.id + "-meridian").replace(/=+$/, "").toLowerCase()}`;
     try { await navigator.clipboard.writeText(url); toast(`Link for ${p.name} copied`); } catch (e) { toast(url); }
   });
