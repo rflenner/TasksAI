@@ -166,6 +166,7 @@ export default function DataHygieneClient({ initialDimensions, initialDuplicates
           <Link href="/users">Users & access</Link>
           <Link className="active" href="/data-hygiene">Data Hygiene</Link>
           <Link href="/integrations">Integrations</Link>
+          <Link href="/playground">Playground</Link>
           <Link href="/email-preview">Email notifications</Link>
         </nav>
       </aside>
