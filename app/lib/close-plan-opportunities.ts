@@ -11,6 +11,21 @@ export type OpportunityHit = { id: string; name: string; accountId: string | nul
 export type PlanContact = { name: string; title: string; email: string; contactIds: string[] };
 
 export const SEARCH_LIMIT = 15;
+
+// Which Sales AI account a plan belongs to. New plans store it (accountId); older ones are matched by the
+// opportunity name they were created from, then by the account name, and only when that is unambiguous.
+export function accountIdForPlan(plan: { accountId?: unknown; account?: unknown; opp?: unknown }, opportunities: SalesAIOpportunityRow[], accountNameById: Map<string, string>): string | null {
+  if (typeof plan.accountId === "string" && /^[A-Za-z0-9]{6,40}$/.test(plan.accountId)) return plan.accountId;
+  const oppName = plan.opp && typeof plan.opp === "object" ? String((plan.opp as { name?: unknown }).name || "") : "";
+  const account = typeof plan.account === "string" ? plan.account : "";
+  const byOpp = oppName ? [...new Set(opportunities.filter(o => o.account_id && norm(o.opportunity_name) === norm(oppName) && (!account || norm(accountNameById.get(o.account_id) || "") === norm(account))).map(o => o.account_id as string))] : [];
+  if (byOpp.length === 1) return byOpp[0];
+  if (!account) return null;
+  const exact = [...accountNameById].filter(([, name]) => norm(name) === norm(account)).map(([id]) => id);
+  if (exact.length === 1) return exact[0];
+  const near = [...accountNameById].filter(([, name]) => norm(name).includes(norm(account)) || norm(account).includes(norm(name))).map(([id]) => id);
+  return exact.length === 0 && near.length === 1 ? near[0] : null;
+}
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
 // Sales AI stage names come from Salesforce ("Closed Won", "Closed Lost").
 export const isOpenStage = (stage?: string | null) => !/^closed\b/i.test(stage || "");
