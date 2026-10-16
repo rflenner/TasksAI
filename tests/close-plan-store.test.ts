@@ -55,3 +55,12 @@ test("validatePlan checks the id, the shape and the size", () => {
   assert.equal(validatePlan("pl1", null).ok, false);
   assert.equal(validatePlan("pl1", { ...plan, notes: "x".repeat(2_100_000) }).ok, false);
 });
+
+test("canManagePlanPeople: the iSEEit plan owner or an administrator, nobody else", async () => {
+  const { canManagePlanPeople } = await import("../app/lib/close-plan-store");
+  assert.equal(canManagePlanPeople({ email: "owner@iseeit.example", role: "collaborator" }, plan), true);
+  assert.equal(canManagePlanPeople({ email: "x@iseeit.example", role: "area_admin" }, plan), true);
+  assert.equal(canManagePlanPeople({ email: "x@iseeit.example", role: "site_admin" }, plan), true);
+  assert.equal(canManagePlanPeople({ email: "member@iseeit.example", role: "collaborator" }, plan), false);
+  assert.equal(canManagePlanPeople({ email: "olivia.grant@meridian-bio.example", role: "collaborator" }, plan), false);
+});

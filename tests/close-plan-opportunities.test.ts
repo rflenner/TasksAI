@@ -60,3 +60,19 @@ test("mergeContacts collapses a full record, an email-only record and a handle-o
 test("mergeContacts gives an email-only person a readable name", () => {
   assert.deepEqual(mergeContacts([{ contact_id: "c1", contact_name: "", email: "elena.rossi@meridian-bio.example" }]).map(c => c.name), ["Elena Rossi"]);
 });
+
+test("accountIdForPlan: stored id first, then the opportunity the plan came from, then an unambiguous account name", async () => {
+  const { accountIdForPlan } = await import("../app/lib/close-plan-opportunities");
+  const opps = [
+    { opportunity_id: "o1", opportunity_name: "Rollout", account_id: "A1" },
+    { opportunity_id: "o2", opportunity_name: "Rollout", account_id: "A2" },
+    { opportunity_id: "o3", opportunity_name: "Renewal 2026", account_id: "A3" },
+  ];
+  const names = new Map([["A1", "Meridian Biotech"], ["A2", "Nordwind Logistics"], ["A3", "Alpina Health"], ["A4", "Alpina Health Services"]]);
+  assert.equal(accountIdForPlan({ accountId: "ABC123XYZ" }, opps, names), "ABC123XYZ");
+  assert.equal(accountIdForPlan({ account: "Meridian Biotech", opp: { name: "Rollout" } }, opps, names), "A1");
+  assert.equal(accountIdForPlan({ account: "Nordwind Logistics" }, opps, names), "A2");
+  assert.equal(accountIdForPlan({ account: "Alpina" }, opps, names), null);
+  assert.equal(accountIdForPlan({ account: "Unknown Co" }, opps, names), null);
+  assert.equal(accountIdForPlan({ accountId: "bad id!", account: "Meridian Biotech" }, opps, names), "A1");
+});

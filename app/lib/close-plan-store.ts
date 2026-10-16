@@ -46,6 +46,11 @@ export function canDeletePlan(actor: StoreActor, data: PlanData): boolean {
   return actor.role === "site_admin" || actor.role === "area_admin" || (Boolean(sellerOwnerEmail(data)) && sellerOwnerEmail(data) === lower(actor.email));
 }
 
+// Adding people to a plan (Task AI users and Sales AI contacts, with a role): the same people who may delete it,
+// the iSEEit plan owner or an administrator. Not a general permission to browse Sales AI or the user list: the
+// lists only ever come back for the one plan this is checked against.
+export const canManagePlanPeople = canDeletePlan;
+
 // A plan document must be an object whose id matches the URL, with phases, tasks and people lists, and fit the size limit.
 export function validatePlan(id: string, data: unknown): { ok: true; data: PlanData & Record<string, unknown> } | { ok: false; error: string } {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return { ok: false, error: "Invalid plan id" };

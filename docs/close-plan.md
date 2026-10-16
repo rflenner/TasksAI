@@ -324,9 +324,25 @@ invitation email lists what they can do and the open tasks waiting for them
 overdue / due this week / open / closed, plus the role breakdown and a
 "Show tasks" link that filters the plan to that person.
 
-**Adding people:** iSEEit side = existing Task AI users only. Meridian Biotech side =
-Sales AI contacts of the account, or a new contact entered by hand (later
-written back to Sales AI).
+**Adding people** (People tab, "Add person" on each side): who may add: the iSEEit plan
+owner, Site Admins and Area Admins (`canManagePlanPeople`, checked on the server
+too). Everyone gets a **role on the plan** (free text with suggestions: the roles
+of the new-plan guide).
+- *iSEEit side:* active Task AI users, searchable, several at once, each with a role.
+- *Customer side:* three tabs: **From Sales AI** (the account's contacts that
+  aren't on the plan yet, duplicates merged; each row gets a role suggested from
+  the job title when it is a strong match, e.g. "Chief Commercial Officer" →
+  Executive sponsor; tick one or several), **Task AI user** (a partner or vendor on
+  the customer side), and **New contact** by hand (added to the plan only, Sales AI
+  isn't changed). The Sales AI contact ids are kept on the person for a later
+  write-back.
+- The lists come from `GET /api/close-plans/store/:id/people-options`, allowed for
+  the plan owner. (The new-plan guide's own lookups are admin-only, so before this a
+  plan owner who wasn't an administrator got empty lists and couldn't add anyone.)
+  The plan's Sales AI account comes from `accountId` stored on new plans, else the
+  opportunity the plan was created from, else an unambiguous account name
+  (`accountIdForPlan`); if none can be found, or Sales AI is down, adding Task AI
+  users and new contacts still works and the panel says why contacts are missing.
 
 **Removing people:** their open owned tasks are handed to someone chosen at
 removal time (default: that side's plan owner). They're taken off coworker and

@@ -377,6 +377,22 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .remove-panel { border-left: 3px solid #c0503e; background: #fdf3f1; border-radius: 0 8px 8px 0; padding: 10px 12px; font-size: 13px; }
 .remove-panel select { border: 1px solid var(--field); border-radius: 8px; padding: 7px 8px; background: #fff; font-weight: 400; }
 .btn.danger { background: #b23c2a; border-color: #b23c2a; color: #fff; }
+.ap-panel { background: #fff; border: 1px solid #c9dbf2; border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; box-shadow: 0 5px 18px #173f7610; }
+.ap-tabs { display: flex; gap: 4px; margin: 0 0 10px; flex-wrap: wrap; }
+.ap-tabs button { border: 1px solid var(--field); background: #fff; border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.ap-tabs button.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.ap-search { width: 100%; border: 1px solid var(--field); border-radius: 8px; padding: 9px 11px; font-size: 14px; margin: 0 0 8px; }
+.ap-list { max-height: 320px; overflow-y: auto; display: grid; gap: 6px; margin: 0 0 10px; }
+.ap-row { display: grid; grid-template-columns: auto 1fr minmax(150px, 220px); gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; font-weight: 400; cursor: pointer; }
+.ap-row:hover { border-color: var(--soft-line); background: #f9fbfd; }
+.ap-row input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--navy); margin: 0; }
+.ap-row b { display: block; color: var(--ink); font-size: 13.5px; }
+.ap-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+.ap-row input[type=text], .ap-role { border: 1px solid var(--field); border-radius: 7px; padding: 7px 9px; font-size: 13px; background: #fff; width: 100%; }
+.ap-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ap-foot .hint { margin: 0; flex: 1; min-width: 200px; }
+.ap-note { background: #fff7e8; border: 1px solid #fde2b0; color: #6b4a00; border-radius: 8px; padding: 8px 11px; font-size: 12.5px; margin: 0 0 8px; }
+@media (max-width: 620px) { .ap-row { grid-template-columns: auto 1fr; } .ap-row .ap-role { grid-column: 2; } }
 .add-person { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; background: #fff; border: 1px dashed #c3cbd6; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
 .add-person input, .add-person select { border: 1px solid var(--field); border-radius: 8px; padding: 10px 11px; font-size: 14px; font-weight: 400; background: #fff; }
 .add-person .btn { height: 41px; }
@@ -1029,7 +1045,9 @@ function canCreate() { return acc().create && acc().level !== "view"; }
 // delete tasks they added themselves.
 function canDelete(t) { if (!canEdit(t)) return false; return ui.mode === "seller" ? acc().level === "all" || t.createdBy === me() : t.createdBy === me(); }
 // Only the plan owners manage people: the iSEEit plan owner both teams, the Meridian Biotech plan owner the Meridian Biotech team.
-function canManage(side) { return !LINK && (me() === state.planOwners.seller || (side === "buyer" && me() === state.planOwners.buyer)); }
+// Plan owners manage the people of their plan; so do Site and Area Admins (same people who may delete a plan).
+const isAdminUser = () => Boolean(APP_ME && (APP_ME.role === "site_admin" || APP_ME.role === "area_admin"));
+function canManage(side) { return !LINK && (me() === state.planOwners.seller || isAdminUser() || (side === "buyer" && me() === state.planOwners.buyer)); }
 function rightsText(a) { return [a.level === "view" ? "View only" : a.level === "own" ? "Edits own tasks" : "Edits all tasks", a.create && a.level !== "view" ? "creates tasks" : ""].filter(Boolean).join(" · "); }
 function matches(t, f = ui.filter) {
   switch (f) {
@@ -1549,25 +1567,81 @@ function teamSection(side) {
   </section>`;
 }
 
-function addPersonForm(side) {
-  if (side === "seller") {
-    const pool = SELLER_OPTIONS().filter(c => c.key !== ME_ID() && !state.people.some(p => p.name === c.name || (c.email && p.email === c.email)));
-    return `<form class="add-person" id="add-person-form" data-side="seller">
-      <label class="field">${usingAppUsers() ? "Active Task AI user" : "Task AI user (demo examples)"}<select id="ap-pick" required>${pool.map(c => `<option value="${esc(c.key)}">${esc(c.name)}${c.email ? ` · ${esc(c.email)}` : ""}</option>`).join("")}</select></label>
-      <label class="field">Role on this plan<input id="ap-role" placeholder="e.g. Solutions Engineer"></label>
-      <button class="btn primary" type="submit" ${pool.length ? "" : "disabled"}>Add to iSEEit team</button>
-      <p class="hint" style="grid-column:1/-1;margin:0">${pool.length ? "Only active Task AI users can join the iSEEit team. By default they can edit every task." : "Every active Task AI user is already on this plan."}</p>
-    </form>`;
+// ---- Adding people to a plan (plan owners and administrators) ----
+// iSEEit side: active Task AI users. Customer side: the account's contacts from Sales AI, an active Task AI user
+// (a vendor or partner on the customer side), or someone new by hand. Everyone gets a role on the plan. The lists
+// come from /api/close-plans/store/:id/people-options, which is allowed for the plan owner (the new-plan guide's
+// own lookups are admin-only), so a plan owner who isn't an administrator can add people too.
+const ROLE_ORDER = { buyer: ["sponsor", "lead", "tech", "security", "procurement", "legal", "users"], seller: ["ae", "se", "cs", "pm", "design", "dev"] };
+const roleLabels = side => (ROLE_ORDER[side] || []).map(k => ROLES[k].label);
+// A role suggested from a job title, using the same patterns the new-plan guide uses (most specific first).
+function suggestRole(title) {
+  // Only strong matches: the first pattern of the technical and project roles (their second patterns, like
+  // "specialist" or "operations", are too loose to suggest a role from); an executive or director counts for sponsor.
+  for (const k of ["security", "procurement", "legal", "sponsor", "tech", "lead", "users"]) {
+    const m = ROLES[k].match; if (!m) continue;
+    const patterns = Array.isArray(m) ? (k === "tech" || k === "lead" ? m.slice(0, 1) : m) : [m];
+    if (patterns.some(re => re.test(title || ""))) return ROLES[k].label;
   }
-  return `<form class="add-person" id="add-person-form" data-side="buyer">
-    <p class="hint" style="grid-column:1/-1;margin:0 0 2px">All ${esc(B())} contacts from Sales AI are already on this plan. Add someone new here; they'll be added to Sales AI too once the sync exists.</p>
-    ${usingAppUsers() ? `<label class="field" style="grid-column:1/-1">Already a Task AI user? (optional)<select id="ap-user"><option value="">Pick an active Task AI user to fill in the details</option>${APP_USERS.filter(u => !state.people.some(p => p.email && p.email === u.email)).map(u => `<option value="${esc(u.key)}">${esc(u.name)} · ${esc(u.email)}${u.title !== "Task AI user" ? ` · ${esc(u.title.replace(" · Task AI user", ""))}` : ""}</option>`).join("")}</select></label>` : ""}
-    <label class="field">Name<input id="ap-name" required placeholder="First and last name"></label>
-    <label class="field">Email<input id="ap-email" type="email" placeholder="name@${esc(state.domain || "company.com")}"></label>
-    <label class="field">Title<input id="ap-title" placeholder="Job title"></label>
-    <label class="field">Role on this plan<input id="ap-role" placeholder="e.g. IT security"></label>
-    <button class="btn primary" type="submit">Add to ${esc(B())} team</button>
-  </form>`;
+  return "";
+}
+function loadPeopleOptions(force) {
+  const cur = ui.peopleOpts;
+  if (!force && cur && cur.planId === state.id) return;
+  const mine = { planId: state.id, loading: true, users: [], contacts: [], contactsStatus: "ok", err: "" };
+  ui.peopleOpts = mine;
+  if (!IN_APP || state._demo) {
+    // Stand-alone demo: the fictional examples.
+    const opp = DEMO_OPPS.find(o => o.account === state.account);
+    mine.users = SELLER_OPTIONS().filter(c => c.key !== ME_ID()).map(c => ({ name: c.name, email: c.email || "", company: "iSEEit" }));
+    mine.contacts = opp ? opp.contacts.map(c => ({ ...c, contactIds: [] })) : [];
+    mine.loading = false; return;
+  }
+  fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/people-options`, { credentials: "same-origin" })
+    .then(async r => { const data = await r.json().catch(() => ({})); if (ui.peopleOpts !== mine) return; if (!r.ok) mine.err = data.error || "The list of people could not be loaded."; else Object.assign(mine, { users: data.users || [], contacts: data.contacts || [], contactsStatus: data.contactsStatus || "ok" }); })
+    .catch(() => { if (ui.peopleOpts === mine) mine.err = "The list of people could not be loaded. Check your connection."; })
+    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor) render(); } });
+}
+const onPlan = c => state.people.some(p => (c.email && p.email && p.email.toLowerCase() === c.email.toLowerCase()) || p.name.toLowerCase() === c.name.toLowerCase());
+function rolesDatalist(side) { return `<datalist id="roles-${side}">${roleLabels(side).map(r => `<option value="${esc(r)}"></option>`).join("")}</datalist>`; }
+function apRow(c, i, side, role) {
+  return `<label class="ap-row" data-q="${esc((c.name + " " + (c.email || "") + " " + (c.title || "") + " " + (c.company || "")).toLowerCase())}">
+    <input type="checkbox" data-ap-i="${i}" aria-label="Add ${esc(c.name)}">
+    <div><b>${esc(c.name)}</b><small>${esc([c.title || c.company, c.email].filter(Boolean).join(" · ") || "No email")}</small></div>
+    <input type="text" class="ap-role" data-ap-role="${i}" list="roles-${side}" value="${esc(role)}" placeholder="Role on this plan" aria-label="Role of ${esc(c.name)}">
+  </label>`;
+}
+function addPersonForm(side) {
+  const o = ui.peopleOpts && ui.peopleOpts.planId === state.id ? ui.peopleOpts : null;
+  const tab = side === "seller" ? "user" : (ui.addTab || "sales");
+  const tabs = side === "seller" ? "" : `<div class="ap-tabs" role="tablist" aria-label="Where to find the person">
+    <button type="button" role="tab" data-ap-tab="sales" class="${tab === "sales" ? "on" : ""}">From Sales AI${o && !o.loading ? ` (${o.contacts.filter(c => !onPlan(c)).length})` : ""}</button>
+    <button type="button" role="tab" data-ap-tab="user" class="${tab === "user" ? "on" : ""}">Task AI user</button>
+    <button type="button" role="tab" data-ap-tab="new" class="${tab === "new" ? "on" : ""}">New contact</button></div>`;
+  let body = "";
+  if (tab === "new") {
+    body = `<form class="add-person" id="add-person-form" data-side="buyer" style="border:0;padding:0;margin:0;background:none">
+      <label class="field">Name<input id="ap-name" required placeholder="First and last name"></label>
+      <label class="field">Email<input id="ap-email" type="email" placeholder="name@${esc(state.domain || "company.com")}"></label>
+      <label class="field">Title<input id="ap-title" placeholder="Job title"></label>
+      <label class="field">Role on this plan<input id="ap-role" list="roles-buyer" placeholder="e.g. IT security"></label>
+      <button class="btn primary" type="submit">Add to ${esc(B())} team</button>
+      <p class="hint" style="grid-column:1/-1;margin:0">They're added to the plan only; Sales AI isn't changed.</p></form>`;
+  } else if (!o || o.loading) {
+    body = `<p class="hint" style="margin:0">Loading people…</p>`;
+  } else if (o.err) {
+    body = `<p class="ap-note">${esc(o.err)}</p>`;
+  } else {
+    const list = tab === "sales" ? o.contacts : o.users;
+    const free = list.filter(c => !onPlan(c));
+    const note = tab === "sales" && o.contactsStatus === "no_account" ? `<p class="ap-note">This plan isn't linked to a Sales AI account, so there are no contacts to pick from. Add someone with “New contact”.</p>`
+      : tab === "sales" && o.contactsStatus === "unavailable" ? `<p class="ap-note">Sales AI isn't reachable right now. Try again in a minute, or add someone with “New contact”.</p>` : "";
+    body = `${note}${free.length ? `<input class="ap-search" type="search" placeholder="Search by name, email or title" aria-label="Search people" data-ap-search>
+      <form id="ap-multi" data-side="${side}" data-ap-kind="${tab}"><div class="ap-list" role="group" aria-label="${tab === "sales" ? "Sales AI contacts" : "Task AI users"}">${free.map((c, i) => apRow(c, i, side, tab === "sales" ? suggestRole(c.title) : "")).join("")}</div>
+      <div class="ap-foot"><button class="btn primary" type="submit" id="ap-add" disabled>Add selected</button><p class="hint">${side === "seller" ? "Only active Task AI users can join the iSEEit team. They can edit every task by default." : tab === "sales" ? `${list.length - free.length ? `${list.length - free.length} already on the plan. ` : ""}Pick one or more and give each a role. The role is a suggestion from the job title.` : "A Task AI user on the customer side (for example a partner). They see only the shared tasks, like any other contact."}</p></div></form>`
+      : `<p class="hint" style="margin:0">${tab === "sales" ? "All contacts from Sales AI are already on this plan." : "Every active Task AI user is already on this plan."}</p>`}`;
+  }
+  return `<div class="ap-panel">${rolesDatalist(side)}${tabs}${body}</div>`;
 }
 
 const GEAR = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
@@ -2268,6 +2342,22 @@ window.addEventListener("scroll", hideTip, { passive: true });
 
 function closeDrawer() { ui.open = null; ui.addSub = false; ui.picker = null; ui.delTask = null; render(); }
 
+// Adds people to one side of the plan, each with a role. Plan owners and administrators only (canManage).
+function addPeopleToPlan(list, side) {
+  if (!canManage(side)) { toast("Only the plan owners can add people"); return; }
+  const added = [];
+  for (const np of list) {
+    if (onPlan(np)) continue;
+    const id = "p" + (++state.seq);
+    state.people.push({ id, name: np.name, email: np.email || "", title: np.title || "", role: np.role || "", side, ...(np.contactIds && np.contactIds.length ? { contactIds: np.contactIds } : {}),
+      access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
+    log(`added ${np.name} to the ${side === "buyer" ? B() : "iSEEit"} team${np.role ? ` as ${np.role}` : ""}`, null);
+    added.push(np);
+  }
+  ui.addFor = null; save(); render();
+  if (added.length) toast(added.length === 1 ? `${added[0].name} added${added[0].role ? ` as ${added[0].role}` : ""}${side === "buyer" ? ". Copy their personal link when you're ready" : ""}` : `${added.length} people added${side === "buyer" ? ". Copy their personal links when you're ready" : ""}`);
+}
+
 function wirePage() {
   const app = $("#app");
   app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { ui.filter = ui.filter === b.dataset.f && b.classList.contains("stat") ? "all" : b.dataset.f; render(); });
@@ -2316,17 +2406,26 @@ function wirePage() {
   app.querySelectorAll("[data-kd]").forEach(b => b.onclick = () => { hideTip(); ui.open = b.dataset.kd; render(); });
   app.querySelectorAll(".ms-mark").forEach(m => { m.onmouseenter = m.onfocus = () => showTip(m); m.onmouseleave = m.onblur = hideTip; });
   app.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ui.tab = b.dataset.tab; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":tab", ui.tab); } catch (e) {} render(); });
-  app.querySelectorAll("[data-addperson]").forEach(b => b.onclick = () => { ui.addFor = ui.addFor === b.dataset.addperson ? null : b.dataset.addperson; render(); });
-  const apUser = $("#ap-user"); if (apUser) apUser.onchange = () => { const u = (APP_USERS || []).find(x => x.key === apUser.value); if (!u) return; $("#ap-name").value = u.name; $("#ap-email").value = u.email; $("#ap-title").value = u.title.replace(" · Task AI user", "").replace("Task AI user", ""); };
+  app.querySelectorAll("[data-addperson]").forEach(b => b.onclick = () => { const side = b.dataset.addperson; ui.addFor = ui.addFor === side ? null : side; ui.addTab = "sales"; if (ui.addFor) loadPeopleOptions(); render(); });
+  app.querySelectorAll("[data-ap-tab]").forEach(b => b.onclick = () => { ui.addTab = b.dataset.apTab; render(); });
+  // Search narrows the list without re-rendering (so ticked rows and typed roles stay).
+  const search = $("[data-ap-search]"); if (search) search.oninput = () => { const q = search.value.trim().toLowerCase(); app.querySelectorAll(".ap-row").forEach(r => { r.hidden = Boolean(q) && !r.dataset.q.includes(q); }); };
+  const multi = $("#ap-multi"); if (multi) {
+    const sync = () => { const n = multi.querySelectorAll("input[data-ap-i]:checked").length; const btn = $("#ap-add"); btn.disabled = !n; btn.textContent = n ? `Add ${n} selected` : "Add selected"; };
+    multi.querySelectorAll("input[data-ap-i]").forEach(c => c.onchange = sync);
+    multi.querySelectorAll(".ap-role").forEach(r => r.oninput = () => { const c = r.closest(".ap-row").querySelector("input[data-ap-i]"); if (r.value.trim() && !c.checked) { c.checked = true; sync(); } });
+    multi.onsubmit = e => {
+      e.preventDefault();
+      const side = multi.dataset.side, o = ui.peopleOpts, list = (multi.dataset.apKind === "sales" ? o.contacts : o.users).filter(c => !onPlan(c));
+      const picked = [...multi.querySelectorAll("input[data-ap-i]:checked")].map(c => ({ c: list[Number(c.dataset.apI)], role: (multi.querySelector(`[data-ap-role="${c.dataset.apI}"]`).value || "").trim() })).filter(x => x.c);
+      if (!picked.length) return;
+      addPeopleToPlan(picked.map(x => ({ name: x.c.name, email: x.c.email || "", title: x.c.title || (side === "seller" ? "Task AI user" : x.c.company || ""), role: x.role, contactIds: x.c.contactIds || [] })), side);
+    };
+  }
   const apf = $("#add-person-form"); if (apf) apf.onsubmit = e => {
     e.preventDefault();
-    const side = apf.dataset.side, role = ($("#ap-role")?.value || "").trim();
-    let np;
-    if (side === "seller") { const c = SELLER_OPTIONS().find(x => x.key === $("#ap-pick").value); if (!c) return; np = { name: c.name, email: c.email || "", title: c.title || "Task AI user" }; }
-    else { const name = $("#ap-name").value.trim(); if (!name) return; np = { name, email: $("#ap-email").value.trim(), title: $("#ap-title").value.trim() || "New contact" }; }
-    const id = "p" + (++state.seq);
-    state.people.push({ id, ...np, role, side, access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
-    log(`added ${np.name} to the ${side === "buyer" ? B() : "iSEEit"} team`, null); ui.addFor = null; save(); render(); toast(`${np.name} added${side === "buyer" ? ". Send the invite when you're ready" : ""}`);
+    const name = $("#ap-name").value.trim(); if (!name) return;
+    addPeopleToPlan([{ name, email: $("#ap-email").value.trim(), title: $("#ap-title").value.trim() || "New contact", role: ($("#ap-role").value || "").trim(), contactIds: [] }], "buyer");
   };
   app.querySelectorAll("[data-invite]").forEach(b => b.onclick = () => { ui.inviteFor = b.dataset.invite; renderInvite(); });
 
@@ -2822,7 +2921,7 @@ function createPlanFromWizard() {
   const w = ui.wizard; wzSuggest();
   const tpl = TEMPLATES.find(t => t.id === w.tpl), o = wzOpp(), contacts = wzContacts(), ex = new Set(w.exclude);
   const plan = { id: "pl" + Date.now(), account: wzAccount(), domain: o ? o.domain : (w.manual.domain || "").trim(), status: "draft", title: w.title.trim(),
-    opp: o ? { name: o.opp, stage: o.stage, amount: o.amount } : null, phases: [], tasks: [], people: [], planOwners: { seller: ME_ID(), buyer: null }, activity: [], seq: 1000, setup: { dates: false, internal: false, hidden: false } };
+    accountId: (o && o.accountId) || null, opp: o ? { name: o.opp, stage: o.stage, amount: o.amount } : null, phases: [], tasks: [], people: [], planOwners: { seller: ME_ID(), buyer: null }, activity: [], seq: 1000, setup: { dates: false, internal: false, hidden: false } };
   // People: the creator, the iSEEit colleagues picked for roles, and every contact of the account.
   const roleNames = key => Object.entries(w.map).filter(([, v]) => v === key).map(([r]) => ROLES[r].label).join(", ");
   plan.people.push({ ...creatorPerson(), role: roleNames(ME_ID()) || "Account lead", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
