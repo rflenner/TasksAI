@@ -422,6 +422,17 @@ help with this plan?").
   phase end as due date) and says so. A subtask takes its parent's phase and isn't
   asked for a description. The draft lives on the page between turns and is
   re-checked on the server each time (`completeDraft`).
+- **Same in Task AI's own Live Voice Assistant** (`app/lib/voice-task-draft.ts`,
+  `/api/voice-query`): "Create a task: …" checks which project it belongs to and
+  asks once for the project, owner, due date and description that are missing
+  ("skip" creates it with defaults: you as owner, a due date a week out, no
+  project, and says so). What counts is checked against the person's own words (a
+  project must be a known one, an owner named or "me", a date said, a description
+  only when they say they're giving one). A reply that adds nothing ("what's
+  overdue?") is handled as a new request. The recurring meeting is now a voice
+  field too ("put it under the Weekly delivery call"), next to status, priority,
+  owner, due date, project, topic, coworkers, requested by, description, updates
+  and the checklist (check / uncheck).
 - **The AI can't fill in what nobody said:** a phase, an owner, a due date or a
   parent task only counts when the person's words name it (a live test had "add a
   task" become a subtask of an existing task, in a guessed phase, with an invented

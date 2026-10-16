@@ -9,7 +9,9 @@
 // close-plan-share.ts) can use the same assistant later.
 
 import { isHelpRequest, type Capability } from "./voice-help";
+import { calendar, grounded, mentionsDate, namedIn } from "./voice-grounding";
 export type { Capability } from "./voice-help";
+export { calendar, grounded, namedIn };
 
 type Obj = Record<string, unknown>;
 const arr = (v: unknown): Obj[] => Array.isArray(v) ? v.filter(x => x && typeof x === "object") as Obj[] : [];
@@ -73,17 +75,6 @@ export function addressedToSomeoneElse(utterance: string, people: Array<{ name?:
   if (!m) return false;
   const first = m[1].toLowerCase();
   return people.some(p => String(p.name || "").trim().split(/\s+/)[0].toLowerCase() === first);
-}
-
-// The next three weeks with their weekdays, so "Friday" or "next Tuesday" lands
-// on the right date (a live test turned "due Friday" into a Thursday).
-export function calendar(today: string, days = 21): string {
-  const out: string[] = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + i);
-    out.push(`${d.toISOString().slice(0, 10)} ${d.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })}`);
-  }
-  return out.join(", ");
 }
 
 export function viewerId(data: Obj, email: string): string | null {
@@ -165,16 +156,6 @@ export function describeTask(data: Obj, id: string, today: string): string {
   return parts.join(" ");
 }
 
-// Text written into a task (an update, a new title or details) must come from
-// what the person said: a live test had "mark it done" also post an update
-// "Marked complete per your request." that nobody said.
-const words = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(w => w.length >= 3);
-export function grounded(text: string, utterance: string): boolean {
-  const said = new Set(words(utterance)), own = words(text);
-  if (!own.length) return false;
-  return own.filter(w => said.has(w)).length / own.length >= 0.6;
-}
-
 // Keeps only what points at something real: known task, person and phase ids,
 // valid statuses and dates, and text the person actually said. Returns why it
 // can't be done when nothing is left. (Creating a task goes through completeDraft.)
@@ -232,13 +213,6 @@ export type DraftResult = { kind: "ask"; draft: Draft; question: string } | { ki
 // The AI must not fill in what nobody said (a live test had "add a task: …" become
 // a subtask of an existing task, in a phase it guessed): a phase, an owner or a
 // parent task only counts when the person's words name it.
-const squash = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
-export const namedIn = (utterance: string, name: string) => {
-  const u = ` ${squash(utterance)} `, full = squash(name);
-  if (!full) return false;
-  return u.includes(` ${full} `) || squash(name).split(" ").some(w => w.length >= 3 && u.includes(` ${w} `));
-};
-
 export function completeDraft(data: Obj, prevRaw: unknown, n: NewTask | null, utterance: string, today: string, viewer: string | null = null): DraftResult {
   const tasks = arr(data.tasks), people = arr(data.people), phases = arr(data.phases);
   const prev = sanitizeDraft(data, prevRaw);
@@ -253,7 +227,7 @@ export function completeDraft(data: Obj, prevRaw: unknown, n: NewTask | null, ut
   const phaseId = parent ? String(parent.phase) : (phaseSaid ? String(phaseSaid.id) : null) ?? prev?.phaseId ?? null;
   const personSaid = typeof n?.ownerId === "string" ? people.find(p => p.id === n.ownerId && (namedIn(utterance, str(p.name)) || (p.id === viewer && /\b(me|myself|mine|i)\b/i.test(utterance)))) : null;
   const ownerId = (personSaid ? String(personSaid.id) : null) ?? prev?.ownerId ?? null;
-  const dateSaid = /\b(today|tomorrow|tonight|mon(day)?|tue(s|sday)?|wed(nesday)?|thu(r|rs|rsday)?|fri(day)?|sat(urday)?|sun(day)?|jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?|next|week|month|weeks|months|days?|end of|eod|\d)\b/i.test(utterance);
+  const dateSaid = mentionsDate(utterance);
   const due = (typeof n?.due === "string" && DATE.test(n.due) && dateSaid ? n.due : null) ?? prev?.due ?? null;
   const said = n?.description && n.description.trim() && grounded(n.description, utterance) ? n.description.trim().slice(0, 2000) : null;
   const description = said ?? prev?.description ?? null;

@@ -50,6 +50,8 @@ type QueryResult = {
   nextTaskId?: number | null; openTaskId?: number | null;
   dimensions?: VoiceDimensions; pendingDeleteTaskId?: number | null; pendingNotify?: PendingNotify | null;
   deletedTaskId?: number | null; spokenAnswer?: string; error?: string;
+  // A task being created over several turns (mode "ask_more"): what is known so far, sent back with the next request.
+  draft?: unknown;
 };
 
 type RealtimeEvent = {
@@ -118,6 +120,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   const listLabelRef = useRef<string | null>(null);
   const listFiltersRef = useRef<VoiceFilters | null>(null);
   const cursorRef = useRef<number | null>(null);
+  // A task being created: the assistant asks for the project, owner, due date and description that are missing.
+  const draftRef = useRef<unknown>(null);
   // runTool fires from a WebRTC data-channel callback that can outlive
   // several re-renders, so a plain closure over the prop would see whatever
   // task was open when the session started, not whatever's open right now.
@@ -242,10 +246,11 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
         body: JSON.stringify({
           ...body, currentTaskId: currentTaskIdRef.current, workingList: workingListRef.current,
           listLabel: listLabelRef.current, listFilters: listFiltersRef.current, cursorTaskId: cursorRef.current,
-          history: recent, sessionId: auditSessionRef.current, source: "live",
+          history: recent, sessionId: auditSessionRef.current, source: "live", draft: draftRef.current,
         }),
       });
       const data = await res.json() as QueryResult;
+      draftRef.current = data.mode === "ask_more" ? data.draft ?? null : null;
       if (!res.ok) { finish(callId, data.error || "Sorry, something went wrong.", prefix); return; }
       const answer = data.spokenAnswer || "";
 
@@ -435,7 +440,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
 
   async function start() {
     setError(""); setFeed([]); setStatus("connecting");
-    historyRef.current = []; workingListRef.current = []; listLabelRef.current = null; listFiltersRef.current = null; cursorRef.current = null;
+    historyRef.current = []; workingListRef.current = []; listLabelRef.current = null; listFiltersRef.current = null; cursorRef.current = null; draftRef.current = null;
     pendingDeleteRef.current = null; pendingNotifyRef.current = null;
     auditSessionRef.current = newVoiceSessionId();
     followUpPendingRef.current = false; greetingPendingRef.current = false;
