@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeBriefing,
-  describeFilterPhrase, describeLastActive, describeTaskForWalk, resolveActTargets, resolveNext, speakableDate,
+  applyActionSteps, briefingWorkingList, computeBriefing, computeMatches, describeActiveList, describeBriefing,
+  describeFilterPhrase, describeLastActive, describeTaskForWalk, draftNotifyMessage, listAnchor, navigationAllowed, resolveActTargets, resolveKnownPerson, resolveListOrdinal, resolveNext, speakableDate,
   type ActionStep, type ActTarget, type Filters, type StoredTask,
 } from "../app/lib/voice-query";
 
@@ -12,7 +12,7 @@ function baseTask(overrides: Partial<StoredTask> = {}): StoredTask {
     id: nextId++, subject: "Send updated pilot proposal", description: "Draft and send the revised proposal.",
     owner: "Rizan Flenner", collaborators: [], recipients: [], due: "", source: "Manual", topic: "", project: "",
     recurringMeeting: "", status: "Open", priority: "Low", created: "2026-09-08", createdBy: null, updates: [],
-    closedAt: null, externalSource: null, externalId: null, accountId: null, accountName: null,
+    checklist: [], closedAt: null, externalSource: null, externalId: null, accountId: null, accountName: null,
     opportunityId: null, opportunityName: null, meetingId: null, citationUser: null, citationQuote: null,
     ownerContactId: null, recipientContactIds: {}, mergedIntoTaskId: null,
     ...overrides,
@@ -35,6 +35,13 @@ test("computeMatches: mineOnly matches owner only, never collaborator or recipie
   const result = computeMatches({ ...noFilters, mineOnly: true }, tasks, "Rizan Flenner", "2026-09-08", "2026-09-15");
   assert.equal(result.length, 1);
   assert.equal(result[0].owner, "Rizan Flenner");
+});
+
+test("computeMatches: status 'Not closed' (pending, outstanding) keeps Open and In progress, drops Closed", () => {
+  const tasks = [baseTask({ status: "Open" }), baseTask({ status: "In progress" }), baseTask({ status: "Closed" })];
+  const result = computeMatches({ ...noFilters, status: "Not closed" }, tasks, "Rizan Flenner", "2026-09-08", "2026-09-15");
+  assert.deepEqual(result.map(t => t.status), ["Open", "In progress"]);
+  assert.equal(describeFilterPhrase({ ...noFilters, status: "Not closed" }).includes("still open or in progress"), true);
 });
 
 test("computeMatches: myRole 'recipient' matches only the recipients field, not owner or collaborator", () => {
@@ -135,7 +142,7 @@ test("describeFilterPhrase: hasUnseenUpdate reads as 'with a new status update'"
 
 const step = (overrides: Partial<ActionStep>): ActionStep => ({
   type: null, dueDate: null, status: null, priority: null, owner: null,
-  textValue: null, personName: null,
+  textValue: null, personName: null, checklistDone: null,
   ...overrides,
 });
 
@@ -213,6 +220,57 @@ test("applyActionSteps: clearing the due date (dueDate: null) is a valid instruc
   assert.equal(result.error, null);
   assert.equal(result.updated.due, "");
   assert.equal(result.confirmations[0], "Cleared the due date.");
+});
+
+test("applyActionSteps: add_checklist_item appends a new, unchecked item and confirms", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "add_checklist_item", textValue: "Call the client" })], "Rizan Flenner", []);
+  assert.equal(result.error, null);
+  assert.equal(result.updated.checklist.length, 1);
+  assert.equal(result.updated.checklist[0].text, "Call the client");
+  assert.equal(result.updated.checklist[0].done, false);
+  assert.equal(result.confirmations[0], 'Added "Call the client" to the checklist.');
+});
+
+test("applyActionSteps: add_checklist_item with no text is an error", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "add_checklist_item", textValue: "  " })], "x", []);
+  assert.match(result.error || "", /didn't catch what to add/);
+});
+
+test("applyActionSteps: set_checklist_item_done checks off a matching item by its spoken text, defaulting to done:true", () => {
+  const task = baseTask({ checklist: [{ id: "c1", text: "Call Bernd", done: false }] });
+  const result = applyActionSteps(task, [step({ type: "set_checklist_item_done", textValue: "call bernd" })], "x", []);
+  assert.equal(result.error, null);
+  assert.deepEqual(result.updated.checklist, [{ id: "c1", text: "Call Bernd", done: true }]);
+  assert.equal(result.confirmations[0], 'Checked off "Call Bernd".');
+});
+
+test("applyActionSteps: set_checklist_item_done honors checklistDone:false to un-check an item", () => {
+  const task = baseTask({ checklist: [{ id: "c1", text: "Call Bernd", done: true }] });
+  const result = applyActionSteps(task, [step({ type: "set_checklist_item_done", textValue: "Call Bernd", checklistDone: false })], "x", []);
+  assert.equal(result.updated.checklist[0].done, false);
+  assert.equal(result.confirmations[0], 'Unchecked "Call Bernd".');
+});
+
+test("applyActionSteps: set_checklist_item_done on a task with no checklist at all is a clear error, not a crash", () => {
+  const result = applyActionSteps(baseTask(), [step({ type: "set_checklist_item_done", textValue: "anything" })], "x", []);
+  assert.match(result.error || "", /no checklist on this task/);
+});
+
+test("applyActionSteps: set_checklist_item_done with no matching item names what it couldn't find", () => {
+  const task = baseTask({ checklist: [{ id: "c1", text: "Call Bernd", done: false }] });
+  const result = applyActionSteps(task, [step({ type: "set_checklist_item_done", textValue: "send the invoice" })], "x", []);
+  assert.match(result.error || "", /couldn't find a checklist item matching "send the invoice"/);
+});
+
+test("applyActionSteps: a checklist step chains with other field changes in the same command, same as every other action type", () => {
+  const result = applyActionSteps(baseTask(), [
+    step({ type: "set_status", status: "In progress" }),
+    step({ type: "add_checklist_item", textValue: "Draft the agenda" }),
+  ], "x", []);
+  assert.equal(result.error, null);
+  assert.equal(result.updated.status, "In progress");
+  assert.equal(result.updated.checklist.length, 1);
+  assert.equal(result.confirmations.length, 2);
 });
 
 // ---- resolveActTargets ----
@@ -331,7 +389,7 @@ test("speakableDate: null/empty/malformed all return null rather than throwing",
 test("describeTaskForWalk: reads subject, description, due date, then prompts for what to do next", () => {
   const spoken = describeTaskForWalk(baseTask({ subject: "Send proposal", description: "Draft it", due: "2026-09-12" }));
   assert.match(spoken, /^Send proposal\./);
-  assert.match(spoken, /Draft it\./);
+  assert.match(spoken, /Details: Draft it\./);
   assert.match(spoken, /Due Saturday, September 12th\./);
   assert.match(spoken, /What do you want me to do\?$/);
 });
@@ -365,4 +423,121 @@ test("describeLastActive: null means never signed in; recent times read as relat
   assert.equal(describeLastActive(null), "never signed in");
   assert.equal(describeLastActive(new Date(Date.now() - 10_000)), "active just now");
   assert.equal(describeLastActive(new Date(Date.now() - 3 * 60 * 60 * 1000)), "about 3 hours ago");
+});
+
+test("draftNotifyMessage: includes a due-date clause when a real due date is given", () => {
+  const message = draftNotifyMessage("Send the proposal", "2026-10-09", "Shankar");
+  assert.match(message, /^Hi Shankar,/);
+  assert.match(message, /"Send the proposal", due 9 Oct/);
+});
+
+test("draftNotifyMessage: omits the due clause entirely when there's no due date", () => {
+  const message = draftNotifyMessage("Send the proposal", null, "Shankar");
+  assert.match(message, /"Send the proposal"\. Please let me know/);
+  assert.doesNotMatch(message, /due/);
+});
+
+test("draftNotifyMessage: a malformed due string is treated the same as no due date, never crashes", () => {
+  const message = draftNotifyMessage("Send the proposal", "not-a-date", "Shankar");
+  assert.doesNotMatch(message, /due/);
+});
+
+// ---- Conversational list state (live-session regressions, 2026-10-02) ----
+
+test("describeActiveList: numbers the list in order, says where the person is, and carries the filters", () => {
+  const a = baseTask({ subject: "Chase the invoice", owner: "Rizan Flenner", due: "2026-09-01" });
+  const b = baseTask({ subject: "Review contract", owner: "Maya Chen", due: "2026-09-03" });
+  const text = describeActiveList({ label: "overdue tasks", filters: { mineOnly: true, dueWithin: "overdue" }, ids: [a.id, b.id], currentTaskId: b.id }, [a, b]);
+  assert.match(text, /"overdue tasks" — 2 tasks, in this order/);
+  assert.match(text, new RegExp(`1\\. #${a.id} "Chase the invoice"`));
+  assert.match(text, new RegExp(`2\\. #${b.id} "Review contract"`));
+  assert.match(text, /currently on item 2 of 2/);
+  assert.match(text, /"mineOnly":true/);
+});
+
+test("describeActiveList: no usable list gives an empty string; an open task off the list says so; ids no longer visible are skipped", () => {
+  const a = baseTask(), outside = baseTask();
+  assert.equal(describeActiveList({ label: null, filters: null, ids: [], currentTaskId: null }, [a]), "");
+  assert.equal(describeActiveList({ label: null, filters: null, ids: [999], currentTaskId: null }, [a]), "");
+  assert.match(describeActiveList({ label: null, filters: null, ids: [a.id], currentTaskId: outside.id }, [a, outside]), /No item from this list is open/);
+  assert.match(describeActiveList({ label: null, filters: null, ids: [999, a.id], currentTaskId: null }, [a]), /1 task, in this order/);
+});
+
+test("describeActiveList: long lists are capped and say how many more follow", () => {
+  const tasks = Array.from({ length: 30 }, () => baseTask());
+  const text = describeActiveList({ label: "x", filters: null, ids: tasks.map(t => t.id), currentTaskId: null }, tasks);
+  assert.match(text, /\(\+5 more after these\)/);
+});
+
+test("listAnchor: the open task when it's on the list, else the cursor, else the start", () => {
+  assert.equal(listAnchor(2, 1, [1, 2, 3]), 2);
+  assert.equal(listAnchor(9, 2, [1, 2, 3]), 2); // opened something off the list — carry on from where the walk was
+  assert.equal(listAnchor(9, 8, [1, 2, 3]), null);
+  assert.equal(listAnchor(null, null, [1, 2, 3]), null);
+});
+
+test("resolveNext + listAnchor: asking about an off-list task mid-walk and then saying next continues the walk, not restarts it", () => {
+  const [a, b, c, offList] = [baseTask(), baseTask(), baseTask(), baseTask()];
+  const list = [a.id, b.id, c.id];
+  const visible = [a, b, c, offList];
+  assert.equal(resolveNext(offList.id, list, visible)?.id, a.id); // the old behaviour: back to the top
+  assert.equal(resolveNext(listAnchor(offList.id, b.id, list), list, visible)?.id, c.id);
+});
+
+test("navigationAllowed: a screen change needs the person's own words to name that screen", () => {
+  assert.equal(navigationAllowed("new_task", "start a new action item"), true);
+  assert.equal(navigationAllowed("new_task", "open the first task"), false);
+  assert.equal(navigationAllowed("new_task", "open the first one"), false);
+  assert.equal(navigationAllowed("paste_minutes", "paste meeting minutes"), true);
+  assert.equal(navigationAllowed("paste_minutes", "open it"), false);
+});
+
+test("resolveKnownPerson: exact or unambiguous first name only; product names and strangers never resolve", () => {
+  const people = ["Maya Chen", "Shankar Morwal", "Drew Foster", "Drew Patel"];
+  assert.equal(resolveKnownPerson("maya chen", people), "Maya Chen");
+  assert.equal(resolveKnownPerson("Shankar", people), "Shankar Morwal");
+  assert.equal(resolveKnownPerson("Drew", people), null); // ambiguous
+  assert.equal(resolveKnownPerson("Bernd", people), null);
+  assert.equal(resolveKnownPerson("Sales AI", [...people, "Sales AI"]), null);
+  assert.equal(resolveKnownPerson("", people), null);
+});
+
+test("applyActionSteps: set_owner is refused for a name Task AI doesn't know, when candidates are supplied — and nothing changes", () => {
+  const task = baseTask({ owner: "Rizan Flenner" });
+  const result = applyActionSteps(task, [step({ type: "set_owner", owner: "Sales AI" })], "Rizan Flenner", [], ["Maya Chen", "Sales AI"]);
+  assert.match(result.error ?? "", /I don't know anyone called "Sales AI"/);
+  assert.equal(result.updated.owner, "Rizan Flenner");
+  const ok = applyActionSteps(task, [step({ type: "set_owner", owner: "maya" })], "Rizan Flenner", [], ["Maya Chen"]);
+  assert.equal(ok.error, null);
+  assert.equal(ok.updated.owner, "Maya Chen");
+});
+
+test("resolveListOrdinal: 'the first/second/last one' mean positions in the list on screen", () => {
+  const [a, b, c, other] = [baseTask(), baseTask(), baseTask(), baseTask()];
+  const list = [a.id, b.id, c.id], visible = [a, b, c, other];
+  assert.equal(resolveListOrdinal("open the first one", list, visible), a.id);
+  assert.equal(resolveListOrdinal("what's the second task", list, visible), b.id);
+  assert.equal(resolveListOrdinal("tell me about the last one please", list, visible), c.id);
+  assert.equal(resolveListOrdinal("and the third?", list, visible), c.id);
+  assert.equal(resolveListOrdinal("open the 2nd one", list, visible), b.id);
+});
+
+test("resolveListOrdinal: no list, a position past the end, an unrelated 'last', or 'the first task in X' (a new search) all fall through to null", () => {
+  const [a, b] = [baseTask(), baseTask()];
+  assert.equal(resolveListOrdinal("open the first one", [], [a, b]), null);
+  assert.equal(resolveListOrdinal("open the fifth one", [a.id, b.id], [a, b]), null);
+  assert.equal(resolveListOrdinal("what did I close last week", [a.id, b.id], [a, b]), null);
+  assert.equal(resolveListOrdinal("open the first task in the pilot project", [a.id, b.id], [a, b]), null);
+  assert.equal(resolveListOrdinal("show me my tasks", [a.id, b.id], [a, b]), null);
+});
+
+test("resolveListOrdinal: ids that are no longer visible are skipped when counting positions", () => {
+  const [a, c] = [baseTask(), baseTask()];
+  assert.equal(resolveListOrdinal("the second one", [a.id, 99999, c.id], [a, c]), c.id);
+});
+
+test("describeActiveList: says how many items are still to go after the current one", () => {
+  const tasks = [baseTask(), baseTask(), baseTask()];
+  const text = describeActiveList({ label: "x", filters: null, ids: tasks.map(t => t.id), currentTaskId: tasks[1].id }, tasks);
+  assert.match(text, /currently on item 2 of 3 \(#\d+\); 1 item still to go after this one/);
 });

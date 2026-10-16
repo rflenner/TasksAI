@@ -141,8 +141,8 @@ export const tasks = pgTable("tasks", {
 // One row per distinct pasted-minutes submission (keyed by a hash of the
 // raw text, not the resulting tasks) — lets "Paste meeting minutes" warn
 // before silently re-creating the same tasks from text that's already been
-// pasted once. Deliberately not applied to dictation (app/dictate), which
-// shares the same /api/extract endpoint: spoken text naturally varies
+// pasted once. Deliberately not applied to dictation (the retired app/dictate
+// page), which shared the same /api/extract endpoint: spoken text naturally varies
 // run to run, so an exact-text duplicate there is far more likely to be a
 // genuine repeat than an accidental one, and duplicate detection isn't
 // worth the false-positive risk there. onConflictDoNothing on insert means
@@ -284,6 +284,82 @@ export const taskUpdateTokens = pgTable("task_update_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, table => [uniqueIndex("task_update_tokens_hash_unique").on(table.tokenHash), index("task_update_tokens_task_idx").on(table.taskId)]);
+// Close Plan, step A (docs/close-plan.md, "Shared storage"): one row per plan,
+// the whole plan as JSON. memberEmails (lowercase emails of the plan's iSEEit
+// members) is computed on the server and decides who sees the plan; version is
+// bumped on every save so two people can't silently overwrite each other.
+// deletedAt is a soft delete. Replaced by proper tables in step B.
+export const closePlanDocuments = pgTable("close_plan_documents", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  account: text("account").notNull().default(""),
+  data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+  memberEmails: jsonb("member_emails").$type<string[]>().notNull().default([]),
+  version: integer("version").notNull().default(1),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, table => [index("close_plan_documents_updated_idx").on(table.updatedAt)]);
+// Personal links for a plan's customer contacts (drizzle/0023_close_plan_links.sql).
+// Only the token's sha256 is stored; personId is the contact's id inside the plan
+// document. Reusable until expiresAt or revokedAt, like taskUpdateTokens.
+export const closePlanLinks = pgTable("close_plan_links", {
+  id: serial("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => closePlanDocuments.id, { onDelete: "cascade" }),
+  personId: text("person_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+}, table => [uniqueIndex("close_plan_links_hash_unique").on(table.tokenHash), index("close_plan_links_plan_idx").on(table.planId, table.personId)]);
+// Product requests heard by the voice assistants (drizzle/0024_voice_requests.sql):
+// one row per ask (something it can't do yet, or "I wish you could…"), grouped by
+// requestName, plus the team's decision per request. Not deleted with voice_audit.
+export const voiceRequestAsks = pgTable("voice_request_asks", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull().default(""),
+  sessionId: text("session_id").notNull().default(""),
+  surface: text("surface").notNull(),
+  requestName: text("request_name").notNull(),
+  kind: text("kind").notNull(),
+  utterance: text("utterance").notNull().default(""),
+}, table => [index("voice_request_asks_name_idx").on(table.requestName)]);
+export const voiceRequestStatus = pgTable("voice_request_status", {
+  requestName: text("request_name").primaryKey(),
+  status: text("status").notNull().default("new"),
+  note: text("note").notNull().default(""),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+// Voice audit trail (drizzle/0022_voice_audit.sql): one row per thing that
+// happened in a voice session — what was heard, what Task AI did with it
+// (or why it didn't), what was said back, how a confirmation turned out.
+// `source` is which assistant ("live" = Live Voice Assistant, "ask" =
+// Deepgram-based Ask Task AI); `event` is the kind of row (see
+// app/lib/voice-audit.ts for the vocabulary). Free-text columns hold
+// transcripts, so rows are pruned on a retention window and only site
+// admins can read them.
+export const voiceAudit = pgTable("voice_audit", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull(),
+  sessionId: text("session_id").notNull().default(""),
+  source: text("source").notNull().default("ask"),
+  event: text("event").notNull(),
+  utterance: text("utterance").notNull().default(""),
+  mode: text("mode"),
+  outcome: text("outcome"),
+  taskIds: jsonb("task_ids").$type<number[]>().notNull().default([]),
+  spokenAnswer: text("spoken_answer").notNull().default(""),
+  detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+}, table => [index("voice_audit_created_idx").on(table.createdAt), index("voice_audit_session_idx").on(table.sessionId)]);
 // The workspace's one Salesforce connection (the "CRM" card on
 // /integrations, ported from Sales AI's Connected Apps page) — a single
 // row, pinned to id = 1 by the migration's CHECK, since Task AI is one

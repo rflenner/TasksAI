@@ -12,6 +12,50 @@ export function bareEmail(raw: string): string {
   return (match ? match[1] : raw).trim().toLowerCase();
 }
 
+// ---- Which mail is this app's to handle? ----
+//
+// Resend delivers an `email.received` webhook for EVERY inbound email of the
+// Resend account, whatever domain it was sent to — receiving is switched on
+// per domain, but a webhook endpoint is per account, not per domain. So when
+// another product (the Rechnungswesen/gofibu invoice inbox, say) shares the
+// account, its mail reaches this webhook too. Seen 2026-10-14: invoices sent
+// to belege.gofibu.at turned into Task AI tasks whenever the sender was also a
+// registered Task AI user. The route therefore only handles mail addressed to
+// this app's own receiving domain, and ignores the rest.
+
+// The one domain this app receives mail on — also what the reply+token@
+// addresses of notification emails are built on (app/lib/task-notify.ts).
+export function inboundEmailDomain(): string {
+  return (process.env.INBOUND_EMAIL_DOMAIN || "tasks.iseeit.ai").trim().toLowerCase();
+}
+
+// Every recipient address the webhook payload names (to, cc and bcc — a
+// forward might reach this app's address in any of them), as given: a bare
+// address, "Name <address>", a single string or an array.
+export function recipientAddresses(data: { to?: unknown; cc?: unknown; bcc?: unknown } | null | undefined): string[] {
+  const out: string[] = [];
+  for (const field of [data?.to, data?.cc, data?.bcc]) {
+    for (const entry of Array.isArray(field) ? field : field ? [field] : []) if (typeof entry === "string" && entry.trim()) out.push(entry);
+  }
+  return out;
+}
+
+// The domain part of one address ("" when it has none).
+export function addressDomain(raw: string): string {
+  const address = bareEmail(raw);
+  const at = address.lastIndexOf("@");
+  return at > 0 ? address.slice(at + 1) : "";
+}
+
+// True when at least one recipient is at exactly this domain. Exact, not
+// "ends with": mail to tasks.iseeit.ai.example.com or to evil-tasks.iseeit.ai
+// is not ours. No recipients at all counts as not ours — the route can't tell
+// whose mail it is, so it leaves it alone.
+export function isAddressedToDomain(recipients: string[], domain: string): boolean {
+  const wanted = domain.trim().toLowerCase();
+  return Boolean(wanted) && recipients.some(recipient => addressDomain(recipient) === wanted);
+}
+
 // Last-resort fallback when Resend's Received Emails API returns `.html`
 // but no usable `.text` — good enough to hand a meeting-minutes-grade
 // extraction prompt something readable, not meant to preserve formatting.

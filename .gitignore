@@ -43,3 +43,9 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# local secrets notes
+*.rtf
+
+# Real customer data, never committed
+private/

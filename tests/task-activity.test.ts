@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { autoAdvanceStatus, describeChanges } from "../app/lib/task-activity";
+import { autoAdvanceStatus, createdHistoryEntry, describeChanges } from "../app/lib/task-activity";
 
 const base = {
   id: 1, subject: "Ship it", description: "", owner: "Ada Lovelace", collaborators: [] as string[], recipients: [] as string[],
@@ -51,4 +51,18 @@ test("autoAdvanceStatus never bumps an already-Closed or already-In-progress tas
 test("autoAdvanceStatus lets an explicit status choice in the same edit win over the auto-advance", () => {
   assert.equal(autoAdvanceStatus("Open", true, "Closed"), "Closed");
   assert.equal(autoAdvanceStatus("Open", true, "Open"), "Open");
+});
+
+test("createdHistoryEntry: a bare YYYY-MM-DD created date (manual/paste-minutes tasks) builds a valid entry", () => {
+  const entry = createdHistoryEntry("2026-09-08", "Ada Lovelace");
+  assert.deepEqual(entry, { type: "created", detail: "created this task", actorName: "Ada Lovelace", at: "2026-09-08T12:00:00.000Z" });
+});
+
+test("createdHistoryEntry: the exact live bug — a full ISO created timestamp (Sales AI sync/inbound-email/voice) used to throw RangeError: Invalid time value instead of building a valid entry", () => {
+  const entry = createdHistoryEntry("2026-09-14T15:43:00.000Z", "Sales AI sync");
+  assert.deepEqual(entry, { type: "created", detail: "created this task", actorName: "Sales AI sync", at: "2026-09-14T15:43:00.000Z" });
+});
+
+test("createdHistoryEntry: a null createdBy (shouldn't happen, but defensively) is passed through rather than crashing", () => {
+  assert.equal(createdHistoryEntry("2026-09-08", null).actorName, null);
 });
