@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { closePlanDocuments } from "../../../../db/schema";
-import { addressedToSomeoneElse, calendar, checkProposal, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, viewerId, waitingSide } from "../../../lib/close-plan-voice";
+import { ACTION_TYPES, addressedToSomeoneElse, calendar, checkProposal, completeDraft, type Draft, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, sanitizeDraft, viewerId, waitingSide } from "../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
@@ -31,17 +31,18 @@ const schema = {
     actions: {
       type: "array",
       items: {
-        type: "object", additionalProperties: false, required: ["type", "status", "text", "date", "personId"],
+        type: "object", additionalProperties: false, required: ["type", "status", "text", "date", "personId", "phaseId", "flag"],
         properties: {
-          type: { type: "string", enum: ["set_status", "post_update", "set_due", "set_owner", "rename", "set_description", "add_coworker", "add_requester", "delete_task"] },
+          type: { type: "string", enum: [...ACTION_TYPES] },
           status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
           text: { type: ["string", "null"] }, date: { type: ["string", "null"] }, personId: { type: ["string", "null"] },
+          phaseId: { type: ["string", "null"] }, flag: { type: ["boolean", "null"] },
         },
       },
     },
     newTask: {
-      type: ["object", "null"], additionalProperties: false, required: ["title", "phaseId", "parentId", "ownerId", "due", "internal"],
-      properties: { title: { type: "string" }, phaseId: { type: ["string", "null"] }, parentId: { type: ["string", "null"] }, ownerId: { type: ["string", "null"] }, due: { type: ["string", "null"] }, internal: { type: "boolean" } },
+      type: ["object", "null"], additionalProperties: false, required: ["title", "phaseId", "parentId", "ownerId", "due", "description", "internal", "done"],
+      properties: { title: { type: "string" }, phaseId: { type: ["string", "null"] }, parentId: { type: ["string", "null"] }, ownerId: { type: ["string", "null"] }, due: { type: ["string", "null"] }, description: { type: ["string", "null"] }, internal: { type: "boolean" }, done: { type: "boolean" } },
     },
   },
 };
@@ -54,8 +55,15 @@ Modes:
   Waiting, by side: every person has a side (iSEEit or customer, see people and ownerSide). "What is ${customer} waiting on", "what do they need from us", "what's on us" = seller (open tasks owned by iSEEit people). "What are we waiting on from ${customer}", "what do we need from them", "what's on their side" = buyer (open tasks owned by ${customer} people). These are always "list", never "answer".
 - "next": the next task of the list on screen.
 - "next": also for "next", "next one", "skip this one".
-- "act": change one existing task. taskId is the task (null means the task open on screen, focusTaskId). actions: set_status (Open / In progress / Closed; "done", "tick off", "complete" mean Closed), post_update (only when this request itself contains the words of an update: text = exactly those words; never add an update of your own, never repeat an earlier one), set_due (date YYYY-MM-DD, worked out from today), set_owner / add_coworker / add_requester (personId), rename (text), set_description (text, only their words), delete_task ("delete it", "remove this task"; always asked to confirm, never combined with other actions). Several actions are fine.
-- "add_task": create a task or subtask. newTask: title (their words), phaseId (the phase they name; the current phase when they don't), parentId (for a subtask: the task it belongs under), ownerId (personId when named, else null), due (YYYY-MM-DD or null), internal (true only when they say internal or "just for us").
+- "act": change one existing task, any field of it. taskId is the task (null means the task open on screen, focusTaskId); a subtask has its own id, so "tick off the SOC 2 subtask" targets that subtask. actions (one per change, several are fine; leave unused fields null):
+  set_status (status Open / In progress / Closed — the status dropdown, and the subtask checkboxes: "done", "tick off", "check", "complete" = Closed; "untick", "uncheck", "reopen" = Open; "started", "working on it" = In progress),
+  post_update (a status update: only when this request itself contains the words of an update; text = exactly those words; never add an update of your own, never repeat an earlier one),
+  set_due (date YYYY-MM-DD, worked out from the calendar), set_owner / add_coworker / add_requester / remove_coworker / remove_requester (personId; "requested by" = requester),
+  set_phase (phaseId: move a main task to another phase, "move it to Validate"; a subtask can't move on its own),
+  rename (text), set_description (text, only their words),
+  set_shared (flag: false = "make it internal / hide it from the customer", true = "share it with the customer"), set_milestone (flag: "mark it as a milestone" / "not a milestone any more"),
+  delete_task ("delete it", "remove this task"; always asked to confirm, never combined with other actions).
+- "add_task": create a task or subtask ("add a task to Validate: send the SOC 2 report", "add a subtask under the POC: book the room"). newTask: title (their words), phaseId (ONLY a phase whose name they said, else null; never guess a phase from the plan or from other tasks), parentId (ONLY when they say "subtask": the task it belongs under; otherwise null, even if a similar task exists), ownerId (personId ONLY when they named a person or said "me"; otherwise null), due (YYYY-MM-DD from the calendar, else null), description (only their own words about what the task is, else null), internal (true only when they say internal or "just for us"), done (true when they decline to give more: "skip", "that's all", "no", "nothing", "that's fine", "leave it"). The caller asks for whatever is missing. When a draftTask is given, the request is the person's ANSWER to the caller's last question about that draft: use mode "add_task", set only what they just said, leave everything else null, and do not repeat the title (use the draft's); if they decline, set done true.
 - "unsupported": they want something this assistant can't do: inviting someone or sharing the plan ("invite Olivia", "send her the link"), sending emails or messages, deleting a phase or the plan, changing access rights, exporting, scheduling a meeting, the task history, anything outside this plan. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing from what you CAN do (the modes above: answer, list, open, change status/dates/owner/coworkers/requested by of a task, post an update, add a task or subtask). Never suggest anything else. requestName: your own NEW short name for the feature they want in THIS request, 2 to 6 words, Title Case (e.g. "Task History By Voice"); never copy a known request name into requestName. sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
 - "wish": they tell you what they'd like you or the app to do ("I wish you could…", "it would be great if…", "feature request: …", "can you learn to…"). requestName as above. answer: a short thank-you saying it's noted.
 - "unclear": you can't tell what they want, or they're talking to someone else. Put a short question or "Okay." in answer.
@@ -68,7 +76,7 @@ export async function POST(request: Request) {
   if (!actor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const key = process.env.OPENAI_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
-  const body = await request.json().catch(() => null) as { planId?: unknown; utterance?: unknown; action?: unknown; focusTaskId?: unknown; listIds?: unknown; history?: unknown; sessionId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { planId?: unknown; utterance?: unknown; action?: unknown; focusTaskId?: unknown; listIds?: unknown; history?: unknown; sessionId?: unknown; draft?: unknown } | null;
   const planId = typeof body?.planId === "string" ? body.planId : "";
   const utterance = typeof body?.utterance === "string" ? body.utterance.trim().slice(0, 1000) : "";
   if (!utterance) return Response.json({ error: "Nothing was said" }, { status: 400 });
@@ -84,15 +92,17 @@ export async function POST(request: Request) {
     .map(h => ({ role: h.role === "assistant" ? "assistant" as const : "user" as const, content: String(h.text || "").slice(0, 600) })).filter(h => h.content) : [];
   const customer = typeof data.account === "string" && data.account ? data.account : "the customer";
 
-  // Meant for someone in the room, not for the assistant.
-  if (addressedToSomeoneElse(utterance, Array.isArray(data.people) ? data.people as Array<{ name?: unknown }> : [])) return Response.json({ mode: "unclear", spokenAnswer: "Okay." });
+  // A task being created over several turns (see completeDraft): the page sends back what is known so far.
+  const draft = sanitizeDraft(data, body?.draft);
+
+  // Meant for someone in the room, not for the assistant. (Not while a question is open: "Drew, due Friday" answers "who should own it?".)
+  if (!draft && addressedToSomeoneElse(utterance, Array.isArray(data.people) ? data.people as Array<{ name?: unknown }> : [])) return Response.json({ mode: "unclear", spokenAnswer: "Okay." });
 
   // "What can you do?" is answered from the capability list, not by the AI.
   if (isHelpRequest(utterance)) return Response.json({ mode: "help", spokenAnswer: HELP_SPOKEN(customer) });
 
   // "Next" needs no AI: the next task of the list on screen.
-  if (body?.action === "next") return Response.json(shape(data, { mode: "next", answer: "", taskId: null, filter: null, personId: null, phaseId: null, actions: [], newTask: null }, focusTaskId, listIds, viewer, today, utterance));
-
+  if (body?.action === "next") return Response.json(shape(data, { mode: "next", answer: "", taskId: null, filter: null, personId: null, phaseId: null, actions: [], newTask: null }, focusTaskId, listIds, viewer, today, utterance, null));
   const model = process.env.OPENAI_MODEL || "gpt-5-mini";
   const isGpt5 = model.startsWith("gpt-5");
   const requestNames = await knownRequestNames().catch(() => [] as string[]);
@@ -106,7 +116,7 @@ export async function POST(request: Request) {
         input: [
           { role: "system", content: rules(customer) },
           ...history,
-          { role: "user", content: `Plan:\n${JSON.stringify(planContext(data, viewer, today))}\n\nCalendar: ${calendar(today)}\nfocusTaskId (open on screen): ${focusTaskId || "none"}\nlistIds (list on screen, in order): ${JSON.stringify(listIds)}\nKnown request names: ${JSON.stringify(requestNames)}\n\nSpoken request: ${utterance}` },
+          { role: "user", content: `Plan:\n${JSON.stringify(planContext(data, viewer, today))}\n\nCalendar: ${calendar(today)}\n${draft ? `draftTask (being created; the request answers your last question about it): ${JSON.stringify(draft)}\n` : ""}focusTaskId (open on screen): ${focusTaskId || "none"}\nlistIds (list on screen, in order): ${JSON.stringify(listIds)}\nKnown request names: ${JSON.stringify(requestNames)}\n\nSpoken request: ${utterance}` },
         ],
         text: { ...(isGpt5 ? { verbosity: "low" } : {}), format: { type: "json_schema", name: "close_plan_voice", strict: true, schema } },
       }),
@@ -120,7 +130,7 @@ export async function POST(request: Request) {
 
   const side = waitingSide(utterance, [customer, ...(Array.isArray(data.people) ? (data.people as Array<{ side?: unknown; name?: unknown }>).filter(p => p.side === "buyer").map(p => String(p.name || "")) : [])]);
   if (side && (proposal.mode === "list" || proposal.mode === "answer")) proposal = { ...proposal, mode: "list", filter: side, personId: null };
-  const reply = shape(data, proposal, focusTaskId, listIds, viewer, today, utterance);
+  const reply = shape(data, proposal, focusTaskId, listIds, viewer, today, utterance, draft);
   // Something it can't do yet, or a wish: filed as a product request.
   if ((proposal.mode === "unsupported" || proposal.mode === "wish") && proposal.requestName) {
     const name = pickRequestName(proposal.requestName, proposal.sameAsKnownRequest ?? null, requestNames, utterance);
@@ -138,9 +148,9 @@ export async function POST(request: Request) {
   return Response.json(reply);
 }
 
-type Reply = { mode: string; spokenAnswer: string; taskId?: string | null; filter?: string | null; personId?: string | null; phaseId?: string | null; listIds?: string[]; actions?: unknown[]; newTask?: unknown };
+type Reply = { mode: string; spokenAnswer: string; taskId?: string | null; filter?: string | null; personId?: string | null; phaseId?: string | null; listIds?: string[]; actions?: unknown[]; newTask?: unknown; draft?: Draft };
 
-function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string | null, listIds: string[], viewer: string | null, today: string, utterance: string): Reply {
+function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string | null, listIds: string[], viewer: string | null, today: string, utterance: string, draft: Draft | null): Reply {
   const tasks = Array.isArray(data.tasks) ? data.tasks as Array<{ id: string }> : [];
   const known = (id: string | null) => Boolean(id) && tasks.some(t => t.id === id);
   switch (p.mode) {
@@ -162,10 +172,15 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
       return next ? { mode: "open_task", taskId: next, spokenAnswer: `Number ${at + 2} of ${listIds.length}. ${describeTask(data, next, today)}` }
         : { mode: "unclear", spokenAnswer: listIds.length ? "That was the last one on the list." : "There's no list to go through yet. Ask for one, like what's overdue." };
     }
-    case "act": case "add_task": {
+    case "add_task": {
+      const r = completeDraft(data, draft, p.newTask, utterance, today, viewer);
+      if (r.kind === "error") return { mode: "unclear", spokenAnswer: r.reason };
+      if (r.kind === "ask") return { mode: "ask_more", draft: r.draft, spokenAnswer: r.question };
+      return { mode: "add_task", newTask: r.newTask, spokenAnswer: "" };
+    }
+    case "act": {
       const checked = checkProposal(data, p, focusTaskId, utterance);
       if (!checked.ok) return { mode: "unclear", spokenAnswer: checked.reason };
-      if (checked.newTask) return { mode: "add_task", newTask: checked.newTask, spokenAnswer: "" };
       const question = confirmQuestion(data, checked.taskId!, checked.actions, today);
       return { mode: question ? "confirm" : "act", taskId: checked.taskId, actions: checked.actions, spokenAnswer: question || describeActions(data, checked.taskId!, checked.actions, today) };
     }

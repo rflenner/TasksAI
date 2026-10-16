@@ -3101,7 +3101,7 @@ async function pollLink() {
 // Closing a task and moving a milestone ask for a yes first. Not offered on personal links (customers) yet.
 const VX_STALE_MS = 30000;
 const voice = { open: false, min: false, status: "idle", error: "", feed: [], seq: 0, pc: null, dc: null, stream: null, audio: null,
-  history: [], listIds: [], pending: null, help: false, caps: [], activeSince: 0, wantResponse: false, followUp: false, greeting: false, kinds: new Map(), said: new Map(), session: "", transcribing: true };
+  history: [], listIds: [], pending: null, draft: null, help: false, caps: [], activeSince: 0, wantResponse: false, followUp: false, greeting: false, kinds: new Map(), said: new Map(), session: "", transcribing: true };
 const voiceAvailable = () => IN_APP && !LINK && Boolean(APP_ME) && Boolean(state) && !state._demo && !ui.wizard;
 function voiceAudit(...events) {
   if (!voice.session) return;
@@ -3162,7 +3162,7 @@ async function voiceAsk(callId, utterance) {
   voiceFeed("asked", text);
   voice.history = [...voice.history, { role: "you", text }].slice(-12);
   let prefix = "";
-  if (!voice.pending && /^\s*(next|next one|the next one|skip( this one| it)?)[\s.!?]*$/i.test(text)) { voice.feed = voice.feed.filter(i => !(i.kind === "asked" && i.text === text)); await voiceNext(callId); return; }
+  if (!voice.pending && !voice.draft && /^\s*(next|next one|the next one|skip( this one| it)?)[\s.!?]*$/i.test(text)) { voice.feed = voice.feed.filter(i => !(i.kind === "asked" && i.text === text)); await voiceNext(callId); return; }
   if (voice.pending) {
     const pending = voice.pending; voice.pending = null;
     if (VX_YES.test(text)) { voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "sent", utterance: text }); voiceReply(callId, voiceApply(pending)); return; }
@@ -3172,9 +3172,11 @@ async function voiceAsk(callId, utterance) {
   }
   try {
     const r = await fetch("/api/close-plans/voice", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ planId: state.id, utterance: text, focusTaskId: ui.open || null, listIds: voice.listIds, history: voice.history.slice(-6), sessionId: voice.session }) });
+      body: JSON.stringify({ planId: state.id, utterance: text, focusTaskId: ui.open || null, listIds: voice.listIds, history: voice.history.slice(-6), sessionId: voice.session, draft: voice.draft || null }) });
     const res = await r.json().catch(() => ({}));
     if (!r.ok) { voiceReply(callId, prefix + (res.error || "Sorry, something went wrong.")); return; }
+    // A task being created stays a draft while the assistant asks for the phase, owner, due date and description.
+    voice.draft = res.mode === "ask_more" ? res.draft : null;
     voiceReply(callId, prefix + voiceHandle(res));
   } catch (e) {
     voiceAudit({ event: "error", outcome: "failed", utterance: text, spokenAnswer: "Could not reach the close plan assistant." });
@@ -3200,6 +3202,7 @@ function voiceHandle(res) {
     case "confirm": voice.pending = { taskId: res.taskId, actions: res.actions || [] }; voiceShowTask(res.taskId); return res.spokenAnswer;
     case "act": voiceShowTask(res.taskId); return voiceApply({ taskId: res.taskId, actions: res.actions || [] }, res.spokenAnswer);
     case "add_task": return voiceAdd(res.newTask);
+    case "ask_more": return res.spokenAnswer;
     default: return res.spokenAnswer || "Sorry, I didn't get that.";
   }
 }
@@ -3215,7 +3218,8 @@ function voiceApply(change, said) {
       t.status = a.status; t.closedAt = a.status === "Closed" ? today : null;
       log(a.status === "Closed" ? `closed “${t.title}” by voice` : `set “${t.title}” to ${a.status} by voice`, t.id);
       if (parentOf(t) && a.status !== "Open") startWork(parentOf(t));
-      done.push(a.status === "Closed" ? `Closed "${t.title}".` : `Set "${t.title}" to ${a.status}.`);
+      done.push(t.parent ? (a.status === "Closed" ? `Ticked off the subtask "${t.title}".` : a.status === "Open" ? `Unticked the subtask "${t.title}".` : `Set the subtask "${t.title}" to ${a.status}.`)
+        : a.status === "Closed" ? `Closed "${t.title}".` : `Set "${t.title}" to ${a.status}.`);
     } else if (a.type === "post_update") {
       t.updates.push({ by: me(), at: today, text: a.text, viaVoice: true });
       log(`posted an update on “${t.title}” by voice`, t.id); startWork(t);
@@ -3236,6 +3240,25 @@ function voiceApply(change, said) {
       const key = a.type === "add_coworker" ? "coworkers" : "recipients";
       if (!(t[key] || []).includes(a.personId)) { t[key] = [...(t[key] || []), a.personId]; log(`added ${person(a.personId).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); }
       done.push(`Added ${person(a.personId).name} as ${key === "coworkers" ? "coworker" : "requested by"}.`);
+    } else if (a.type === "remove_coworker" || a.type === "remove_requester") {
+      const key = a.type === "remove_coworker" ? "coworkers" : "recipients";
+      if ((t[key] || []).includes(a.personId)) { t[key] = t[key].filter(x => x !== a.personId); log(`removed ${person(a.personId).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); }
+      done.push(`Took ${person(a.personId).name} off ${key === "coworkers" ? "as coworker" : "requested by"}.`);
+    } else if (a.type === "set_phase") {
+      if (t.parent) { skipped++; continue; }
+      const to = state.phases.find(p => p.id === a.phaseId); if (!to || t.phase === to.id) continue;
+      t.phase = to.id; children(t.id).forEach(k => { k.phase = to.id; });
+      log(`moved “${t.title}” to ${to.name} by voice`, t.id); setPhaseOpen([to.id], true);
+      done.push(`Moved "${t.title}" to ${to.name}.`);
+    } else if (a.type === "set_shared") {
+      if (ui.mode !== "seller") { skipped++; continue; }
+      if (t.shared === a.flag) continue;
+      t.shared = a.flag; log(`${a.flag ? "shared" : "made internal"} “${t.title}” by voice`, t.id);
+      done.push(a.flag ? `"${t.title}" is now shared with ${B()}.` : `"${t.title}" is now internal.`);
+    } else if (a.type === "set_milestone") {
+      if (Boolean(t.milestone) === a.flag) continue;
+      t.milestone = a.flag; log(`${a.flag ? "marked" : "unmarked"} “${t.title}” ${a.flag ? "as" : "as a"} milestone by voice`, t.id);
+      done.push(a.flag ? `"${t.title}" is now a milestone.` : `"${t.title}" is no longer a milestone.`);
     } else if (a.type === "rename") {
       log(`renamed “${t.title}” to “${a.text}”`, t.id); t.title = a.text; done.push(`Renamed it to "${a.text}".`);
     } else if (a.type === "set_description") {
@@ -3254,11 +3277,12 @@ function voiceAdd(n) {
   if (!ph) return "Which phase should it go in?";
   const id = newTaskId();
   state.tasks.push({ id, phase: ph.id, parent: parent ? parent.id : null, title: n.title, owner: n.ownerId || me(), due: n.due || (parent && parent.due) || ph.end, status: "Open",
-    shared: parent ? parent.shared : !n.internal, createdBy: me(), updates: [], coworkers: [], recipients: parent ? [...(parent.recipients || [])] : [] });
+    desc: n.description || undefined, shared: parent ? parent.shared : !n.internal, createdBy: me(), updates: [], coworkers: [], recipients: parent ? [...(parent.recipients || [])] : [] });
   log(parent ? `added subtask “${n.title}” to “${parent.title}” by voice` : `added “${n.title}” by voice`, id);
   save(); voiceShowTask(parent ? parent.id : id);
   const t = state.tasks.find(x => x.id === id);
-  return `Added ${parent ? `the subtask "${n.title}" to "${parent.title}"` : `"${n.title}" to ${ph.name}`}, owner ${person(t.owner).name}, due ${fmtY(t.due)}${t.shared ? "" : ", internal"}.`;
+  const defaults = [!n.ownerId && "owner", !n.due && !(parent && parent.due) && "due date"].filter(Boolean);
+  return `Added ${parent ? `the subtask "${n.title}" to "${parent.title}"` : `"${n.title}" to ${ph.name}`}, owner ${person(t.owner).name}, due ${fmtY(t.due)}${n.description ? ", with a description" : ""}${t.shared ? "" : ", internal"}.${defaults.length ? ` I used the default ${defaults.join(" and ")}; tell me to change it.` : ""}`;
 }
 // "Next" goes straight to the next task of the list, without asking the AI.
 async function voiceNext(callId) {
@@ -3298,7 +3322,7 @@ function voiceEvent(m) {
   } else if (m.type === "error") voiceAudit({ event: "error", outcome: "failed", spokenAnswer: `Realtime session error: ${(m.error && m.error.message) || "unknown"}` });
 }
 async function voiceStart() {
-  Object.assign(voice, { error: "", feed: [], status: "connecting", history: [], listIds: [], pending: null, kinds: new Map(), said: new Map(),
+  Object.assign(voice, { error: "", feed: [], status: "connecting", history: [], listIds: [], pending: null, draft: null, kinds: new Map(), said: new Map(),
     session: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "s" + Date.now() + Math.random().toString(36).slice(2, 8) });
   renderVoice();
   try {
@@ -3328,7 +3352,7 @@ async function voiceStart() {
 }
 function voiceClose() {
   if (voice.pc) voiceAudit({ event: "session", mode: "stopped" });
-  voiceTeardown(); Object.assign(voice, { open: false, min: false, status: "idle", error: "", pending: null }); renderVoice();
+  voiceTeardown(); Object.assign(voice, { open: false, min: false, status: "idle", error: "", pending: null, draft: null }); renderVoice();
 }
 function renderVoice() {
   let root = document.getElementById("voice-root");

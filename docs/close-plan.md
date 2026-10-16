@@ -411,6 +411,21 @@ help with this plan?").
   counts lists itself, and decides "who waits on whom" from the sentence. The
   **page applies changes** through the same functions and access rules as a click,
   so saving and the activity log ("… by voice") work as for manual edits.
+- **Every field of a task by voice:** status (the dropdown), subtask checkboxes
+  ("tick off / untick the … subtask"; no question asked, easily undone), phase
+  ("move it to Validate"; subtasks follow their main task), due date, owner,
+  coworkers and requested by (add and remove), title, description, the
+  "Shared with customer" and "Milestone" switches, and status updates.
+- **Creating a task takes a short conversation:** it checks which phase (offering
+  the current one), then asks once for the owner, due date and description that
+  are missing; "skip" or "that's all" creates it with defaults (you as owner, the
+  phase end as due date) and says so. A subtask takes its parent's phase and isn't
+  asked for a description. The draft lives on the page between turns and is
+  re-checked on the server each time (`completeDraft`).
+- **The AI can't fill in what nobody said:** a phase, an owner, a due date or a
+  parent task only counts when the person's words name it (a live test had "add a
+  task" become a subtask of an existing task, in a guessed phase, with an invented
+  date).
 - **Safety:** closing a task and moving a milestone ask "Say yes to confirm";
   text written into a task (update, title, details) must come from the person's
   own words; requests addressed to someone else ("Drew, can you…") are ignored.
