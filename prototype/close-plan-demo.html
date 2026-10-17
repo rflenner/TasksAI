@@ -542,6 +542,9 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .del-box { margin-top: 14px; border-left: 3px solid #c0503e; background: #fdf3f1; border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 13px; color: #4a5160; }
 .del-box.confirm { background: #fbe8e4; }
 .plan-del { margin: -14px 0 22px; }
+.sf-box { margin: -14px 0 22px; border-left: 3px solid #3b6ea5; background: #eef3f9; border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 13px; color: #4a5160; }
+.sf-box p { margin: 6px 0 0; line-height: 1.5; } .sf-box ul { margin: 6px 0 0; padding-left: 18px; } .sf-box li { margin: 2px 0; }
+.sf-box input[type=text] { font: inherit; padding: 5px 8px; border: 1px solid #c9d3e0; border-radius: 6px; width: 220px; }
 .plan-tools .ph-btn { width: 42px; height: 42px; border: 1px solid #d7dce3; background: #fff; }
 .del-box p { margin: 6px 0 0; line-height: 1.5; }
 .del-box select { max-width: 260px; }
@@ -1018,7 +1021,7 @@ function save() {
 // Helpers
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const person = id => (state && state.people.find(p => p.id === id)) || (id === "__me" && APP_ME ? { id: "__me", name: APP_ME.name, email: APP_ME.email, side: "seller", title: "Task AI user", access: { ...ACCESS_DEFAULTS.seller } } : { name: "Unassigned", side: "seller", title: "" });
+const person = id => (state && state.people.find(p => p.id === id)) || (id === "sfdc" ? { id: "sfdc", name: "Salesforce", side: "seller", title: "Salesforce", access: { ...ACCESS_DEFAULTS.seller } } : null) || (id === "__me" && APP_ME ? { id: "__me", name: APP_ME.name, email: APP_ME.email, side: "seller", title: "Task AI user", access: { ...ACCESS_DEFAULTS.seller } } : { name: "Unassigned", side: "seller", title: "" });
 const initials = name => name.split(/\s+/).filter(w => /^[A-Za-z]/.test(w)).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const d = s => new Date(s + "T00:00:00");
 const fmt = s => d(s).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -1187,15 +1190,47 @@ function titleBlock() {
       ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn" data-vx-title><span aria-hidden="true">🎙</span> Voice assistant</button>` : ""}
       <button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>
       ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
-        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${IN_APP && !state._demo && APP_ME && APP_ME.role === "site_admin" ? `<button type="button" role="menuitem" data-sfplay><span class="mi">☁</span>Open Salesforce close plan</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
+        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${IN_APP && !state._demo && APP_ME && APP_ME.role === "site_admin" ? `<button type="button" role="menuitem" data-sfplay><span class="mi">☁</span>Open Salesforce close plan</button>` : ""}${IN_APP && !state._demo && canDeleteThisPlan() ? `<button type="button" role="menuitem" data-sfsync><span class="mi">⇄</span>Sync with Salesforce</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
   </div>
-  ${ui.deletePlan ? deletePlanBox() : ""}`;
+  ${ui.deletePlan ? deletePlanBox() : ""}${ui.sfsync ? sfSyncBox() : ""}`;
 }
 
 // Deleting a whole plan (e.g. a demo draft): the iSEEit plan owner or an administrator (Site or Area Admin in
 // Task AI), and only after a second confirmation. The server checks the same rule.
 function canDeleteThisPlan() { return me() === state.planOwners.seller || Boolean(APP_ME && (APP_ME.role === "site_admin" || APP_ME.role === "area_admin")); }
+function sfSyncBox() {
+  const q = ui.sfsync, d = q.data, list = (a, n = 8) => a.length ? `<ul>${a.slice(0, n).map(x => `<li>${esc(x)}</li>`).join("")}${a.length > n ? `<li>and ${a.length - n} more</li>` : ""}</ul>` : "";
+  let body = "";
+  if (q.busy) body = `<p>${q.busy === "apply" ? "Syncing with Salesforce…" : "Checking Salesforce…"}</p>`;
+  else if (q.done) body = `<p><b>Synced.</b> ${q.done.written.updated} updated and ${q.done.written.created} created in Salesforce; ${q.done.pulled.length} change${q.done.pulled.length === 1 ? "" : "s"} brought in.${q.done.failed.length ? ` Salesforce refused ${q.done.failed.length}: ${esc(q.done.failed[0])}` : ""}</p>`;
+  else if (d) body = `<p>Opportunity <b>${esc(d.opportunityId)}</b>. Where both sides changed the same thing, Close Plan wins.</p>
+    ${d.pulled.length ? `<p><b>From Salesforce (${d.pulled.length})</b></p>${list(d.pulled)}` : ""}${d.pushed.length ? `<p><b>To Salesforce (${d.pushed.length})</b></p>${list(d.pushed)}` : ""}
+    ${d.conflicts.length ? `<p><b>Close Plan wins (${d.conflicts.length})</b>, the Salesforce value is overwritten:</p>${list(d.conflicts)}` : ""}
+    ${d.skipped.length ? `<p><b>Left out (${d.skipped.length})</b></p>${list(d.skipped, 4)}` : ""}
+    ${!d.pulled.length && !d.pushed.length ? `<p>Everything is in sync.</p>` : ""}
+    ${d.unlinked ? `<p><label><input type="checkbox" data-sfsync-unlinked ${q.sendUnlinked ? "checked" : ""}> Also create the ${d.unlinked} task${d.unlinked > 1 ? "s" : ""} that exist only here as checkpoints in Salesforce</label></p>` : ""}`;
+  else body = `<p>Links this plan to its Salesforce opportunity and shows what would change. Nothing is written until you confirm.</p>
+    <p><input type="text" data-sfsync-opp placeholder="Opportunity id (006…)" value="${esc(q.opp || "")}" aria-label="Salesforce opportunity id"></p>`;
+  if (q.error) body += `<p style="color:#a8402f"><b>${esc(q.error)}</b></p>`;
+  const go = q.done ? "" : d ? `<button type="button" class="btn sm primary" data-sfsync-apply ${q.busy ? "disabled" : ""}>Sync now</button>` : `<button type="button" class="btn sm primary" data-sfsync-preview ${q.busy ? "disabled" : ""}>Check Salesforce</button>`;
+  return `<div class="sf-box" role="dialog" aria-label="Sync with Salesforce"><b>Sync “${esc(state.title)}” with Salesforce</b>${body}<div class="pe-actions">${go}<button type="button" class="btn sm" data-sfsync-close>${q.done ? "Close" : "Cancel"}</button></div></div>`;
+}
+async function sfSyncRun(mode) {
+  const q = ui.sfsync; q.busy = mode; q.error = null; render();
+  try {
+    await flushPlanSave();
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/sfdc-sync`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode, opportunityId: q.opp || state.sfdcOpportunityId || undefined, sendUnlinked: q.sendUnlinked === true }) });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) q.error = res.error || "Salesforce sync failed";
+    else if (mode === "preview") q.data = res;
+    else {
+      q.done = res; q.data = null;
+      if (res.plan) { const fresh = { ...res.plan.data, _v: res.plan.version }; store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p); if (state.id === fresh.id) state = fresh; }
+    }
+  } catch (e) { q.error = "Salesforce could not be reached. Check your connection."; }
+  q.busy = null; render();
+}
 function deletePlanBox() {
   const tasks = state.tasks.length, buyers = state.people.filter(p => p.side === "buyer").length, invited = state.people.filter(p => p.side === "buyer" && p.invite && p.invite.status !== "none").length;
   return `<div class="del-box confirm plan-del" role="alertdialog" aria-label="Confirm plan deletion">
@@ -2405,6 +2440,12 @@ function wirePage() {
   app.querySelectorAll("[data-report]").forEach(b => b.onclick = openReport);
   app.querySelectorAll("[data-sfplay]").forEach(b => b.onclick = openSalesforcePlan);
   app.querySelectorAll("[data-vx-title]").forEach(b => b.onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); });
+  app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "" }; render(); });
+  app.querySelectorAll("[data-sfsync-close]").forEach(b => b.onclick = () => { ui.sfsync = null; render(); });
+  app.querySelectorAll("[data-sfsync-preview]").forEach(b => b.onclick = () => sfSyncRun("preview"));
+  app.querySelectorAll("[data-sfsync-apply]").forEach(b => b.onclick = () => sfSyncRun("apply"));
+  app.querySelectorAll("[data-sfsync-opp]").forEach(i => i.oninput = () => { ui.sfsync.opp = i.value.trim(); });
+  app.querySelectorAll("[data-sfsync-unlinked]").forEach(i => i.onchange = () => { ui.sfsync.sendUnlinked = i.checked; });
   app.querySelectorAll("[data-plandelete-cancel]").forEach(b => b.onclick = () => { ui.deletePlan = false; render(); });
   app.querySelectorAll("[data-plandelete-confirm]").forEach(b => b.onclick = deletePlanNow);
   app.querySelectorAll("[data-upload]").forEach(b => b.onclick = () => { b.disabled = true; uploadLocalPlans(); });
