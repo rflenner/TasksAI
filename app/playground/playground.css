@@ -2,7 +2,7 @@
    checkpoints, and a sticky "Send to Salesforce" bar. Same white
    bordered cards as /integrations. */
 .pg-lookup{display:flex;align-items:flex-end;gap:14px;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px}
-.pg-lookup label{display:flex;flex-direction:column;gap:6px;flex:1;max-width:420px;font-size:11px;font-weight:700;color:#737b87}
+.pg-lookup label{display:flex;flex-direction:column;gap:6px;flex:1;max-width:520px;font-size:11px;font-weight:700;color:#737b87}
 .pg-lookup input{border:1px solid #d5dce5;border-radius:8px;padding:9px 11px;background:#fff;font:inherit;font-size:14px;color:#202735}
 .pg-lookup .manage:disabled{opacity:.55;cursor:not-allowed}
 .pg-error{margin-top:8px;background:#fdf3f1;border:1px solid #f1d2cc;border-radius:10px;padding:12px 18px;font-size:13px;color:#a84235}
@@ -34,3 +34,11 @@
 .pg-send-button{border:1px solid #173f76;background:#173f76;color:#fff;border-radius:8px;padding:9px 16px;font:inherit;font-weight:700;white-space:nowrap}
 .pg-send-button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:620px){.pg-lookup{flex-wrap:wrap}.pg-lookup label{max-width:none}.pg-send{flex-direction:column;align-items:stretch}}
+
+.pg-search{position:relative}
+.pg-hits{position:absolute;z-index:20;top:100%;left:0;right:0;margin-top:4px;background:#fff;border:1px solid #d5dce5;border-radius:10px;box-shadow:0 8px 24px #173f7618;max-height:320px;overflow-y:auto;padding:4px}
+.pg-hit{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:8px;padding:8px 10px;cursor:pointer;font:inherit}
+.pg-hit:hover,.pg-hit:focus-visible{background:#eef3fa;outline:0}
+.pg-hit b{display:block;color:#173f76;font-size:14px;font-weight:700}
+.pg-hit small{display:block;color:#737b87;font-size:12px;font-weight:400;margin-top:1px}
+.pg-hit-note{padding:10px;color:#737b87;font-size:13px;font-weight:400}

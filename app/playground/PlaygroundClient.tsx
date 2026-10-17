@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { isOpportunityId, type OpportunityHit } from "../lib/salesforce-opportunity-search";
 import "../users/users.css";
 import "./playground.css";
 
@@ -21,8 +22,17 @@ function statusLabel(checkpoint: Checkpoint) {
 // the edited ones back to Salesforce in one go
 // (app/api/playground/checkpoints/route.ts). Uses the workspace's
 // Salesforce connection from /integrations.
-export default function PlaygroundClient() {
-  const [opportunityId, setOpportunityId] = useState("");
+export default function PlaygroundClient({ initialOpportunityId = "" }: { initialOpportunityId?: string }) {
+  // One box: type a name or account to search Salesforce, or paste an opportunity ID.
+  const [opportunityId, setOpportunityId] = useState(initialOpportunityId);
+  // The last finished search; what's shown is derived from it and the box (only the delayed search sets it).
+  const [search, setSearch] = useState<{ q: string; hits: OpportunityHit[]; error: string }>({ q: "", hits: [], error: "" });
+  const typed = opportunityId.trim();
+  const searchActive = typed.length >= 2 && !isOpportunityId(typed);
+  const searchSettled = search.q === typed;
+  const searching = searchActive && !searchSettled;
+  const hits = searchActive && searchSettled ? search.hits : [];
+  const searchError = searchActive && searchSettled ? search.error : "";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notConnected, setNotConnected] = useState(false);
@@ -36,10 +46,26 @@ export default function PlaygroundClient() {
 
   const edited = Object.keys(drafts).filter(id => drafts[id] !== saved[id]);
 
-  const fetchCheckpoints = async (event: FormEvent) => {
-    event.preventDefault();
-    const id = opportunityId.trim();
+  // Search as you type (after a short pause), unless what's in the box is already an ID.
+  useEffect(() => {
+    if (!searchActive) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const response = await fetch(`/api/playground/opportunities?q=${encodeURIComponent(typed)}`).catch(() => null);
+      const data = (await response?.json().catch(() => ({}))) as { opportunities?: OpportunityHit[]; error?: string } | undefined;
+      if (cancelled) return;
+      if (!response?.ok) { setNotConnected(response?.status === 409); setSearch({ q: typed, hits: [], error: data?.error || "Search failed" }); return; }
+      setSearch({ q: typed, hits: data?.opportunities || [], error: "" });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [typed, searchActive]);
+
+  const fetchCheckpoints = async (event: FormEvent | null, picked?: string) => {
+    event?.preventDefault();
+    const id = (picked || opportunityId).trim();
     if (!id || loading) return;
+    if (!isOpportunityId(id)) { setError("Pick an opportunity from the list, or paste its 15 or 18 character ID."); return; }
+    setSearch({ q: "", hits: [], error: "" });
     if (edited.length && !window.confirm(`You have ${edited.length} unsent description${edited.length === 1 ? "" : "s"}. Discard them and fetch again?`)) return;
     setLoading(true); setError(""); setNotConnected(false); setResults({}); setSendMessage("");
     const response = await fetch(`/api/playground/checkpoints?opportunityId=${encodeURIComponent(id)}`);
@@ -54,6 +80,15 @@ export default function PlaygroundClient() {
     const descriptions = Object.fromEntries(data.phases.flatMap(phase => phase.checkpoints.map(checkpoint => [checkpoint.id, checkpoint.description])));
     setLoaded(data); setSaved(descriptions); setDrafts(descriptions);
   };
+
+  // Opened from a close plan (…/playground?opportunityId=…): fetch it straight away.
+  const autoFetched = useRef(false);
+  useEffect(() => {
+    if (autoFetched.current || !isOpportunityId(initialOpportunityId)) return;
+    autoFetched.current = true;
+    void fetchCheckpoints(null, initialOpportunityId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const send = async () => {
     if (!loaded || !edited.length || sending) return;
@@ -96,11 +131,24 @@ export default function PlaygroundClient() {
         </header>
 
         <form className="pg-lookup" onSubmit={e => void fetchCheckpoints(e)}>
-          <label>
-            <span>Opportunity ID</span>
-            <input value={opportunityId} onChange={e => setOpportunityId(e.target.value)} placeholder="e.g. 006Kj00000AbCdEFGH" spellCheck={false} autoComplete="off" />
+          <label className="pg-search">
+            <span>Opportunity</span>
+            <input value={opportunityId} onChange={e => setOpportunityId(e.target.value)} placeholder="Search by opportunity or account name, or paste an ID" spellCheck={false} autoComplete="off" aria-label="Opportunity: search by name or paste an ID" />
+            {searchActive && (
+              <div className="pg-hits" role="listbox" aria-label="Matching opportunities">
+                {searching && <div className="pg-hit-note">Searching Salesforce…</div>}
+                {!searching && searchError && <div className="pg-hit-note">{searchError}</div>}
+                {!searching && !searchError && !hits.length && <div className="pg-hit-note">No opportunity matches “{typed}”.</div>}
+                {hits.map(hit => (
+                  <button type="button" role="option" aria-selected="false" key={hit.id} className="pg-hit" onClick={() => { setOpportunityId(hit.id); void fetchCheckpoints(null, hit.id); }}>
+                    <b>{hit.name}</b>
+                    <small>{[hit.account, hit.stage, hit.closeDate && formatDate(hit.closeDate), hit.owner].filter(Boolean).join(" · ")}</small>
+                  </button>
+                ))}
+              </div>
+            )}
           </label>
-          <button className="manage" type="submit" disabled={loading || !opportunityId.trim()}>{loading ? "Fetching…" : "Fetch checkpoints"}</button>
+          <button className="manage" type="submit" disabled={loading || !isOpportunityId(opportunityId.trim())}>{loading ? "Fetching…" : "Fetch checkpoints"}</button>
         </form>
         {error && <div className="pg-error">{error}{notConnected && <> <Link href="/integrations">Go to Integrations →</Link></>}</div>}
 

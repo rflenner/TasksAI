@@ -76,3 +76,19 @@ test("accountIdForPlan: stored id first, then the opportunity the plan came from
   assert.equal(accountIdForPlan({ account: "Unknown Co" }, opps, names), null);
   assert.equal(accountIdForPlan({ accountId: "bad id!", account: "Meridian Biotech" }, opps, names), "A1");
 });
+
+test("opportunityIdForPlan: stored id first, then the opportunity name (with the account), only when unambiguous", async () => {
+  const { opportunityIdForPlan } = await import("../app/lib/close-plan-opportunities");
+  const opps = [
+    { opportunity_id: "006AAAAAAAAAAAAAAA", opportunity_name: "Rollout", account_id: "A1" },
+    { opportunity_id: "006BBBBBBBBBBBBBBB", opportunity_name: "Rollout", account_id: "A2" },
+    { opportunity_id: "006CCCCCCCCCCCCCCC", opportunity_name: "Renewal 2026", account_id: "A3" },
+  ];
+  const names = new Map([["A1", "Meridian Biotech"], ["A2", "Nordwind Logistics"], ["A3", "Alpina Health"]]);
+  assert.equal(opportunityIdForPlan({ sfdcOpportunityId: "006Qs00000nLiA4IAK" }, [], new Map()), "006Qs00000nLiA4IAK");
+  assert.equal(opportunityIdForPlan({ sfdcOpportunityId: "not an id", account: "Meridian Biotech", opp: { name: "Rollout" } }, opps, names), "006AAAAAAAAAAAAAAA");
+  assert.equal(opportunityIdForPlan({ account: "Alpina Health", opp: { name: "Renewal 2026" } }, opps, names), "006CCCCCCCCCCCCCCC");
+  assert.equal(opportunityIdForPlan({ opp: { name: "Rollout" } }, opps, names), null);
+  assert.equal(opportunityIdForPlan({ account: "Unknown", opp: { name: "Rollout" } }, opps, names), null);
+  assert.equal(opportunityIdForPlan({ account: "Meridian Biotech" }, opps, names), null);
+});

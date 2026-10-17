@@ -123,3 +123,23 @@ Task, `WhoId` / recipient contacts → Requested by.
    iSEEit close plan view and PDF?
 2. How does the iSEEit view show a `Task` linked through `iseeit__TaskEvent_TO_DO__c`?
 3. Does a push to `iseeit__Deadline__c` re-derive the phase dates straight away?
+
+## Finding the opportunity (no ID to copy)
+
+Sales AI's opportunity ids are the Salesforce opportunity ids (`006…`), so a plan
+created from a Sales AI opportunity stores it as `sfdcOpportunityId` (and the
+account as `accountId`).
+
+- **Playground** (`/playground`, Site Admin): one box that takes an opportunity or
+  account name (search-as-you-type over the connected org, `GET
+  /api/playground/opportunities?q=`, ten most recently changed matches, every typed
+  word must match the opportunity or the account name) or a pasted id.
+  `/playground?opportunityId=…` opens straight on that opportunity.
+- **From a close plan** (Site Admins): ⋮ → "Open Salesforce close plan"
+  (`GET /api/close-plans/store/:id/opportunity`). Older plans, created before the id
+  was stored, are matched by the opportunity name they came from (and the account),
+  only when that is unambiguous, and the id is then kept on the plan.
+- **SOQL safety:** typed text goes into the query through one function
+  (`opportunitySearchSoql`): only letters, digits, spaces and `. , & ' -` survive,
+  so LIKE wildcards and anything that could end a string are removed, and the one
+  remaining quote is escaped.
