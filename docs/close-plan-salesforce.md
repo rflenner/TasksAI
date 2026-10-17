@@ -143,3 +143,22 @@ account as `accountId`).
   (`opportunitySearchSoql`): only letters, digits, spaces and `. , & ' -` survive,
   so LIKE wildcards and anything that could end a string are removed, and the one
   remaining quote is escaped.
+
+## Link, pull and push (built 2026-10-18)
+
+Plan menu → **Sync with Salesforce** (plan owner and admins). `POST /api/close-plans/store/:id/sfdc-sync`
+with `mode: "preview"` (nothing written) or `"apply"`; logic in `app/lib/close-plan-sfdc-sync.ts`, built
+on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
+
+- **Link:** phases match by Salesforce id, else by name; Salesforce phases the plan lacks are added.
+  Plan tasks with the same title in a matching phase are adopted instead of duplicated.
+- **Fields:** title, description, status, due date, shared/internal, owners (only when everyone has a
+  Salesforce user/contact id on the plan). Each linked task keeps `sfdcSeen` (values at the last sync).
+  Only Salesforce changed → pull. Only the plan changed → push. Both changed differently → **Close Plan wins**
+  and the overwritten Salesforce value is noted in the activity (author "Salesforce").
+- **New:** Salesforce checkpoints the plan lacks become tasks; new plan tasks become `iseeit__TO_DO__c`
+  with `Is_From_Close_Plan__c = true`. On the first sync, tasks that exist only in the plan are held back
+  unless "Also create…" is ticked, and are then marked `sfdcSkip` so later syncs leave them alone.
+- **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
+  (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
+  checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.
