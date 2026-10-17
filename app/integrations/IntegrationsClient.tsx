@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "../users/users.css";
 import "./integrations.css";
+import SalesforceConnectionCard from "./SalesforceConnectionCard";
 
 type SyncedTask = { taskId: number; subject: string; owner: string; recipients: string[]; created: string };
 type SyncResult = { itemsFound: number; qualifying: number; created: number; alreadySynced: number; contactsUpserted: number; createdTasks: SyncedTask[] };
@@ -31,6 +32,10 @@ export default function IntegrationsClient() {
   const [error, setError] = useState("");
   const [runs, setRuns] = useState<SyncRun[] | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [toast, setToast] = useState("");
+  // Stable so the Salesforce card's mount effect (which reports the OAuth
+  // callback's result through it) runs once, not on every render.
+  const showToast = useCallback((message: string) => { setToast(message); window.setTimeout(() => setToast(""), 4000); }, []);
 
   const loadRuns = async () => {
     const response = await fetch("/api/integrations/sales-ai/runs");
@@ -69,6 +74,7 @@ export default function IntegrationsClient() {
           <Link href="/users">Users & access</Link>
           <Link href="/data-hygiene">Data Hygiene</Link>
           <Link className="active" href="/integrations">Integrations</Link>
+          <Link href="/playground">Playground</Link>
           <Link href="/email-preview">Email notifications</Link>
         </nav>
       </aside>
@@ -80,6 +86,11 @@ export default function IntegrationsClient() {
             <p>Connect Task AI to the other tools your team uses.</p>
           </div>
         </header>
+        <section className="crm-section">
+          <h2>CRM</h2>
+          <p className="hint">Connect your CRM and manage how its data comes into Task AI.</p>
+          <SalesforceConnectionCard onToast={showToast} />
+        </section>
         <section>
           <div className="user-list">
             <article className="integration-row">
@@ -149,6 +160,7 @@ export default function IntegrationsClient() {
           </div>
         </section>
       </section>
+      {toast && <div className="toast" role="status">{toast}</div>}
     </main>
   );
 }

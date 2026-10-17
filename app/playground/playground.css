@@ -1,0 +1,36 @@
+/* Playground — opportunity id lookup, phases with their close-plan
+   checkpoints, and a sticky "Send to Salesforce" bar. Same white
+   bordered cards as /integrations. */
+.pg-lookup{display:flex;align-items:flex-end;gap:14px;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px}
+.pg-lookup label{display:flex;flex-direction:column;gap:6px;flex:1;max-width:420px;font-size:11px;font-weight:700;color:#737b87}
+.pg-lookup input{border:1px solid #d5dce5;border-radius:8px;padding:9px 11px;background:#fff;font:inherit;font-size:14px;color:#202735}
+.pg-lookup .manage:disabled{opacity:.55;cursor:not-allowed}
+.pg-error{margin-top:8px;background:#fdf3f1;border:1px solid #f1d2cc;border-radius:10px;padding:12px 18px;font-size:13px;color:#a84235}
+.pg-error a{color:#173f76;font-weight:700}
+.pg-result{margin-top:24px}
+.pg-opportunity{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:14px 22px;margin-bottom:20px}
+.pg-opportunity b{display:block;color:#173f76;font-size:16px}
+.pg-opportunity small{color:#8a94a2}
+.pg-phase{margin-bottom:22px}
+.pg-phase-head{display:flex;align-items:baseline;gap:12px;margin:0 0 10px 4px}
+.pg-phase-head h2{font-size:15px;color:var(--dark);margin:0}
+.pg-phase-head small{color:#8a94a2}
+.pg-phase>.hint{margin-left:4px}
+.pg-checkpoint{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:14px 20px;margin-bottom:8px}
+.pg-checkpoint.edited{border-color:#ffa614}
+.pg-checkpoint-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pg-checkpoint-head b{color:#202735;font-size:14px;line-height:1.4}
+.pg-status{flex:none;white-space:nowrap;border-radius:12px;padding:3px 9px;font-size:10.5px;font-weight:700;background:#f3f4f6;color:#5b6370}
+.pg-status.done{background:#e4f4eb;color:#25784b}
+.pg-meta{display:flex;flex-wrap:wrap;gap:14px;margin-top:6px;font-size:11.5px;color:#7e858f}
+.pg-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#a0a7b1}
+.pg-description{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:11px;font-weight:700;color:#737b87}
+.pg-description textarea{border:1px solid #d5dce5;border-radius:8px;padding:9px 11px;background:#fafafa;font:inherit;font-size:13px;font-weight:400;color:#202735;resize:vertical;min-height:64px}
+.pg-description textarea:focus{outline:none;border-color:#173f76;background:#fff}
+.pg-flag{display:block;margin-top:6px;font-size:12px;color:#9a5a00}
+.pg-flag.sent{color:#2f7a4c}
+.pg-flag.failed{color:#a84235}
+.pg-send{position:sticky;bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:12px 20px;box-shadow:0 6px 20px #173f7614;font-size:13px;color:#3a4250}
+.pg-send-button{border:1px solid #173f76;background:#173f76;color:#fff;border-radius:8px;padding:9px 16px;font:inherit;font-weight:700;white-space:nowrap}
+.pg-send-button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:620px){.pg-lookup{flex-wrap:wrap}.pg-lookup label{max-width:none}.pg-send{flex-direction:column;align-items:stretch}}

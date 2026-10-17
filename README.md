@@ -60,7 +60,7 @@ Other access-model notes:
 ## Deploy to Render
 
 1. In Render, choose **New → Blueprint** and connect this repository. Render reads `render.yaml` and creates the web service, the PostgreSQL database, and four Cron Jobs.
-2. Enter every `sync: false` variable in the Render dashboard (see `render.yaml` for the current list — currently `SITE_ADMIN_COMPANY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `SALES_AI_API_KEY`, `SALES_AI_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`). They are never stored in Git.
+2. Enter every `sync: false` variable in the Render dashboard (see `render.yaml` for the current list — currently `SITE_ADMIN_COMPANY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `SALES_AI_API_KEY`, `SALES_AI_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`). They are never stored in Git.
 3. Keep `TASK_AI_FROM_EMAIL` as `Task AI <notifications@tasks.flenner.at>`. The `tasks.flenner.at` domain must remain verified in Resend for *sending* — that's independent of what `APP_URL` points to (see below), so this stays put even while the custom domain itself isn't in use for links.
 4. On the first deployment only, change `BOOTSTRAP_SITE_ADMIN` to `true` and deploy. Startup applies migrations and idempotently creates the configured `SITE_ADMIN_EMAIL` as Site Admin.
 5. Immediately set `BOOTSTRAP_SITE_ADMIN` back to `false` and redeploy. The existing admin remains intact.
@@ -105,6 +105,16 @@ The route (`app/api/webhooks/inbound-email/route.ts`) verifies the Svix signatur
 ## Sales AI sync
 
 `/integrations` triggers a manual sync, and the `tasks-ai-sales-ai-sync` cron job (see above) runs it automatically. Action items from the Sales AI CRM are mapped to tasks (`app/lib/sales-ai-mapping.ts`), with the originating account and opportunity preserved on the task (`account_id`/`account_name`/`opportunity_id`/`opportunity_name`), and the contact registry (`contacts` table) kept in sync alongside it — the same table the email-to-task pipeline above also cross-checks names against. Every sync run is logged (`sales_ai_sync_runs`) and visible from `/integrations`, whether triggered manually or by the cron job.
+
+## Salesforce connection
+
+The **CRM** card at the top of `/integrations` connects the workspace to one Salesforce org. It's a port of the Salesforce card on Sales AI's Connected Apps page: type the Salesforce login domain (`login.salesforce.com`, `test.salesforce.com` for a sandbox, or a My Domain such as `acme.my.salesforce.com`), press **Connect**, approve in Salesforce, and you land back on `/integrations` connected. **Disconnect** deletes the stored credential and revokes it at Salesforce; the domain is kept. An **Expired** badge appears once Salesforce rejects the refresh token, and the fix is Disconnect, then Connect again. Nothing reads from Salesforce yet: this only sets up the connection.
+
+- OAuth 2.0 authorization-code flow with PKCE (`app/api/integrations/salesforce/connect` → Salesforce → `app/api/integrations/salesforce/callback`). State and verifier ride in a signed ten-minute cookie, and the callback also requires the same signed-in Site Admin who started it. The code exchange happens server-side, so no token ever reaches the browser.
+- The single connection row is `salesforce_connection` (id is always 1). Both tokens are stored AES-256-GCM encrypted with a key derived from `SESSION_SECRET`, so **rotating `SESSION_SECRET` also means reconnecting Salesforce**.
+- The domain must be a Salesforce-owned host (`*.salesforce.com`, `*.force.com`, `*.cloudforce.com`, `*.salesforce.mil`), because the token exchange sends the client secret to it.
+- `ensureSalesforceTokenFresh()` in `app/lib/salesforce.ts` is the one place a token gets refreshed. A Postgres advisory lock serializes it across the web service and cron jobs. Only a definite `invalid_grant` marks the connection expired. Opening `/integrations` refreshes a stale token (older than 30 minutes), which is how an expired connection gets noticed while nothing else uses it.
+- Setup: create a Salesforce Connected App with OAuth enabled, scopes `api` and `refresh_token, offline_access`, PKCE required, and `<APP_URL>/api/integrations/salesforce/callback` as its Callback URL. Then set `SALESFORCE_CLIENT_ID` and `SALESFORCE_CLIENT_SECRET`.
 
 ## Task History and presence
 

@@ -89,6 +89,17 @@ services:
         sync: false
       - key: RESEND_WEBHOOK_SECRET
         sync: false
+      # Salesforce Connected App (Setup → App Manager → New Connected App)
+      # for the CRM card on /integrations — OAuth enabled with the "api" and
+      # "refresh_token, offline_access" scopes, PKCE required, and
+      # https://tasks-ai.onrender.com/api/integrations/salesforce/callback
+      # as its Callback URL (follows APP_URL, like the Google redirect URI).
+      # A separate app from Sales AI's. Without both, Connect reports
+      # "Salesforce isn't configured yet" instead of failing.
+      - key: SALESFORCE_CLIENT_ID
+        sync: false
+      - key: SALESFORCE_CLIENT_SECRET
+        sync: false
   - type: cron
     name: tasks-ai-weekly-reminders
     runtime: node

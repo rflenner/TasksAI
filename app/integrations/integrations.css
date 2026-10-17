@@ -30,3 +30,37 @@
 .sync-run-tasks th{text-align:left;color:#8b929d;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;padding:0 10px 6px;border-bottom:1px solid #e3e8ee}
 .sync-run-tasks td{padding:8px 10px;border-bottom:1px solid #f0f2f5;color:#3a4250;vertical-align:top}
 .sync-run-tasks tr:last-child td{border-bottom:0}
+
+/* CRM — the Salesforce connection card (SalesforceConnectionCard.tsx),
+   ported from Sales AI's Connected Apps page: same layout (logo + name on
+   the left, Expired badge + Connect/Disconnect on the right, the custom
+   domain field underneath), same red outlined Disconnect once connected. */
+.crm-section{margin-bottom:32px}
+.crm-section h2{font-size:15px;color:var(--dark);margin:0 0 4px}
+.crm-section>.hint{margin-bottom:12px}
+.crm-card{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:16px 22px}
+.crm-card-head{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.crm-card-identity{display:flex;align-items:center;gap:14px;min-width:0}
+.crm-card-identity b{display:block;color:#202735;font-size:15px;margin-bottom:3px}
+.crm-card-identity small{color:#697181}
+.crm-logo{flex:none;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:8px;background:#00a1e0}
+.crm-card-actions{display:flex;align-items:center;gap:8px;flex:none}
+.crm-badge{border:1px solid currentColor;border-radius:20px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:default}
+.crm-badge.expired{color:#9a5a00}
+.crm-connect{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:110px;border:1px solid #d5dce5;background:#fff;color:#3a4250;border-radius:8px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.crm-connect:hover:not(:disabled){border-color:#8a94a2;background:#f5f7fa}
+.crm-connect.connected{border-color:#d32f2f;color:#d32f2f}
+.crm-connect.connected:hover:not(:disabled){background:#feebee;border-color:#d32f2f}
+.crm-connect:disabled{opacity:.55;cursor:not-allowed}
+.crm-spinner{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:crm-spin .8s linear infinite}
+@keyframes crm-spin{to{transform:rotate(360deg)}}
+.crm-domain{display:flex;flex-direction:column;gap:6px;margin-top:16px}
+.crm-domain>span{font-size:11px;font-weight:700;color:#737b87}
+.crm-domain-input{display:flex;align-items:center;border:1px solid #d5dce5;border-radius:8px;background:#fafafa;padding:0 11px}
+.crm-domain-input:focus-within{border-color:#173f76}
+.crm-domain-input.invalid{border-color:#a84235}
+.crm-domain-input.readonly{color:#8a94a2}
+.crm-domain-prefix{color:#8a94a2;user-select:none;pointer-events:none;margin-right:2px}
+.crm-domain-input input{flex:1;min-width:0;border:0;background:transparent;padding:9px 0;font:inherit;color:inherit;outline:none}
+.crm-domain-error{color:#a84235}
+@media(max-width:620px){.crm-card-head{flex-direction:column;align-items:stretch}.crm-card-actions{justify-content:flex-end}}

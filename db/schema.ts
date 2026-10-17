@@ -360,3 +360,26 @@ export const voiceAudit = pgTable("voice_audit", {
   spokenAnswer: text("spoken_answer").notNull().default(""),
   detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
 }, table => [index("voice_audit_created_idx").on(table.createdAt), index("voice_audit_session_idx").on(table.sessionId)]);
+// The workspace's one Salesforce connection (the "CRM" card on
+// /integrations, ported from Sales AI's Connected Apps page) — a single
+// row, pinned to id = 1 by the migration's CHECK, since Task AI is one
+// workspace rather than Sales AI's per-tenant databases. `domain` outlives
+// a disconnect (it's the login domain the admin typed, not a credential),
+// everything else is cleared on disconnect. Both tokens are stored
+// AES-256-GCM encrypted (app/lib/salesforce.ts), never in plaintext — unlike
+// every other secret here they can't be hashed, since they have to be sent
+// back to Salesforce. tokenStatus is "active" after any successful token
+// fetch and "expired" only after Salesforce explicitly rejects the refresh
+// token (invalid_grant); it drives the "Expired" badge on the card.
+export const salesforceConnection = pgTable("salesforce_connection", {
+  id: integer("id").primaryKey().default(1),
+  domain: text("domain").notNull().default("login.salesforce.com"),
+  instanceUrl: text("instance_url"),
+  accessTokenEnc: text("access_token_enc"),
+  refreshTokenEnc: text("refresh_token_enc"),
+  tokenObtainedAt: timestamp("token_obtained_at", { withTimezone: true }),
+  tokenStatus: text("token_status"),
+  connectedBy: text("connected_by"),
+  connectedAt: timestamp("connected_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

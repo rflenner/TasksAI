@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS salesforce_connection (id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1), domain text NOT NULL DEFAULT 'login.salesforce.com', instance_url text, access_token_enc text, refresh_token_enc text, token_obtained_at timestamptz, token_status text, connected_by text, connected_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now());
