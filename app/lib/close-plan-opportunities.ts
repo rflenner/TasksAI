@@ -12,6 +12,20 @@ export type PlanContact = { name: string; title: string; email: string; contactI
 
 export const SEARCH_LIMIT = 15;
 
+// Which Salesforce opportunity a plan belongs to. Sales AI's opportunity ids ARE the Salesforce ids, so a plan
+// created from a Sales AI opportunity stores it (sfdcOpportunityId); older plans are matched by the opportunity
+// name (and the account, when the plan has one), and only when that is unambiguous.
+export function opportunityIdForPlan(plan: { sfdcOpportunityId?: unknown; account?: unknown; opp?: unknown }, opportunities: SalesAIOpportunityRow[], accountNameById: Map<string, string>): string | null {
+  if (typeof plan.sfdcOpportunityId === "string" && /^006[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/.test(plan.sfdcOpportunityId)) return plan.sfdcOpportunityId;
+  const oppName = plan.opp && typeof plan.opp === "object" ? String((plan.opp as { name?: unknown }).name || "") : "";
+  if (!oppName) return null;
+  const account = typeof plan.account === "string" ? plan.account : "";
+  const named = opportunities.filter(o => norm(o.opportunity_name) === norm(oppName));
+  const sameAccount = account ? named.filter(o => o.account_id && norm(accountNameById.get(o.account_id) || "") === norm(account)) : named;
+  const pool = sameAccount.length ? sameAccount : (named.length === 1 ? named : []);
+  return pool.length === 1 ? pool[0].opportunity_id : null;
+}
+
 // Which Sales AI account a plan belongs to. New plans store it (accountId); older ones are matched by the
 // opportunity name they were created from, then by the account name, and only when that is unambiguous.
 export function accountIdForPlan(plan: { accountId?: unknown; account?: unknown; opp?: unknown }, opportunities: SalesAIOpportunityRow[], accountNameById: Map<string, string>): string | null {
