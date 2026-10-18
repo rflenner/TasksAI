@@ -81,3 +81,31 @@ test("a checkpoint deleted in Salesforce unlinks its task but keeps it", () => {
   assert.equal(o.plan.tasks.length, 1);
   assert.equal(o.plan.tasks[0].sfdcId, undefined);
 });
+
+import { applySalesforceIds, idLookupQueries } from "../app/lib/close-plan-sfdc-sync";
+
+test("people get Salesforce ids by email, and apostrophes can't break the query", () => {
+  const p = plan();
+  p.people = [{ id: "a", name: "A", email: "a@iseeit.com", side: "seller" }, { id: "b", name: "B", email: "b@cust.com", side: "buyer" }, { id: "c", name: "C", email: "o'brien@cust.com", side: "buyer" }, { id: "d", name: "D", email: "x@y.com", side: "seller", sfdcUserId: "005000000000009AAA" }];
+  const q = idLookupQueries(p.people);
+  assert.equal(q.users, "SELECT Id, Email FROM User WHERE IsActive = true AND Email IN ('a@iseeit.com')");
+  assert.match(q.contacts!, /Email IN \('b@cust\.com'\)/);
+  assert.doesNotMatch(q.contacts!, /o'brien/);
+  applySalesforceIds(p, [{ Id: "005000000000001AAA", Email: "A@iseeit.com" }], [{ Id: "003000000000001AAA", Email: "b@cust.com" }]);
+  assert.equal(p.people[0].sfdcUserId, "005000000000001AAA");
+  assert.equal(p.people[1].sfdcContactId, "003000000000001AAA");
+  assert.equal(p.people[3].sfdcUserId, "005000000000009AAA");
+});
+
+test("a new task is created with its owners once they have Salesforce ids", () => {
+  const o = syncPlan(plan([task({ title: "Mine" })], "t"), phases, []);
+  assert.equal(o.creates[0].fields.iseeit__Phase_Checkpoint_Owner__c, "005000000000001AAA");
+  assert.equal(o.creates[0].fields.iseeit__Checkpoint_Phase_Owner_Description__c, "Sam");
+});
+
+test("an owner change on a linked task is pushed once the baseline is known", () => {
+  const p = plan([task({ sfdcId: "a0Q000000000001AAA", sfdcSeen: { ...seen, planOwners: "003000000000001AAA", owners: "003000000000001AAA" } })], "t");
+  p.people.push({ id: "p2", name: "Other", sfdcContactId: "003000000000001AAA" });
+  const o = syncPlan(p, phases, [row({ iseeit__Phase_Checkpoint_Owner__c: "003000000000001AAA" })]);
+  assert.equal(o.updates[0].fields.iseeit__Phase_Checkpoint_Owner__c, "005000000000001AAA");
+});

@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
-import { checkpointQuery, commit, phaseQuery, syncPlan, type SfCheckpointRow, type SfPhaseRow, type SyncPlan } from "../../../../../lib/close-plan-sfdc-sync";
+import { applySalesforceIds, checkpointQuery, commit, idLookupQueries, phaseQuery, syncPlan, type SfCheckpointRow, type SfPhaseRow, type SyncPlan } from "../../../../../lib/close-plan-sfdc-sync";
 import { isOpportunityId } from "../../../../../lib/salesforce-opportunity-search";
 import { canAccessPlan, canDeletePlan, memberEmails } from "../../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../../lib/request";
@@ -40,6 +40,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   if (!phases.length) return Response.json({ error: "That opportunity has no close plan in Salesforce yet" }, { status: 404 });
 
+  // Look up Salesforce ids for the people on the plan (by email), so owners can be written.
+  const lookups = idLookupQueries(data.people);
+  try { applySalesforceIds(data, lookups.users ? await query<{ Id: string; Email: string }>(lookups.users) : [], lookups.contacts ? await query<{ Id: string; Email: string }>(lookups.contacts) : []); }
+  catch (error) { console.error("Close Plan owner id lookup failed:", error instanceof Error ? error.message : error); }
   const outcome = syncPlan(data, phases, rows, { sendUnlinked: body.sendUnlinked === true });
   const summary = { opportunityId, pulled: outcome.pulled, pushed: outcome.pushed, conflicts: outcome.conflicts, skipped: outcome.skipped, unlinked: outcome.unlinked };
   if (body.mode !== "apply") return Response.json({ applied: false, ...summary });

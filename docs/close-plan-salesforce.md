@@ -165,6 +165,9 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
 - **Automatic:** a plan that has synced once (owner and admins) checks Salesforce when it is opened and writes its
   changes back about 3 seconds after each save (`sfAutoRun` in the page). A sync that changes nothing saves no new version.
   If the user edited while it ran, their edits are kept and only the Salesforce ids and snapshots are taken over.
+- **Owners:** at each sync the people on the plan get their Salesforce ids by email (iSEEit people from `User`, customer
+  contacts from `Contact`). Owners are written when everyone on the task has an id, also on newly created checkpoints. A task's
+  owner baseline (`sfdcSeen.planOwners`) is recorded on the first sync after ids are known; changes after that are pushed.
 - **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
   checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.
