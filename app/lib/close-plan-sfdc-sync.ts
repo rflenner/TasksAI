@@ -257,3 +257,35 @@ export function applySalesforceIds(plan: SyncPlan, users: Array<{ Id: string; Em
     else if (p.side === "buyer" && byContact.has(e)) p.sfdcContactId = byContact.get(e);
   }
 }
+
+// Owners that exist in Salesforce but not on the plan (a customer contact or colleague added to a checkpoint there) are
+// looked up by id and added to the plan as people, so they show up as owner or coworker. Salesforce users become iSEEit
+// people, contacts become customer people (no invitation).
+export function unknownOwnerIds(plan: SyncPlan, rows: SfCheckpointRow[]): { users: string[]; contacts: string[] } {
+  const known = new Set(plan.people.flatMap(p => [p.sfdcUserId, p.sfdcContactId].filter(Boolean) as string[]));
+  const ids = [...new Set(rows.filter(r => !r.iseeit__Checkpoint_N_A__c).flatMap(r => ownerList(r.iseeit__Phase_Checkpoint_Owner__c)))].filter(id => /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/.test(id) && !known.has(id));
+  return { users: ids.filter(id => id.startsWith("005")).slice(0, 50), contacts: ids.filter(id => id.startsWith("003")).slice(0, 50) };
+}
+export function ownerLookupQueries(ids: { users: string[]; contacts: string[] }): { users: string | null; contacts: string | null } {
+  const list = (a: string[]) => a.map(x => `'${x}'`).join(",");
+  return {
+    users: ids.users.length ? `SELECT Id, Name, Email FROM User WHERE Id IN (${list(ids.users)})` : null,
+    contacts: ids.contacts.length ? `SELECT Id, Name, Email, Title FROM Contact WHERE Id IN (${list(ids.contacts)})` : null,
+  };
+}
+export function addOwnerPeople(plan: SyncPlan, users: Array<{ Id: string; Name?: string | null; Email?: string | null }>, contacts: Array<{ Id: string; Name?: string | null; Email?: string | null; Title?: string | null }>): number {
+  let added = 0;
+  const exists = (email?: string | null) => Boolean(email) && plan.people.some(p => (p.email || "").toLowerCase() === (email || "").toLowerCase());
+  for (const u of users) {
+    const known = plan.people.find(p => (p.email || "").toLowerCase() === (u.Email || "").toLowerCase() && u.Email);
+    if (known) { known.sfdcUserId = known.sfdcUserId || u.Id; continue; }
+    plan.people.push({ id: "sf" + u.Id.slice(-8), name: u.Name || "Salesforce user", email: u.Email || "", title: "Salesforce user", side: "seller", role: "", sfdcUserId: u.Id, access: { level: "all", create: true, manage: false }, invite: { status: "member" } }); added++;
+  }
+  for (const c of contacts) {
+    const known = plan.people.find(p => (p.email || "").toLowerCase() === (c.Email || "").toLowerCase() && c.Email);
+    if (known) { known.sfdcContactId = known.sfdcContactId || c.Id; continue; }
+    if (exists(c.Email)) continue;
+    plan.people.push({ id: "sf" + c.Id.slice(-8), name: c.Name || "Contact", email: c.Email || "", title: c.Title || "", side: "buyer", role: "", sfdcContactId: c.Id, access: { level: "own", create: true, manage: false }, invite: { status: "none" } }); added++;
+  }
+  return added;
+}

@@ -168,6 +168,10 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
 - **Owners:** at each sync the people on the plan get their Salesforce ids by email (iSEEit people from `User`, customer
   contacts from `Contact`). Owners are written when everyone on the task has an id, also on newly created checkpoints. A task's
   owner baseline (`sfdcSeen.planOwners`) is recorded on the first sync after ids are known; changes after that are pushed.
+- **People from Salesforce:** an owner on a checkpoint who isn't on the plan (a customer contact or a colleague added in
+  Salesforce) is looked up by id and added to the plan, so they appear as owner (first) or coworker (the rest). Plans without an
+  account get `accountId` from the opportunity, which makes the Sales AI contacts available in "Add someone". Added to a task in
+  Task AI, a person is written to Salesforce once their email matches a Salesforce user or contact.
 - **Phases:** name, start date and end date sync both ways with the same rule (`phases[].sfdcSeen`).
 - **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created

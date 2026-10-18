@@ -129,3 +129,24 @@ test("phase name and dates sync both ways; the plan wins when both changed", () 
   const next = commit(pushed, "006000000000001AAA", { updated: new Set([pushed.phaseUpdates[0].phaseId]), created: new Map() });
   assert.equal(next.phases[0].sfdcSeen?.title, "Discover");
 });
+
+import { addOwnerPeople, ownerLookupQueries, unknownOwnerIds } from "../app/lib/close-plan-sfdc-sync";
+
+test("owners that exist only in Salesforce are added to the plan and then pulled as owner and coworker", () => {
+  const rows = [row({ iseeit__Phase_Checkpoint_Owner__c: "003000000000001AAA,005000000000001AAA" })];
+  const p = plan([task({ sfdcId: "a0Q000000000001AAA", sfdcSeen: { ...seen, owners: "", planOwners: "005000000000001AAA" } })], "t");
+  const ids = unknownOwnerIds(p, rows);
+  assert.deepEqual(ids, { users: [], contacts: ["003000000000001AAA"] });
+  assert.match(ownerLookupQueries(ids).contacts!, /FROM Contact WHERE Id IN \('003000000000001AAA'\)/);
+  assert.equal(addOwnerPeople(p, [], [{ Id: "003000000000001AAA", Name: "Bryan Wolski", Email: "bryan@cust.com", Title: "VP" }]), 1);
+  assert.equal(p.people.at(-1)!.side, "buyer");
+  const o = syncPlan(p, phases, rows);
+  assert.equal(o.plan.tasks[0].owner, o.plan.people.find(x => x.name === "Bryan Wolski")!.id);
+  assert.deepEqual(o.plan.tasks[0].coworkers, ["p1"]);
+});
+
+test("a Salesforce person with a known email gets the id instead of a duplicate", () => {
+  const p = plan(); p.people.push({ id: "x", name: "Drew", email: "drew@iseeit.com", side: "seller" });
+  assert.equal(addOwnerPeople(p, [{ Id: "005000000000007AAA", Name: "Drew Klein", Email: "Drew@iseeit.com" }], []), 0);
+  assert.equal(p.people.find(x => x.id === "x")!.sfdcUserId, "005000000000007AAA");
+});
