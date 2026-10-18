@@ -1708,7 +1708,7 @@ function loadPeopleOptions(force) {
   fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/people-options`, { credentials: "same-origin" })
     .then(async r => { const data = await r.json().catch(() => ({})); if (ui.peopleOpts !== mine) return; if (!r.ok) mine.err = data.error || "The list of people could not be loaded."; else Object.assign(mine, { users: data.users || [], contacts: data.contacts || [], contactsStatus: data.contactsStatus || "ok" }); })
     .catch(() => { if (ui.peopleOpts === mine) mine.err = "The list of people could not be loaded. Check your connection."; })
-    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor) render(); } });
+    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor || ui.picker) render(); } });
 }
 const onPlan = c => state.people.some(p => (c.email && p.email && p.email.toLowerCase() === c.email.toLowerCase()) || p.name.toLowerCase() === c.name.toLowerCase());
 function rolesDatalist(side) { return `<datalist id="roles-${side}">${roleLabels(side).map(r => `<option value="${esc(r)}"></option>`).join("")}</datalist>`; }
@@ -2232,18 +2232,29 @@ function pickerList(t, key, q) {
   const group = (label, items) => items.length ? `<div class="pf-group">${esc(label)}</div>${items.join("")}` : "";
   const side = sd => state.people.filter(p => p.side === sd && !taken.has(p.id) && hit(p.name, `${p.title} ${p.email || ""} ${p.role || ""}`)).map(p => row(p.id, p.name, p.role || p.title, sd));
   const others = (canManage("seller") || canManage("buyer")) ? notOnPlan().filter(o => hit(o.name, `${o.email || ""} ${o.title || ""}`)).map(o => row("add:" + o.key, o.name, o.email || o.title, "seller")) : [];
-  const html = group(B(), side("buyer")) + group("iSEEit", side("seller")) + group("Other Task AI users · adds them to the plan", others);
-  return html || `<p class="pf-empty">${q ? `No one matches “${esc(q)}”.` : "Everyone on the plan is already on this task."}</p>`;
+  // The customer's contacts from Sales AI (their account's contacts) who aren't on the plan yet; picking one adds them to the plan too.
+  const po = ui.peopleOpts && ui.peopleOpts.planId === state.id ? ui.peopleOpts : null;
+  const contacts = po && canManage("buyer") ? po.contacts.map((c, i) => ({ c, i })).filter(({ c }) => !onPlan(c) && hit(c.name, `${c.email || ""} ${c.title || ""}`)).slice(0, 30).map(({ c, i }) => row("addc:" + i, c.name, [c.title, c.email].filter(Boolean).join(" · "), "buyer")) : [];
+  const html = group(B(), side("buyer")) + group("iSEEit", side("seller")) + group(`${B()} contacts from Sales AI · adds them to the plan`, contacts) + group("Other Task AI users · adds them to the plan", others);
+  const note = po && canManage("buyer") ? (po.loading ? "Loading contacts from Sales AI…" : po.err ? po.err : po.contactsStatus === "no_account" ? "This plan has no Sales AI account yet, so its contacts can't be listed." : po.contactsStatus === "unavailable" ? "Sales AI contacts are not available right now." : "") : "";
+  if (!html && note) return `<p class="pf-empty">${q ? `No one matches “${esc(q)}”. ` : ""}${esc(note)}</p>`;
+  return (html + (note && po && po.loading ? `<p class="pf-empty">${esc(note)}</p>` : "")) || `<p class="pf-empty">${q ? `No one matches “${esc(q)}”.` : "Everyone on the plan is already on this task."}</p>`;
 }
 function pickPerson(t, key, val) {
   let id = val;
-  if (val.startsWith("add:")) { id = addUserToPlan(val.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return; } toast(`${person(id).name} added to the plan`); }
+  if (val.startsWith("addc:")) {
+    const c = ui.peopleOpts && ui.peopleOpts.contacts[Number(val.slice(5))];
+    if (!c || !canManage("buyer")) { toast("Only plan owners can add people to the plan"); return; }
+    id = "p" + (++state.seq);
+    state.people.push({ id, name: c.name, email: c.email || "", title: c.title || "", role: "", side: "buyer", ...(c.contactIds && c.contactIds.length ? { contactIds: c.contactIds } : {}), access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } });
+    log(`added ${c.name} to the ${B()} team`, null); toast(`${c.name} added to the plan`);
+  } else if (val.startsWith("add:")) { id = addUserToPlan(val.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return; } toast(`${person(id).name} added to the plan`); }
   if (key === "owner") { t.owner = id; t.coworkers = (t.coworkers || []).filter(x => x !== id); log(`assigned “${t.title}” to ${person(id).name}`, t.id); ui.picker = null; }
   else { t[key] = [...(t[key] || []), id]; log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); ui.picker = { key, q: "" }; }
   save(); render();
 }
 function wirePicker(root, t) {
-  root.querySelectorAll("[data-pf-open]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pfOpen; ui.picker = ui.picker && ui.picker.key === k ? null : { key: k, q: "" }; render(); });
+  root.querySelectorAll("[data-pf-open]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pfOpen; ui.picker = ui.picker && ui.picker.key === k ? null : { key: k, q: "" }; if (ui.picker && IN_APP && !LINK && !state._demo && canManage("buyer")) loadPeopleOptions(); render(); });
   const q = root.querySelector("#pf-q"); if (!q) return;
   const key = ui.picker.key, list = root.querySelector("#pf-list");
   const wireOpts = () => list.querySelectorAll("[data-pf-pick]").forEach(o => o.onclick = e => { e.stopPropagation(); pickPerson(t, key, o.dataset.pfPick); });
