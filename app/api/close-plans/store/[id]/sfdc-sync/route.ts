@@ -78,7 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       part.forEach((u, i) => { if (results[i]?.success) updated.add(u.phaseId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a phase change"); });
     }
     for (const part of chunks(outcome.updates)) {
-      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: sobjects(part.map(u => ({ id: u.sfdcId, ...u.fields }))) } });
+      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: sobjects(part.map(u => ({ id: u.sfdcId, ...u.fields, ...(u.phaseRef && createdPhases.has(u.phaseRef) ? { iseeit__Current_Phase__c: createdPhases.get(u.phaseRef) } : {}) }))) } });
       part.forEach((u, i) => { if (results[i]?.success) updated.add(u.taskId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected an update"); });
     }
     const creatable = outcome.creates.filter(c => !c.phaseRef || createdPhases.has(c.phaseRef));

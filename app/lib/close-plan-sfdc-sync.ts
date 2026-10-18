@@ -19,7 +19,7 @@ export type SfCheckpointRow = {
 type Person = { id: string; name?: string; email?: string; contactIds?: string[]; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
 export type PhaseSeen = { title: string; start: string | null; end: string | null };
 type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string; sfdcSeen?: PhaseSeen; sfdcRank?: number; sfdcSkip?: boolean };
-export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string };
+export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string; phase?: string };
 type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcRank?: number; sfdcSkip?: boolean; [k: string]: unknown };
 export type SyncPlan = {
   people: Person[]; phases: Phase[]; tasks: Task[]; seq?: number;
@@ -34,7 +34,7 @@ export const SFDC_AUTHOR = "sfdc";
 
 // Salesforce field values for one checkpoint (a PATCH, or a POST with the create fields added).
 export type SfFields = Record<string, string | boolean | null>;
-export type Update = { taskId: string; sfdcId: string; fields: SfFields; seen: Seen; rank?: number };
+export type Update = { taskId: string; sfdcId: string; fields: SfFields; seen: Seen; rank?: number; phaseRef?: string };
 export type Create = { taskId: string; fields: SfFields; seen: Seen; phaseRef?: string };
 export type PhaseCreate = { phaseId: string; fields: SfFields; seen: PhaseSeen; rank: number };
 export type PhaseUpdate = { phaseId: string; sfdcId: string; fields: SfFields; seen: PhaseSeen; rank?: number };
@@ -71,6 +71,7 @@ function seenOf(row: SfCheckpointRow): Seen {
     title: (row.iseeit__Title__c || "").trim(), desc: row.iseeit__Checklist_Description__c || "",
     status: statusFromSfdc(row.iseeit__Phase_Checkpoint_Status__c, row.iseeit__Status__c), due: row.iseeit__Deadline__c || null,
     shared: sharedFromSfdc(row.iseeit__Interaction_Type__c), owners: ownerList(row.iseeit__Phase_Checkpoint_Owner__c).join(","),
+    phase: row.iseeit__Current_Phase__c || undefined,
   };
 }
 
@@ -103,6 +104,16 @@ function reorderPhaseTasks(plan: SyncPlan, phaseId: string, orderedIds: string[]
   const moved = new Set(blocks.flat().map(t => t.id));
   plan.tasks = plan.tasks.filter(t => !moved.has(t.id));
   plan.tasks.splice(first, 0, ...blocks.flat());
+}
+
+// Moves a task with its subtasks to the end of a phase's tasks.
+function moveTaskToPhase(plan: SyncPlan, task: Task, phaseId: string) {
+  const block = [task, ...plan.tasks.filter(x => x.parent === task.id)], ids = new Set(block.map(x => x.id));
+  plan.tasks = plan.tasks.filter(x => !ids.has(x.id));
+  block.forEach(x => { x.phase = phaseId; });
+  let at = -1; plan.tasks.forEach((t, i) => { if (t.phase === phaseId) at = i; });
+  if (at < 0) { const order = plan.phases.map(p => p.id), mine = order.indexOf(phaseId); plan.tasks.forEach((t, i) => { if (order.indexOf(t.phase) < mine) at = i; }); }
+  plan.tasks.splice(at + 1, 0, ...block);
 }
 
 export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheckpointRow[], opts: { sendUnlinked?: boolean; today?: string; stillInSalesforce?: Set<string> } = {}): SyncOutcome {
@@ -261,7 +272,23 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
         seenAfter.planOwners = found.map(p => sfId(p)).join(",");
       }
     }
-    if (Object.keys(send).length) { out.updates.push({ taskId: task.id, sfdcId: task.sfdcId, fields: send, seen: seenAfter }); out.pushed.push(`“${mine.title}”: ${[...push, ...(pushOwners ? ["owners"] : [])].join(", ")}`); }
+    // Which phase the task sits in: the plan changed → Salesforce follows; only Salesforce changed → the plan follows; both → the plan wins.
+    const myPhase = plan.phases.find(p => p.id === task.phase)?.sfdcId, sfPhase = row.iseeit__Current_Phase__c || undefined, basePhase = base.phase ?? sfPhase;
+    let phaseRef: string | undefined;
+    if (myPhase === undefined) {
+      if (creating.has(task.phase) && sfPhase !== undefined) { phaseRef = task.phase; seenAfter.phase = undefined; out.pushed.push(`“${mine.title}”: moved to the new phase`); }
+    } else if (sfPhase !== myPhase) {
+      const label = plan.phases.find(p => p.id === task.phase)?.name || "another phase";
+      if (sfPhase === basePhase || myPhase !== basePhase) {
+        send.iseeit__Current_Phase__c = myPhase; seenAfter.phase = myPhase; out.pushed.push(`“${mine.title}”: moved to “${label}”`);
+        if (sfPhase !== basePhase) { out.conflicts.push(`“${mine.title}”: phase`); note(`kept “${mine.title}” in “${label}”; Salesforce had it in another phase (overwritten)`, task.id); }
+      } else {
+        const target = plan.phases.find(p => p.sfdcId === sfPhase);
+        if (target) { moveTaskToPhase(plan, task, target.id); delete task.sfdcRank; out.pulled.push(`“${mine.title}”: moved to “${target.name}”`); note(`moved “${mine.title}” to “${target.name}” in Salesforce`, task.id); }
+      }
+    }
+    seenAfter.phase = seenAfter.phase ?? (phaseRef ? undefined : sfPhase);
+    if (Object.keys(send).length || phaseRef) { out.updates.push({ taskId: task.id, sfdcId: task.sfdcId, fields: send, seen: seenAfter, ...(phaseRef ? { phaseRef } : {}) }); const bits = [...push, ...(pushOwners ? ["owners"] : [])]; if (bits.length) out.pushed.push(`“${mine.title}”: ${bits.join(", ")}`); }
     else task.sfdcSeen = seenAfter;
   }
 

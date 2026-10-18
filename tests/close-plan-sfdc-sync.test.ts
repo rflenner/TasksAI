@@ -217,3 +217,34 @@ test("a checkpoint deleted in Salesforce is removed here; one that only left the
   assert.equal(moved.plan.tasks.length, 2);
   assert.equal(moved.plan.tasks[0].sfdcId, undefined);
 });
+
+test("a task moved to another phase is moved in Salesforce, and the other way round; the plan wins when both moved it", () => {
+  const sfp: SfPhaseRow[] = [{ Id: "a0P000000000001AAA", iseeit__Title__c: "Align" }, { Id: "a0P000000000002AAA", iseeit__Title__c: "Build" }];
+  const [A, B] = [sfp[0].Id, sfp[1].Id];
+  const mk = (phase: string) => { const p = plan([task({ id: "t1", phase, sfdcId: "a0Q000000000001AAA", sfdcSeen: { ...seen, phase: A } }), task({ id: "s1", parent: "t1", phase, title: "Sub" })], "t");
+    p.phases = [{ id: "align", name: "Align", sfdcId: A }, { id: "build", name: "Build", sfdcId: B }]; return p; };
+  const checkpoint = (phaseId: string) => row({ iseeit__Current_Phase__c: phaseId });
+  // The plan moved it to Build: pushed.
+  const pushed = syncPlan(mk("build"), sfp, [checkpoint(A)]);
+  assert.equal(pushed.updates[0].fields.iseeit__Current_Phase__c, B);
+  // Salesforce moved it to Build: the task and its subtask follow.
+  const pulled = syncPlan(mk("align"), sfp, [checkpoint(B)]);
+  assert.deepEqual(pulled.plan.tasks.map(t => t.phase), ["build", "build"]);
+  assert.equal(pulled.updates.length, 0);
+  // Both moved it, to different phases (a third one): the plan wins.
+  const sfp3 = [...sfp, { Id: "a0P000000000003AAA", iseeit__Title__c: "Close" }];
+  const p3 = mk("build"); p3.phases.push({ id: "close", name: "Close", sfdcId: sfp3[2].Id });
+  const both = syncPlan(p3, sfp3, [checkpoint(sfp3[2].Id)]);
+  assert.equal(both.plan.tasks[0].phase, "build");
+  assert.equal(both.updates[0].fields.iseeit__Current_Phase__c, B);
+  assert.equal(both.conflicts.length, 1);
+});
+
+test("a task moved into a phase that is being created follows it there in the same sync", () => {
+  const sfp: SfPhaseRow[] = [{ Id: "a0P000000000001AAA", iseeit__Title__c: "Align" }];
+  const p = plan([task({ id: "t1", phase: "fresh", sfdcId: "a0Q000000000001AAA", sfdcSeen: { ...seen, phase: sfp[0].Id } })], "t");
+  p.phases = [{ id: "align", name: "Align", sfdcId: sfp[0].Id }, { id: "fresh", name: "Fresh" }];
+  const o = syncPlan(p, sfp, [row({ iseeit__Current_Phase__c: sfp[0].Id })]);
+  assert.equal(o.phaseCreates.length, 1);
+  assert.equal(o.updates[0].phaseRef, "fresh");
+});
