@@ -589,3 +589,17 @@ new-assignment notices (all iterate `users`), as agreed.
 5. Plan ↔ CRM: create from opportunity, buyer picker from account contacts,
    "Unplanned" lane for synced action items, stage/close-date drift notices.
 6. Later: multi-workspace isolation, per-workspace Sales AI credentials and branding.
+
+## Notification rules and opt-outs (admin, 2026-10-18)
+
+Site Admins configure who gets which Close Plan notification under **Admin → Notifications** (`/notification-rules`): invitations (email with
+the personal link, a reminder after N days if not opened, at most M reminders), "added to a plan" (iSEEit people: email and Slack), assigned
+tasks (owner or coworker: iSEEit email and Slack, customer email), overdue (iSEEit owners every N days like Task AI; customers only in the Monday
+email), the Monday email (plan owners, customers, skip when nothing is open), "Requested by" (iSEEit real time, customers in the Monday email),
+Slack on updates, whether changes arriving from Salesforce notify like any other, and the weekly cap per customer (default 1: never spam the client).
+Rules live in `close_plan_notification_rules` (one row), read through `loadRules()` in `app/lib/close-plan-notify-rules.ts`; the senders read them
+from there. **Excluded people** (`notification_optouts`, by email) are skipped whatever the rules say; admins add and remove them on the same
+page, and every Close Plan email carries `/unsubscribe/<token>` (signed, a button confirms so link scanners can't unsubscribe anyone). Migration 0026.
+
+Built so far: the rules, the page, the opt-out list and the unsubscribe page. The senders that use them (invitation and reminder emails, "added to
+plan" and assignment notices, overdue reminders and the Monday email for plan tasks, Slack on updates) follow in separate steps.
