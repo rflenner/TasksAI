@@ -67,6 +67,8 @@ button { cursor: pointer; }
 .title { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 30px; }
 .title > div:first-child { flex: 1; min-width: 0; }
 .title label { color: var(--navy); font-size: 11px; letter-spacing: 1.5px; font-weight: 800; }
+.plan-title { font: inherit; color: inherit; background: transparent; border: 0; border-bottom: 1px dashed transparent; width: 100%; padding: 0; text-wrap: balance; }
+.plan-title:hover, .plan-title:focus { border-bottom-color: #9aa9bf; outline: none; }
 .title h1 { font-size: 34px; color: var(--dark); margin: 8px 0; line-height: 1.15; text-wrap: balance; }
 .title p { color: var(--muted); margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .title p b { color: var(--ink); }
@@ -1183,7 +1185,7 @@ function titleBlock() {
   return `<div class="title">
     <div>
       <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}${(IN_APP || LINK) && !state._demo ? ` <span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}</label>
-      <h1>${esc(state.title)}</h1>
+      ${ui.mode === "seller" && !LINK && !state._demo && (canManage("seller") || isAdminUser()) ? `<h1><input class="plan-title" id="plan-title" value="${esc(state.title)}" maxlength="120" aria-label="Close plan name" title="Click to rename this close plan"></h1>` : `<h1>${esc(state.title)}</h1>`}
       <p><span>Target signature <b>${sign ? fmtY(sign.due) : "–"}</b></span><span>Target go-live <b>${live ? fmtY(live.due) : "–"}</b></span><span>Plan owners <b>${esc(person(state.planOwners.seller).name)}</b> · <b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></span>
       ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}</p>
     </div>
@@ -2159,7 +2161,7 @@ function renderDrawer() {
         <div class="field">Coworkers${peopleField(t, "coworkers", edit)}</div>
         <div class="field">Requested by${peopleField(t, "recipients", edit)}</div>
       </div>
-      ${ui.mode === "seller" ? `<div class="d-switches"><label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "checked" : ""}>Shared with ${esc(B())}</label><label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Milestone</label></div>` : ""}
+      ${ui.mode === "seller" ? `<div class="d-switches"><label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "checked" : ""}>Shared with ${esc(B())}</label><label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Milestone</label>${t.milestone ? `<label class="switch">Counts as <select id="d-key" aria-label="Counts as a target date"><option value="">—</option><option value="sign" ${t.key === "sign" ? "selected" : ""}>Target signature</option><option value="live" ${t.key === "live" ? "selected" : ""}>Target go-live</option></select></label>` : ""}</div>` : ""}
     </div>
 
     ${ui.mode === "seller" ? notifySection(t) : ""}
@@ -2169,7 +2171,7 @@ function renderDrawer() {
     </div>
     ${canDelete(t) ? `<div class="section d-del">${ui.delTask === t.id ? `<div class="del-box confirm" role="alertdialog" aria-label="Confirm deleting this ${parent ? "subtask" : "task"}">
         <b>Delete “${esc(t.title)}”?</b>
-        <p>This removes it${children(t.id).length ? ` and its ${children(t.id).length} subtask${children(t.id).length > 1 ? "s" : ""}` : ""} for everyone${t.shared && ui.mode === "seller" ? `, including ${esc(B())}` : ""}. This can't be undone.</p>
+        <p>This removes it${children(t.id).length ? ` and its ${children(t.id).length} subtask${children(t.id).length > 1 ? "s" : ""}` : ""} for everyone${t.shared && ui.mode === "seller" ? `, including ${esc(B())}` : ""}.${t.sfdcId && !LINK ? " The checkpoint in Salesforce is deleted too (it stays in Salesforce's recycle bin for 15 days)." : ""} This can't be undone here.</p>
         <div class="pe-actions"><button type="button" class="btn sm danger" data-deltask-confirm>Yes, delete it</button><button type="button" class="btn sm" data-deltask-cancel>Keep it</button></div>
       </div>` : `<button type="button" class="btn sm danger-ghost" data-deltask>Delete ${parent ? "subtask" : "task"}</button>`}</div>` : ""}
   </aside></div>`;
@@ -2197,6 +2199,9 @@ function renderDrawer() {
   };
   $("#d-phase").onchange = e => { t.phase = e.target.value; children(t.id).forEach(k => k.phase = t.phase); log(`moved “${t.title}” to ${state.phases.find(p => p.id === t.phase).name}`, t.id); save(); render(); };
   const sh = $("#d-shared"); if (sh) sh.onchange = () => { t.shared = sh.checked; save(); render(); toast(t.shared ? `Now visible to ${B()}` : `Hidden from ${B()}`); };
+  const pt = document.getElementById("plan-title");
+  if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
+  const tk = $("#d-key"); if (tk) tk.onchange = () => { if (tk.value) state.tasks.forEach(x => { if (x.key === tk.value) delete x.key; }); if (tk.value) t.key = tk.value; else delete t.key; save(); render(); };
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
   root.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [key, id] = b.dataset.rm.split(":"); t[key] = t[key].filter(x => x !== id); log(`removed ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
@@ -3656,6 +3661,8 @@ function setStatus(t, s) {
 function deleteTaskNow(id, by) {
   const t = state.tasks.find(x => x.id === id); if (!t) return "";
   const kids = children(id).map(k => k.id), gone = new Set([id, ...kids]);
+  // A task that exists in Salesforce is deleted there too (it goes to Salesforce's recycle bin) at the next sync.
+  if (t.sfdcId && !LINK) state.sfdcDeleted = [...(state.sfdcDeleted || []).filter(d => d.id !== t.sfdcId), { id: t.sfdcId, title: t.title }];
   state.tasks = state.tasks.filter(x => !gone.has(x.id));
   log(`deleted “${t.title}”${kids.length ? ` and its ${kids.length} subtask${kids.length > 1 ? "s" : ""}` : ""}${by ? ` ${by}` : ""}`, null);
   voice.listIds = voice.listIds.filter(x => !gone.has(x));

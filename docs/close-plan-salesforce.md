@@ -180,6 +180,11 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
   email is looked up in Contact.
 - **New phases:** a phase added in the plan is created as `iseeit__Current_Phase__c` (title, dates, order = its position); its tasks follow in
   the same sync and the other phases are renumbered so the order values stay unique. Held back on the first sync, like tasks.
-- **Not yet:** subtasks (Salesforce `Task`), deleting checkpoints in Salesforce
+- **Deleting:** deleting a linked task in Close Plan (the confirmation says so) records it in `sfdcDeleted`; the next sync deletes the checkpoint in
+  Salesforce (it goes to Salesforce's recycle bin) and does not pull it back meanwhile. A checkpoint deleted in Salesforce removes the task here
+  (with its subtasks); one that merely left the close plan (no phase) is only unlinked. Failed deletes stay pending.
+- **Header:** the plan name can be renamed by the plan owner and admins (click it), and a milestone can be marked "Counts as" Target signature or
+  Target go-live, which feed the two dates in the plan header and PDF (before, only template tasks carried them).
+- **Not yet:** subtasks (Salesforce `Task`), deleting phases in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
   checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.

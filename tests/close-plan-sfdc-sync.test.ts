@@ -196,3 +196,24 @@ test("a phase added in the plan is created in Salesforce with its tasks, and the
   assert.equal(first.phaseCreates.length, 0);
   assert.ok(first.unlinked >= 1);
 });
+
+test("a task deleted in Close Plan deletes its checkpoint in Salesforce and is not pulled back meanwhile", () => {
+  const p = plan([], "t"); p.sfdcDeleted = [{ id: "a0Q000000000001AAA", title: "Gone" }, { id: "a0Q000000000008AAA", title: "Already gone" }];
+  const o = syncPlan(p, phases, [row()]);
+  assert.deepEqual(o.deletes, [{ id: "a0Q000000000001AAA", title: "Gone" }]);
+  assert.equal(o.plan.tasks.length, 0);
+  const done = commit(o, "006000000000001AAA", { updated: new Set(), created: new Map(), deleted: new Set(["a0Q000000000001AAA"]) });
+  assert.equal(done.sfdcDeleted, undefined);
+  // A failed delete stays pending for the next sync.
+  const retry = commit(syncPlan(p, phases, [row()]), "006000000000001AAA", { updated: new Set(), created: new Map(), deleted: new Set() });
+  assert.deepEqual(retry.sfdcDeleted, [{ id: "a0Q000000000001AAA", title: "Gone" }]);
+});
+
+test("a checkpoint deleted in Salesforce is removed here; one that only left the close plan is just unlinked", () => {
+  const mk = () => plan([task({ id: "t1", sfdcId: "a0Q000000000009AAA", sfdcSeen: seen }), task({ id: "s1", parent: "t1", title: "Sub" })], "t");
+  const deleted = syncPlan(mk(), phases, [], { stillInSalesforce: new Set() });
+  assert.equal(deleted.plan.tasks.length, 0);
+  const moved = syncPlan(mk(), phases, [], { stillInSalesforce: new Set(["a0Q000000000009AAA"]) });
+  assert.equal(moved.plan.tasks.length, 2);
+  assert.equal(moved.plan.tasks[0].sfdcId, undefined);
+});
