@@ -3,6 +3,7 @@ import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
 import { addOwnerPeople, applySalesforceIds, checkpointQuery, commit, idLookupQueries, ownerLookupQueries, unknownOwnerIds, phaseQuery, syncPlan, type SfCheckpointRow, type SfPhaseRow, type SyncPlan } from "../../../../../lib/close-plan-sfdc-sync";
 import { isOpportunityId } from "../../../../../lib/salesforce-opportunity-search";
+import { isSalesforceId } from "../../../../../lib/salesforce-checkpoints";
 import { canAccessPlan, canDeletePlan, memberEmails } from "../../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../../lib/request";
 import { SalesforceNotConnectedError, salesforceApi } from "../../../../../lib/salesforce";
@@ -50,12 +51,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const lookups = idLookupQueries(data.people);
   try { applySalesforceIds(data, lookups.users ? await query<{ Id: string; Email: string }>(lookups.users) : [], lookups.contacts ? await query<{ Id: string; Email: string }>(lookups.contacts) : []); }
   catch (error) { console.error("Close Plan owner id lookup failed:", error instanceof Error ? error.message : error); }
-  const outcome = syncPlan(data, phases, rows, { sendUnlinked: body.sendUnlinked === true });
+  // Linked tasks whose checkpoint isn't in the close plan query: is it deleted in Salesforce, or just not in a phase any more?
+  const inRows = new Set(rows.map(r => r.Id));
+  const missing = [...new Set(data.tasks.filter(t => !t.parent && t.sfdcId && !inRows.has(t.sfdcId) && isSalesforceId(t.sfdcId)).map(t => t.sfdcId as string))].slice(0, 200);
+  let stillInSalesforce: Set<string> | undefined;
+  if (missing.length) {
+    try { stillInSalesforce = new Set((await query<{ Id: string }>(`SELECT Id FROM iseeit__TO_DO__c WHERE Id IN (${missing.map(m => `'${m}'`).join(",")})`)).map(r => r.Id)); }
+    catch (error) { console.error("Close Plan checkpoint existence check failed:", error instanceof Error ? error.message : error); }
+  }
+  const outcome = syncPlan(data, phases, rows, { sendUnlinked: body.sendUnlinked === true, stillInSalesforce });
   const summary = { opportunityId, pulled: outcome.pulled, pushed: outcome.pushed, conflicts: outcome.conflicts, skipped: outcome.skipped, unlinked: outcome.unlinked };
   if (body.mode !== "apply") return Response.json({ applied: false, ...summary });
 
-  const updated = new Set<string>(), created = new Map<string, string>(), createdPhases = new Map<string, string>(), failed: string[] = [];
+  const deleted = new Set<string>(), updated = new Set<string>(), created = new Map<string, string>(), createdPhases = new Map<string, string>(), failed: string[] = [];
   try {
+    for (const part of chunks(outcome.deletes.map(d => d.id))) {
+      const results = await salesforceApi<WriteResult>(`/composite/sobjects?ids=${part.join(",")}&allOrNone=false`, { method: "DELETE" });
+      part.forEach((id, i) => { if (results[i]?.success) deleted.add(id); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce refused to delete a checkpoint"); });
+    }
     for (const part of chunks(outcome.phaseCreates)) {
       const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "POST", body: { allOrNone: false, records: part.map(c => ({ attributes: { type: "iseeit__Current_Phase__c" }, iseeit__Opportunity__c: opportunityId, ...c.fields })) } });
       part.forEach((c, i) => { const r = results[i]; if (r?.success && r.id) createdPhases.set(c.phaseId, r.id); else failed.push(r?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a new phase"); });
@@ -80,7 +93,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     failed.push("Salesforce stopped answering part-way");
   }
   const first = !data.sfdc?.syncedAt;
-  const next = commit(outcome, opportunityId, { updated, created, createdPhases });
+  const next = commit(outcome, opportunityId, { updated, created, createdPhases, deleted });
   // An automatic sync that changed nothing must not bump the version (it would make every open page's next save conflict).
   const stable = (d: SyncPlan) => JSON.stringify({ ...d, sfdc: { ...d.sfdc, syncedAt: null } });
   if (!first && !failed.length && stable(next) === stable(data)) return Response.json({ applied: true, unchanged: true, ...summary, written: { updated: 0, created: 0 }, failed });

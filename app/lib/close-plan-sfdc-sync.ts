@@ -26,6 +26,7 @@ export type SyncPlan = {
   activity?: { at: string; by: string; text: string; task: string | null }[];
   planOwners?: { seller?: string | null; buyer?: string | null };
   sfdc?: { opportunityId?: string; syncedAt?: string };
+  sfdcDeleted?: { id: string; title?: string }[];
   [k: string]: unknown;
 };
 
@@ -39,7 +40,7 @@ export type PhaseCreate = { phaseId: string; fields: SfFields; seen: PhaseSeen; 
 export type PhaseUpdate = { phaseId: string; sfdcId: string; fields: SfFields; seen: PhaseSeen; rank?: number };
 export type SyncOutcome = {
   plan: SyncPlan;                 // pulls applied; pushes not yet recorded in sfdcSeen (see commit)
-  updates: Update[]; creates: Create[]; phaseUpdates: PhaseUpdate[]; phaseCreates: PhaseCreate[];
+  updates: Update[]; creates: Create[]; phaseUpdates: PhaseUpdate[]; phaseCreates: PhaseCreate[]; deletes: Array<{ id: string; title: string }>;
   pulled: string[]; pushed: string[]; conflicts: string[]; skipped: string[];
   unlinked: number;               // plan tasks that exist only here, held back on the first sync
 };
@@ -104,11 +105,11 @@ function reorderPhaseTasks(plan: SyncPlan, phaseId: string, orderedIds: string[]
   plan.tasks.splice(first, 0, ...blocks.flat());
 }
 
-export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheckpointRow[], opts: { sendUnlinked?: boolean; today?: string } = {}): SyncOutcome {
+export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheckpointRow[], opts: { sendUnlinked?: boolean; today?: string; stillInSalesforce?: Set<string> } = {}): SyncOutcome {
   const plan: SyncPlan = structuredClone(input);
   const today = opts.today || new Date().toISOString().slice(0, 10);
   const first = !plan.sfdc?.syncedAt;
-  const out: SyncOutcome = { plan, updates: [], creates: [], phaseUpdates: [], phaseCreates: [], pulled: [], pushed: [], conflicts: [], skipped: [], unlinked: 0 };
+  const out: SyncOutcome = { plan, updates: [], creates: [], phaseUpdates: [], phaseCreates: [], deletes: [], pulled: [], pushed: [], conflicts: [], skipped: [], unlinked: 0 };
   const activity: NonNullable<SyncPlan["activity"]> = [];
   const note = (text: string, task: string | null) => activity.push({ at: today, by: SFDC_AUTHOR, text, task });
   const lc = (s?: string) => (s || "").trim().toLowerCase();
@@ -200,11 +201,26 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     if (twin) { twin.sfdcId = row.Id; twin.sfdcSeen = { ...seenOf(row), planOwners: ownersOf(twin) }; }
   }
 
+  // Tasks deleted in Close Plan: their checkpoints are deleted in Salesforce (it keeps them in its recycle bin) and not pulled back meanwhile.
+  const pendingDelete = new Set<string>();
+  for (const d of plan.sfdcDeleted || []) if (byId.has(d.id)) { pendingDelete.add(d.id); out.deletes.push({ id: d.id, title: d.title || "a task" }); out.pushed.push(`delete “${d.title || "a task"}” in Salesforce`); }
   const fields: Array<keyof Seen> = ["title", "desc", "status", "due", "shared"];
   for (const task of plan.tasks) {
     if (task.parent || !task.sfdcId) continue;
     const row = byId.get(task.sfdcId);
-    if (!row) { note(`“${task.title}” is no longer in Salesforce. It is kept here, but no longer linked`, task.id); out.skipped.push(`“${task.title}” is gone from Salesforce`); delete task.sfdcId; delete task.sfdcSeen; task.sfdcSkip = true; continue; }
+    if (!row) {
+      // Not in the close plan query. If the checkpoint is really gone from Salesforce it was deleted there, so it goes here too;
+      // if it still exists (moved out of a phase, say) the task is only unlinked.
+      if (opts.stillInSalesforce && !opts.stillInSalesforce.has(task.sfdcId)) {
+        const gone = new Set([task.id, ...plan.tasks.filter(x => x.parent === task.id).map(x => x.id)]);
+        plan.tasks = plan.tasks.filter(x => !gone.has(x.id));
+        note(`“${task.title}” was deleted in Salesforce, so it was removed here`, null); out.pulled.push(`deleted “${task.title}”`);
+      } else {
+        note(`“${task.title}” is no longer in the close plan in Salesforce. It is kept here, but no longer linked`, task.id); out.skipped.push(`“${task.title}” is gone from Salesforce`);
+        delete task.sfdcId; delete task.sfdcSeen; task.sfdcSkip = true;
+      }
+      continue;
+    }
     const sf = seenOf(row), base = task.sfdcSeen || sf;
     const mine: Seen = { title: task.title, desc: task.desc || "", status: task.status, due: dateOf(task.due), shared: task.shared !== false, owners: sf.owners };
     const push: Array<keyof Seen> = [];
@@ -276,7 +292,7 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
   // Checkpoints the plan lacks → new tasks (not N/A ones).
   const linked = new Set(plan.tasks.map(t => t.sfdcId).filter(Boolean));
   for (const row of rows) {
-    if (linked.has(row.Id) || row.iseeit__Checkpoint_N_A__c) continue;
+    if (linked.has(row.Id) || row.iseeit__Checkpoint_N_A__c || pendingDelete.has(row.Id)) continue;
     const phase = phaseBySfdc.get(row.iseeit__Current_Phase__c || ""); if (!phase) continue;
     const sf = seenOf(row), found = ownerList(sf.owners).map(x => personBySfdc.get(x)).filter((p): p is Person => Boolean(p));
     const owner = found[0]?.id || plan.planOwners?.seller || plan.people[0]?.id || "";
@@ -306,8 +322,12 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
 
 // Records what reached Salesforce: sfdcSeen for updated tasks, the new Id for created ones. On the first sync,
 // plan tasks that stayed here are marked so later syncs don't send them.
-export function commit(outcome: SyncOutcome, opportunityId: string, written: { updated: Set<string>; created: Map<string, string>; createdPhases?: Map<string, string> }, now = new Date()): SyncPlan {
+export function commit(outcome: SyncOutcome, opportunityId: string, written: { updated: Set<string>; created: Map<string, string>; createdPhases?: Map<string, string>; deleted?: Set<string> }, now = new Date()): SyncPlan {
   const plan = outcome.plan;
+  // Deletions that went through are done; ones for checkpoints already gone from Salesforce are dropped; failed ones stay for the next sync.
+  const stillPending = new Set(outcome.deletes.map(d => d.id).filter(id => !written.deleted?.has(id)));
+  if (plan.sfdcDeleted) plan.sfdcDeleted = plan.sfdcDeleted.filter(d => stillPending.has(d.id));
+  if (plan.sfdcDeleted && !plan.sfdcDeleted.length) delete plan.sfdcDeleted;
   for (const u of outcome.updates) if (written.updated.has(u.taskId)) { const t = plan.tasks.find(x => x.id === u.taskId); if (t) { t.sfdcSeen = u.seen; if (u.rank !== undefined) t.sfdcRank = u.rank; } }
   for (const u of outcome.phaseUpdates) if (written.updated.has(u.phaseId)) { const ph = plan.phases.find(x => x.id === u.phaseId); if (ph) { ph.sfdcSeen = u.seen; if (u.rank !== undefined) ph.sfdcRank = u.rank; } }
   for (const c of outcome.phaseCreates) { const id = written.createdPhases?.get(c.phaseId), ph = plan.phases.find(x => x.id === c.phaseId); if (id && ph) { ph.sfdcId = id; ph.sfdcSeen = c.seen; ph.sfdcRank = c.rank; } }
