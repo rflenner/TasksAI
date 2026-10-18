@@ -1,3 +1,4 @@
+import { appBase, newInternalMembers, notifyAddedToPlan } from "../../../../lib/close-plan-invitations";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { closePlanDocuments } from "../../../../../db/schema";
@@ -35,6 +36,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     .set({ title, account, data, memberEmails: memberEmails(data), version: existing.version + 1, updatedBy: actor.id, updatedAt: new Date() })
     .where(and(eq(closePlanDocuments.id, id), eq(closePlanDocuments.version, existing.version), isNull(closePlanDocuments.deletedAt))).returning();
   if (!row) return Response.json({ error: "conflict" }, { status: 409 });
+  // Someone new on the iSEEit team: tell them (email and Slack, per Admin → Notifications). Never blocks the save.
+  const members = newInternalMembers(existing.data as Record<string, unknown>, data as Record<string, unknown>, actor.email);
+  if (members.length) void notifyAddedToPlan({ plan: { id, title }, members, byName: actor.name || "A colleague", baseUrl: appBase() });
   return Response.json({ id, version: row.version, updatedAt: row.updatedAt.toISOString() });
 }
 

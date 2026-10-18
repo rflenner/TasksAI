@@ -1855,6 +1855,7 @@ function renderManage() {
     <div class="section"><h3>Monday email</h3>
       <p class="hint" style="margin:0 0 10px">${g.kind === "plan" ? "Plan overview plus their own tasks, as plan owner." : g.kind === "tasks" ? `Their own tasks: ${g.mine.length} own, ${g.tracking.length} requested.` : esc(g.reason) + "."}</p>
       ${g.kind ? `<button type="button" class="btn sm" data-digest="${p.id}">Preview email</button>` : ""}
+      <label class="tgl" style="margin-top:12px"><input type="checkbox" id="m-noemail" ${p.noEmail ? "checked" : ""}>Don't email ${esc(p.name.split(" ")[0])} (they asked not to get emails)</label>
     </div>
 
     <div class="section"><h3>Remove from plan</h3>
@@ -1867,6 +1868,7 @@ function renderManage() {
   const em = $("#m-email"); em.onchange = () => { p.email = em.value.trim(); log(`updated ${p.name}'s email`, null); save(); render(); };
   const ro = $("#m-role"); ro.onchange = () => { p.role = ro.value.trim(); save(); render(); };
   root.querySelectorAll("input[name=m-level]").forEach(r => r.onchange = () => { p.access.level = r.value; if (r.value === "view") p.access.create = false; log(`set ${p.name}'s access to ${rightsText(p.access)}`, null); save(); render(); });
+  const ne = $("#m-noemail"); if (ne) ne.onchange = () => { if (ne.checked) p.noEmail = true; else delete p.noEmail; log(ne.checked ? `will not email ${p.name} any more` : `will email ${p.name} again`, null); save(); render(); };
   const cr = $("#m-create"); cr.onchange = () => { p.access.create = cr.checked; log(`set ${p.name}'s access to ${rightsText(p.access)}`, null); save(); render(); };
   root.querySelectorAll("[data-invite]").forEach(b => b.onclick = () => { ui.inviteFor = b.dataset.invite; renderInvite(); });
   root.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => {
@@ -1924,7 +1926,7 @@ function renderInvite() {
   const can = [a.level === "view" ? "See the whole shared plan" : "See the whole shared plan and post updates on your tasks", a.level === "own" ? "Close and edit the tasks you own or work on" : a.level === "all" ? "Edit any task on the plan" : "", a.create && a.level !== "view" ? "Add new tasks and subtasks" : "", state.planOwners.buyer === p.id ? `Invite and manage colleagues from ${B()}, as plan owner` : ""].filter(Boolean);
   root.innerHTML = `<div class="overlay em-overlay" data-iclose-bg><div class="em-modal" role="dialog" aria-modal="true" aria-label="Invitation preview">
     <div class="em-meta"><div><b>To</b> ${esc(p.name)} &lt;${esc(p.email)}&gt;</div><div><b>Subject</b> ${esc(from.name)} invited you to the ${esc(B())} × iSEEit close plan</div><button type="button" class="x" data-iclose aria-label="Close" style="top:14px;right:14px">×</button></div>
-    <div style="padding:12px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px"><button type="button" class="btn sm" data-iclose>Cancel</button><button type="button" class="btn sm primary" id="inv-send">${p.invite?.status === "invited" ? "Resend invitation" : "Send invitation"}</button></div>
+    <div style="padding:12px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px"><button type="button" class="btn sm" data-iclose>Cancel</button>${IN_APP && !state._demo ? `<button type="button" class="btn sm" id="inv-copy">Copy link instead</button>` : ""}<button type="button" class="btn sm primary" id="inv-send">${p.invite?.status === "invited" ? "Resend invitation" : "Send invitation"}</button></div>
     <div class="em-page"><div class="em-mail">
       <div class="em-head"><span class="em-logo">Task</span> <span class="em-ai">AI</span> <span class="em-logo">– Close Plan</span></div>
       <div class="em-body">
@@ -1940,7 +1942,30 @@ function renderInvite() {
   const close = () => { ui.inviteFor = null; renderInvite(); };
   root.querySelectorAll("[data-iclose]").forEach(b => b.onclick = close);
   root.querySelector("[data-iclose-bg]").onclick = e => { if (e.target === e.currentTarget) close(); };
-  if (IN_APP && !state._demo) { $("#inv-send").textContent = "Copy link to send"; $("#inv-send").onclick = async () => { $("#inv-send").disabled = true; if (await copyPersonalLink(p, true)) close(); else $("#inv-send").disabled = false; }; return; }
+  if (IN_APP && !state._demo) {
+    // Real send: the server creates the personal link and emails it (Admin → Notifications decides whether it may).
+    // Whatever happens, the link can still be copied and sent by hand.
+    const send = $("#inv-send"), copy = $("#inv-copy");
+    send.textContent = p.invite?.status === "invited" ? "Email the link again" : "Send invitation email";
+    send.onclick = async () => {
+      send.disabled = true; copy.disabled = true;
+      try {
+        await flushPlanSave();
+        const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/invite`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ personId: p.id }) });
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(res.error || "The invitation could not be sent.");
+        const again = p.invite?.status === "invited";
+        if (res.sent) { p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`${again ? "re-sent the invitation to" : "invited"} ${p.name}`, null); save(); close(); render(); renderManage(); toast(`Invitation emailed to ${p.name}`); return; }
+        // Not emailed (switched off, opted out, no address, no sending set up): the link is ready, so copy it.
+        let copied = true; try { await navigator.clipboard.writeText(res.url); } catch (e) { copied = false; }
+        if (!p.invite || p.invite.status === "none") { p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`created a personal link for ${p.name}`, null); save(); render(); renderManage(); }
+        close(); toast(`${res.reason || "No email was sent."} ${copied ? "The personal link is copied; paste it into your own email." : "Copy the link from the box that opens."}`);
+        if (!copied) window.prompt(`Personal link for ${p.name} (works for 60 days):`, res.url);
+      } catch (e) { toast(e.message || "The invitation could not be sent."); send.disabled = false; copy.disabled = false; }
+    };
+    copy.onclick = async () => { send.disabled = true; copy.disabled = true; if (await copyPersonalLink(p, true)) close(); else { send.disabled = false; copy.disabled = false; } };
+    return;
+  }
   $("#inv-send").onclick = () => { const again = p.invite?.status === "invited"; p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`${again ? "re-sent the invitation to" : "invited"} ${p.name}`, null); save(); close(); render(); toast(`Invitation sent to ${p.name}`); };
 }
 
