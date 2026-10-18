@@ -383,3 +383,19 @@ export const salesforceConnection = pgTable("salesforce_connection", {
   connectedAt: timestamp("connected_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Close Plan notification rules (a single row, edited under Admin → Notifications) and people who asked not to get Close Plan emails
+// (see app/lib/close-plan-notify-rules.ts). Migration 0026.
+export const closePlanNotificationRules = pgTable("close_plan_notification_rules", {
+  id: text("id").primaryKey().default("default"),
+  rules: jsonb("rules").notNull(),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const notificationOptouts = pgTable("notification_optouts", {
+  email: text("email").primaryKey(),
+  source: text("source").notNull().default("admin"),
+  reason: text("reason"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
