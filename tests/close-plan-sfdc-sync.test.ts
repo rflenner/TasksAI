@@ -109,3 +109,23 @@ test("an owner change on a linked task is pushed once the baseline is known", ()
   const o = syncPlan(p, phases, [row({ iseeit__Phase_Checkpoint_Owner__c: "003000000000001AAA" })]);
   assert.equal(o.updates[0].fields.iseeit__Phase_Checkpoint_Owner__c, "005000000000001AAA");
 });
+
+test("phase name and dates sync both ways; the plan wins when both changed", () => {
+  const sfPhase = (o: Partial<SfPhaseRow> = {}): SfPhaseRow[] => [{ ...phases[0], ...o }];
+  const base = { title: "Align", start: "2026-10-01", end: "2026-10-30" };
+  const mk = (o: object) => { const p = plan(); p.phases = [{ id: "align", name: "Align", start: "2026-10-01", end: "2026-10-30", sfdcId: phases[0].Id, sfdcSeen: base, ...o }]; return p; };
+  // Salesforce moved the end date: pulled.
+  const pulled = syncPlan(mk({}), sfPhase({ iseeit__End_Date__c: "2026-11-15" }), []);
+  assert.equal(pulled.plan.phases[0].end, "2026-11-15");
+  assert.equal(pulled.phaseUpdates.length, 0);
+  // The plan renamed it: pushed.
+  const pushed = syncPlan(mk({ name: "Discover" }), sfPhase(), []);
+  assert.deepEqual(pushed.phaseUpdates[0].fields, { iseeit__Title__c: "Discover" });
+  // Both changed the end date: the plan wins.
+  const both = syncPlan(mk({ end: "2026-11-01" }), sfPhase({ iseeit__End_Date__c: "2026-11-15" }), []);
+  assert.equal(both.plan.phases[0].end, "2026-11-01");
+  assert.deepEqual(both.phaseUpdates[0].fields, { iseeit__End_Date__c: "2026-11-01" });
+  assert.equal(both.conflicts.length, 1);
+  const next = commit(pushed, "006000000000001AAA", { updated: new Set([pushed.phaseUpdates[0].phaseId]), created: new Map() });
+  assert.equal(next.phases[0].sfdcSeen?.title, "Discover");
+});

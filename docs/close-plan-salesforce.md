@@ -168,6 +168,7 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
 - **Owners:** at each sync the people on the plan get their Salesforce ids by email (iSEEit people from `User`, customer
   contacts from `Contact`). Owners are written when everyone on the task has an id, also on newly created checkpoints. A task's
   owner baseline (`sfdcSeen.planOwners`) is recorded on the first sync after ids are known; changes after that are pushed.
+- **Phases:** name, start date and end date sync both ways with the same rule (`phases[].sfdcSeen`).
 - **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
   checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.

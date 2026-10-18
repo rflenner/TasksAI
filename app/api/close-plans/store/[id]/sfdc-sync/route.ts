@@ -50,6 +50,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const updated = new Set<string>(), created = new Map<string, string>(), failed: string[] = [];
   try {
+    for (const part of chunks(outcome.phaseUpdates)) {
+      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: part.map(u => ({ attributes: { type: "iseeit__Current_Phase__c" }, id: u.sfdcId, ...u.fields })) } });
+      part.forEach((u, i) => { if (results[i]?.success) updated.add(u.phaseId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a phase change"); });
+    }
     for (const part of chunks(outcome.updates)) {
       const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: sobjects(part.map(u => ({ id: u.sfdcId, ...u.fields }))) } });
       part.forEach((u, i) => { if (results[i]?.success) updated.add(u.taskId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected an update"); });

@@ -17,7 +17,8 @@ export type SfCheckpointRow = {
 };
 
 type Person = { id: string; name?: string; email?: string; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
-type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string };
+export type PhaseSeen = { title: string; start: string | null; end: string | null };
+type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string; sfdcSeen?: PhaseSeen };
 export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string };
 type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcSkip?: boolean; [k: string]: unknown };
 export type SyncPlan = {
@@ -34,9 +35,10 @@ export const SFDC_AUTHOR = "sfdc";
 export type SfFields = Record<string, string | boolean | null>;
 export type Update = { taskId: string; sfdcId: string; fields: SfFields; seen: Seen };
 export type Create = { taskId: string; fields: SfFields; seen: Seen };
+export type PhaseUpdate = { phaseId: string; sfdcId: string; fields: SfFields; seen: PhaseSeen };
 export type SyncOutcome = {
   plan: SyncPlan;                 // pulls applied; pushes not yet recorded in sfdcSeen (see commit)
-  updates: Update[]; creates: Create[];
+  updates: Update[]; creates: Create[]; phaseUpdates: PhaseUpdate[];
   pulled: string[]; pushed: string[]; conflicts: string[]; skipped: string[];
   unlinked: number;               // plan tasks that exist only here, held back on the first sync
 };
@@ -87,7 +89,7 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
   const plan: SyncPlan = structuredClone(input);
   const today = opts.today || new Date().toISOString().slice(0, 10);
   const first = !plan.sfdc?.syncedAt;
-  const out: SyncOutcome = { plan, updates: [], creates: [], pulled: [], pushed: [], conflicts: [], skipped: [], unlinked: 0 };
+  const out: SyncOutcome = { plan, updates: [], creates: [], phaseUpdates: [], pulled: [], pushed: [], conflicts: [], skipped: [], unlinked: 0 };
   const activity: NonNullable<SyncPlan["activity"]> = [];
   const note = (text: string, task: string | null) => activity.push({ at: today, by: SFDC_AUTHOR, text, task });
   const lc = (s?: string) => (s || "").trim().toLowerCase();
@@ -101,6 +103,31 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     note(`added the phase “${phase.name}” from Salesforce`, null); out.pulled.push(`phase “${phase.name}”`);
   }
   const phaseBySfdc = new Map(plan.phases.filter(p => p.sfdcId).map(p => [p.sfdcId as string, p]));
+  // Phase name and dates: same three-way rule as the tasks (only Salesforce changed → pull, only the plan → push, both → the plan wins).
+  for (const row of phaseRows) {
+    const phase = phaseBySfdc.get(row.Id); if (!phase) continue;
+    const sf: PhaseSeen = { title: (row.iseeit__Title__c || "").trim(), start: row.iseeit__Start_Date__c || null, end: row.iseeit__End_Date__c || null };
+    const base = phase.sfdcSeen || sf, mine: PhaseSeen = { title: phase.name || "", start: phase.start || null, end: phase.end || null };
+    const send: SfFields = {}, seenAfter: PhaseSeen = { ...sf }, label = phase.name || sf.title;
+    for (const f of ["title", "start", "end"] as const) {
+      const s_ = sf[f], b = base[f], m = mine[f];
+      if (s_ === m) continue;
+      const pushIt = () => { send[f === "title" ? "iseeit__Title__c" : f === "start" ? "iseeit__Start_Date__c" : "iseeit__End_Date__c"] = m; (seenAfter as Record<string, string | null>)[f] = m; };
+      if (f !== "title" && s_ === null) { if (m !== null) pushIt(); continue; }
+      if (s_ === b) { if (m) pushIt(); continue; }
+      if (m === b || !m) {
+        if (!s_) continue;
+        if (f === "title") phase.name = s_; else phase[f] = s_;
+        out.pulled.push(`phase “${label}”: ${f === "title" ? "name" : f === "start" ? "start date" : "end date"}`);
+        note(`changed the ${f === "title" ? "name" : f === "start" ? "start date" : "end date"} of the phase “${label}” in Salesforce`, null);
+        continue;
+      }
+      pushIt(); out.conflicts.push(`phase “${label}”: ${f}`);
+      note(`kept ${f === "title" ? "the name" : f === "start" ? "the start date" : "the end date"} “${m}” for the phase “${label}”; Salesforce had “${s_}” (overwritten)`, null);
+    }
+    if (Object.keys(send).length) { out.phaseUpdates.push({ phaseId: phase.id, sfdcId: row.Id, fields: send, seen: seenAfter }); out.pushed.push(`phase “${label}”: ${Object.keys(send).map(k => k.replace("iseeit__", "").replace("_Date__c", " date").replace("__c", "").toLowerCase()).join(", ")}`); }
+    else phase.sfdcSeen = seenAfter;
+  }
   const personBySfdc = new Map<string, Person>();
   for (const p of plan.people) { if (p.sfdcUserId) personBySfdc.set(p.sfdcUserId, p); if (p.sfdcContactId) personBySfdc.set(p.sfdcContactId, p); }
   const sfId = (p?: Person) => p?.sfdcUserId || p?.sfdcContactId || "";
@@ -200,6 +227,7 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
 export function commit(outcome: SyncOutcome, opportunityId: string, written: { updated: Set<string>; created: Map<string, string> }, now = new Date()): SyncPlan {
   const plan = outcome.plan;
   for (const u of outcome.updates) if (written.updated.has(u.taskId)) { const t = plan.tasks.find(x => x.id === u.taskId); if (t) t.sfdcSeen = u.seen; }
+  for (const u of outcome.phaseUpdates) if (written.updated.has(u.phaseId)) { const ph = plan.phases.find(x => x.id === u.phaseId); if (ph) ph.sfdcSeen = u.seen; }
   for (const c of outcome.creates) { const id = written.created.get(c.taskId), t = plan.tasks.find(x => x.id === c.taskId); if (id && t) { t.sfdcId = id; t.sfdcSeen = c.seen; } }
   if (!plan.sfdc?.syncedAt) for (const t of plan.tasks) if (!t.sfdcId && !t.parent) t.sfdcSkip = true;
   plan.sfdc = { ...plan.sfdc, opportunityId, syncedAt: now.toISOString() };
