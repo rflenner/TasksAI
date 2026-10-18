@@ -150,3 +150,32 @@ test("a Salesforce person with a known email gets the id instead of a duplicate"
   assert.equal(addOwnerPeople(p, [{ Id: "005000000000007AAA", Name: "Drew Klein", Email: "Drew@iseeit.com" }], []), 0);
   assert.equal(p.people.find(x => x.id === "x")!.sfdcUserId, "005000000000007AAA");
 });
+
+test("task order: Salesforce reorders → pulled with subtasks following; plan reorders → pushed; both → plan wins", () => {
+  const ids = ["a0Q000000000001AAA", "a0Q000000000002AAA", "a0Q000000000003AAA"];
+  const sfRows = (orders: string[]) => ids.map((Id, i) => row({ Id, iseeit__Title__c: "T" + i, iseeit__Close_Plan_Order__c: orders[i] }));
+  const mk = () => plan([0, 1, 2].flatMap(i => [task({ id: "t" + i, title: "T" + i, sfdcId: ids[i], sfdcSeen: { ...seen, title: "T" + i }, sfdcRank: i }), ...(i === 0 ? [task({ id: "s0", parent: "t0", title: "Sub" })] : [])]), "t");
+  // Salesforce: T2 first.
+  const pulled = syncPlan(mk(), phases, sfRows(["1", "2", "0"]));
+  assert.deepEqual(pulled.plan.tasks.filter(t => !t.parent).map(t => t.id), ["t2", "t0", "t1"]);
+  assert.deepEqual(pulled.plan.tasks.map(t => t.id), ["t2", "t0", "s0", "t1"]);
+  assert.equal(pulled.updates.length, 0);
+  // The plan moved T2 first; Salesforce unchanged.
+  const p = mk(); const [t0, t1, t2] = [p.tasks[0], p.tasks[2], p.tasks[3]]; p.tasks = [t2, t0, p.tasks[1], t1];
+  const pushed = syncPlan(p, phases, sfRows(["0", "1", "2"]));
+  assert.deepEqual(pushed.updates.map(u => [u.taskId, u.fields.iseeit__Close_Plan_Order__c]).sort(), [["t0", "1"], ["t1", "2"], ["t2", "0"]]);
+  // Both moved differently: the plan wins.
+  const both = syncPlan(p, phases, sfRows(["2", "1", "0"]));
+  assert.equal(both.conflicts.length, 1);
+  assert.deepEqual(both.plan.tasks.filter(t => !t.parent).map(t => t.id), ["t2", "t0", "t1"]);
+});
+
+test("phase order syncs the same way, and a Sales AI contact id becomes the Salesforce contact id", () => {
+  const two: SfPhaseRow[] = [{ Id: "a0P000000000001AAA", iseeit__Title__c: "Align", iseeit__Phase_Order__c: "2" }, { Id: "a0P000000000002AAA", iseeit__Title__c: "Build", iseeit__Phase_Order__c: "1" }];
+  const p = plan(); p.phases = [{ id: "a", name: "Align", sfdcId: two[0].Id, sfdcSeen: { title: "Align", start: null, end: null }, sfdcRank: 0 }, { id: "b", name: "Build", sfdcId: two[1].Id, sfdcSeen: { title: "Build", start: null, end: null }, sfdcRank: 1 }];
+  const pulled = syncPlan(p, two, []);
+  assert.deepEqual(pulled.plan.phases.map(x => x.id), ["b", "a"]);
+  p.people.push({ id: "c", name: "Bryan", side: "buyer", email: "", contactIds: ["f4a0b2d6-uuid", "003000000000004AAA"] });
+  idLookupQueries(p.people);
+  assert.equal(p.people.at(-1)!.sfdcContactId, "003000000000004AAA");
+});

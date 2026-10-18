@@ -173,6 +173,11 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
   account get `accountId` from the opportunity, which makes the Sales AI contacts available in "Add someone". Added to a task in
   Task AI, a person is written to Salesforce once their email matches a Salesforce user or contact.
 - **Phases:** name, start date and end date sync both ways with the same rule (`phases[].sfdcSeen`).
+- **Order:** task order within a phase is `iseeit__Close_Plan_Order__c` (picklist "0" to "26", so at most 27 tasks per phase), phase
+  order is `iseeit__Phase_Order__c` ("1" to "27"). Compared as ranks per phase (`sfdcRank`): only Salesforce reordered → the plan
+  follows (subtasks move with their task); the plan reordered → the values are written; both → the plan wins.
+- **Contacts:** a Sales AI contact carries its ids; one starting with `003` is used as the Salesforce contact id, otherwise the
+  email is looked up in Contact.
 - **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
   checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.

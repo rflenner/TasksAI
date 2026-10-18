@@ -13,14 +13,14 @@ export type SfPhaseRow = { Id: string; iseeit__Title__c?: string | null; iseeit_
 export type SfCheckpointRow = {
   Id: string; iseeit__Title__c?: string | null; iseeit__Current_Phase__c?: string | null; iseeit__Phase_Checkpoint_Status__c?: string | null;
   iseeit__Status__c?: boolean | null; iseeit__Deadline__c?: string | null; iseeit__Interaction_Type__c?: string | null;
-  iseeit__Phase_Checkpoint_Owner__c?: string | null; iseeit__Checklist_Description__c?: string | null; iseeit__Checkpoint_N_A__c?: boolean | null;
+  iseeit__Phase_Checkpoint_Owner__c?: string | null; iseeit__Checklist_Description__c?: string | null; iseeit__Checkpoint_N_A__c?: boolean | null; iseeit__Close_Plan_Order__c?: string | number | null;
 };
 
-type Person = { id: string; name?: string; email?: string; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
+type Person = { id: string; name?: string; email?: string; contactIds?: string[]; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
 export type PhaseSeen = { title: string; start: string | null; end: string | null };
-type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string; sfdcSeen?: PhaseSeen };
+type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string; sfdcSeen?: PhaseSeen; sfdcRank?: number };
 export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string };
-type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcSkip?: boolean; [k: string]: unknown };
+type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcRank?: number; sfdcSkip?: boolean; [k: string]: unknown };
 export type SyncPlan = {
   people: Person[]; phases: Phase[]; tasks: Task[]; seq?: number;
   activity?: { at: string; by: string; text: string; task: string | null }[];
@@ -33,9 +33,9 @@ export const SFDC_AUTHOR = "sfdc";
 
 // Salesforce field values for one checkpoint (a PATCH, or a POST with the create fields added).
 export type SfFields = Record<string, string | boolean | null>;
-export type Update = { taskId: string; sfdcId: string; fields: SfFields; seen: Seen };
+export type Update = { taskId: string; sfdcId: string; fields: SfFields; seen: Seen; rank?: number };
 export type Create = { taskId: string; fields: SfFields; seen: Seen };
-export type PhaseUpdate = { phaseId: string; sfdcId: string; fields: SfFields; seen: PhaseSeen };
+export type PhaseUpdate = { phaseId: string; sfdcId: string; fields: SfFields; seen: PhaseSeen; rank?: number };
 export type SyncOutcome = {
   plan: SyncPlan;                 // pulls applied; pushes not yet recorded in sfdcSeen (see commit)
   updates: Update[]; creates: Create[]; phaseUpdates: PhaseUpdate[];
@@ -46,7 +46,7 @@ export type SyncOutcome = {
 export const checkpointQuery = (opportunityId: string) => {
   if (!isSalesforceId(opportunityId)) throw new Error("Invalid Salesforce opportunity id");
   return "SELECT Id, iseeit__Title__c, iseeit__Current_Phase__c, iseeit__Phase_Checkpoint_Status__c, iseeit__Status__c, iseeit__Deadline__c, " +
-    "iseeit__Interaction_Type__c, iseeit__Phase_Checkpoint_Owner__c, iseeit__Checklist_Description__c, iseeit__Checkpoint_N_A__c " +
+    "iseeit__Interaction_Type__c, iseeit__Phase_Checkpoint_Owner__c, iseeit__Checklist_Description__c, iseeit__Checkpoint_N_A__c, iseeit__Close_Plan_Order__c " +
     `FROM iseeit__TO_DO__c WHERE iseeit__Opportunity__c = '${opportunityId}' AND iseeit__Is_From_Close_Plan__c = true AND iseeit__Current_Phase__c != null ` +
     "ORDER BY iseeit__Close_Plan_Order__c NULLS LAST";
 };
@@ -84,6 +84,24 @@ export function fieldsFor(t: Pick<Seen, "title" | "desc" | "status" | "due" | "s
 }
 
 const dateOf = (d: string | null | undefined) => d || null;
+
+// Order is compared as ranks, not values: Salesforce numbers can have gaps, the plan's order is its array order.
+const num = (v: unknown) => { const n = Number(v); return v === null || v === undefined || v === "" || !Number.isFinite(n) ? null : n; };
+const ranksOf = (values: Array<number | null>) => { const idx = values.map((_, i) => i).sort((a, b) => (values[a] ?? Infinity) - (values[b] ?? Infinity) || a - b); const r: number[] = []; idx.forEach((i, rank) => { r[i] = rank; }); return r; };
+export const MAX_TASK_ORDER = 26, MAX_PHASE_ORDER = 27;
+
+// Puts a phase's linked top-level tasks (each with its subtasks) into the given order, in the slots those tasks occupy now.
+function reorderPhaseTasks(plan: SyncPlan, phaseId: string, orderedIds: string[]) {
+  const tops = plan.tasks.filter(t => t.phase === phaseId && !t.parent);
+  const blocks = tops.map(t => [t, ...plan.tasks.filter(x => x.parent === t.id)]);
+  const slots = blocks.map((b, i) => orderedIds.includes(b[0].id) ? i : -1).filter(i => i >= 0);
+  const sorted = [...slots].map(i => blocks[i]).sort((a, b) => orderedIds.indexOf(a[0].id) - orderedIds.indexOf(b[0].id));
+  slots.forEach((slot, k) => { blocks[slot] = sorted[k]; });
+  const first = plan.tasks.findIndex(t => t.phase === phaseId && !t.parent);
+  const moved = new Set(blocks.flat().map(t => t.id));
+  plan.tasks = plan.tasks.filter(t => !moved.has(t.id));
+  plan.tasks.splice(first, 0, ...blocks.flat());
+}
 
 export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheckpointRow[], opts: { sendUnlinked?: boolean; today?: string } = {}): SyncOutcome {
   const plan: SyncPlan = structuredClone(input);
@@ -127,6 +145,32 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     }
     if (Object.keys(send).length) { out.phaseUpdates.push({ phaseId: phase.id, sfdcId: row.Id, fields: send, seen: seenAfter }); out.pushed.push(`phase “${label}”: ${Object.keys(send).map(k => k.replace("iseeit__", "").replace("_Date__c", " date").replace("__c", "").toLowerCase()).join(", ")}`); }
     else phase.sfdcSeen = seenAfter;
+  }
+  // Phase order.
+  {
+    const rowById = new Map(phaseRows.map(r => [r.Id, r]));
+    const linked = plan.phases.filter(p => p.sfdcId && rowById.has(p.sfdcId));
+    if (linked.length > 1) {
+      const mineRank = linked.map((_, i) => i), sfRank = ranksOf(linked.map(p => num(rowById.get(p.sfdcId as string)!.iseeit__Phase_Order__c)));
+      const base = linked.map((p, i) => p.sfdcRank ?? sfRank[i]);
+      const planMoved = linked.some((_, i) => mineRank[i] !== base[i]), sfMoved = linked.some((_, i) => sfRank[i] !== base[i]);
+      if (planMoved) {
+        linked.forEach((p, i) => {
+          if (mineRank[i] === sfRank[i]) { p.sfdcRank = mineRank[i]; return; }
+          const value = String(Math.min(plan.phases.indexOf(p) + 1, MAX_PHASE_ORDER));
+          const existing = out.phaseUpdates.find(u => u.phaseId === p.id);
+          if (existing) { existing.fields.iseeit__Phase_Order__c = value; existing.rank = mineRank[i]; }
+          else out.phaseUpdates.push({ phaseId: p.id, sfdcId: p.sfdcId as string, fields: { iseeit__Phase_Order__c: value }, seen: p.sfdcSeen || { title: p.name || "", start: p.start || null, end: p.end || null }, rank: mineRank[i] });
+        });
+        out.pushed.push("phase order");
+        if (sfMoved) { out.conflicts.push("phase order"); note("kept its own phase order; Salesforce had a different order (overwritten)", null); }
+      } else if (sfMoved) {
+        const slots = linked.map(p => plan.phases.indexOf(p)), sorted = linked.map((p, i) => ({ p, r: sfRank[i] })).sort((a, b) => a.r - b.r).map(x => x.p);
+        slots.forEach((slot, k) => { plan.phases[slot] = sorted[k]; });
+        sorted.forEach((p, k) => { p.sfdcRank = k; });
+        out.pulled.push("phase order"); note("changed the order of the phases in Salesforce", null);
+      } else linked.forEach((p, i) => { p.sfdcRank = sfRank[i]; });
+    }
   }
   const personBySfdc = new Map<string, Person>();
   for (const p of plan.people) { if (p.sfdcUserId) personBySfdc.set(p.sfdcUserId, p); if (p.sfdcContactId) personBySfdc.set(p.sfdcContactId, p); }
@@ -191,6 +235,30 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     else task.sfdcSeen = seenAfter;
   }
 
+  // Task order within each phase.
+  for (const phase of plan.phases) {
+    const linked = plan.tasks.filter(t => t.phase === phase.id && !t.parent && t.sfdcId && byId.has(t.sfdcId));
+    if (linked.length < 2) { linked.forEach(t => { t.sfdcRank = 0; }); continue; }
+    const mineRank = linked.map((_, i) => i), sfRank = ranksOf(linked.map(t => num(byId.get(t.sfdcId as string)!.iseeit__Close_Plan_Order__c)));
+    const base = linked.map((t, i) => t.sfdcRank ?? sfRank[i]);
+    const planMoved = linked.some((_, i) => mineRank[i] !== base[i]), sfMoved = linked.some((_, i) => sfRank[i] !== base[i]);
+    if (planMoved) {
+      linked.forEach((t, i) => {
+        if (mineRank[i] === sfRank[i]) { t.sfdcRank = mineRank[i]; return; }
+        const existing = out.updates.find(u => u.taskId === t.id), value = String(Math.min(i, MAX_TASK_ORDER));
+        if (existing) { existing.fields.iseeit__Close_Plan_Order__c = value; existing.rank = mineRank[i]; }
+        else out.updates.push({ taskId: t.id, sfdcId: t.sfdcId as string, fields: { iseeit__Close_Plan_Order__c: value }, seen: t.sfdcSeen || seenOf(byId.get(t.sfdcId as string)!), rank: mineRank[i] });
+      });
+      out.pushed.push(`order of the tasks in “${phase.name || phase.id}”`);
+      if (sfMoved) { out.conflicts.push(`order in “${phase.name || phase.id}”`); note(`kept its own task order in “${phase.name || phase.id}”; Salesforce had a different order (overwritten)`, null); }
+    } else if (sfMoved) {
+      const sorted = linked.map((t, i) => ({ t, r: sfRank[i] })).sort((a, b) => a.r - b.r).map(x => x.t);
+      reorderPhaseTasks(plan, phase.id, sorted.map(t => t.id));
+      sorted.forEach((t, k) => { t.sfdcRank = k; });
+      out.pulled.push(`order of the tasks in “${phase.name || phase.id}”`); note(`changed the task order in “${phase.name || phase.id}” in Salesforce`, null);
+    } else linked.forEach((t, i) => { t.sfdcRank = sfRank[i]; });
+  }
+
   // Checkpoints the plan lacks → new tasks (not N/A ones).
   const linked = new Set(plan.tasks.map(t => t.sfdcId).filter(Boolean));
   for (const row of rows) {
@@ -214,7 +282,7 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     if (first && !opts.sendUnlinked) { out.unlinked++; continue; }
     const owners = ownersOf(task), seen: Seen = { title: task.title, desc: task.desc || "", status: task.status, due: dateOf(task.due), shared: task.shared !== false, owners: owners || "", planOwners: owners };
     const ownerFields: SfFields = owners ? { iseeit__Phase_Checkpoint_Owner__c: owners, iseeit__Checkpoint_Phase_Owner_Description__c: [task.owner, ...(task.coworkers || [])].map(id => plan.people.find(p => p.id === id)?.name || "").join(" | ") } : {};
-    out.creates.push({ taskId: task.id, fields: { ...fieldsFor(seen), ...ownerFields, iseeit__Current_Phase__c: phase.sfdcId, iseeit__Is_From_Close_Plan__c: true }, seen });
+    out.creates.push({ taskId: task.id, fields: { ...fieldsFor(seen), ...ownerFields, iseeit__Current_Phase__c: phase.sfdcId, iseeit__Is_From_Close_Plan__c: true, iseeit__Close_Plan_Order__c: String(Math.min(plan.tasks.filter(t => t.phase === task.phase && !t.parent).indexOf(task), MAX_TASK_ORDER)) }, seen });
     out.pushed.push(`new “${task.title}”`);
   }
 
@@ -226,8 +294,8 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
 // plan tasks that stayed here are marked so later syncs don't send them.
 export function commit(outcome: SyncOutcome, opportunityId: string, written: { updated: Set<string>; created: Map<string, string> }, now = new Date()): SyncPlan {
   const plan = outcome.plan;
-  for (const u of outcome.updates) if (written.updated.has(u.taskId)) { const t = plan.tasks.find(x => x.id === u.taskId); if (t) t.sfdcSeen = u.seen; }
-  for (const u of outcome.phaseUpdates) if (written.updated.has(u.phaseId)) { const ph = plan.phases.find(x => x.id === u.phaseId); if (ph) ph.sfdcSeen = u.seen; }
+  for (const u of outcome.updates) if (written.updated.has(u.taskId)) { const t = plan.tasks.find(x => x.id === u.taskId); if (t) { t.sfdcSeen = u.seen; if (u.rank !== undefined) t.sfdcRank = u.rank; } }
+  for (const u of outcome.phaseUpdates) if (written.updated.has(u.phaseId)) { const ph = plan.phases.find(x => x.id === u.phaseId); if (ph) { ph.sfdcSeen = u.seen; if (u.rank !== undefined) ph.sfdcRank = u.rank; } }
   for (const c of outcome.creates) { const id = written.created.get(c.taskId), t = plan.tasks.find(x => x.id === c.taskId); if (id && t) { t.sfdcId = id; t.sfdcSeen = c.seen; } }
   if (!plan.sfdc?.syncedAt) for (const t of plan.tasks) if (!t.sfdcId && !t.parent) t.sfdcSkip = true;
   plan.sfdc = { ...plan.sfdc, opportunityId, syncedAt: now.toISOString() };
@@ -239,6 +307,8 @@ export function commit(outcome: SyncOutcome, opportunityId: string, written: { u
 const soqlString = (v: string) => `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 const emailOf = (p: Person) => (p.email || "").trim().toLowerCase();
 export function idLookupQueries(people: Person[]): { users: string | null; contacts: string | null } {
+  // A contact added from Sales AI carries its ids; one of them is usually the Salesforce contact id.
+  for (const p of people) if (p.side === "buyer" && !p.sfdcContactId) { const sf = (p.contactIds || []).find(id => /^003[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/.test(id)); if (sf) p.sfdcContactId = sf; }
   const need = (side: string) => [...new Set(people.filter(p => p.side === side && !p.sfdcUserId && !p.sfdcContactId && /^[^\s@']+@[^\s@']+$/.test(emailOf(p))).map(emailOf))].slice(0, 50);
   const list = (emails: string[]) => emails.map(soqlString).join(",");
   const sellers = need("seller"), buyers = need("buyer");
