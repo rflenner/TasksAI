@@ -18,7 +18,7 @@ export type SfCheckpointRow = {
 
 type Person = { id: string; name?: string; email?: string; contactIds?: string[]; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
 export type PhaseSeen = { title: string; start: string | null; end: string | null };
-type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string; sfdcSeen?: PhaseSeen; sfdcRank?: number };
+type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string; sfdcSeen?: PhaseSeen; sfdcRank?: number; sfdcSkip?: boolean };
 export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string };
 type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcRank?: number; sfdcSkip?: boolean; [k: string]: unknown };
 export type SyncPlan = {
@@ -34,11 +34,12 @@ export const SFDC_AUTHOR = "sfdc";
 // Salesforce field values for one checkpoint (a PATCH, or a POST with the create fields added).
 export type SfFields = Record<string, string | boolean | null>;
 export type Update = { taskId: string; sfdcId: string; fields: SfFields; seen: Seen; rank?: number };
-export type Create = { taskId: string; fields: SfFields; seen: Seen };
+export type Create = { taskId: string; fields: SfFields; seen: Seen; phaseRef?: string };
+export type PhaseCreate = { phaseId: string; fields: SfFields; seen: PhaseSeen; rank: number };
 export type PhaseUpdate = { phaseId: string; sfdcId: string; fields: SfFields; seen: PhaseSeen; rank?: number };
 export type SyncOutcome = {
   plan: SyncPlan;                 // pulls applied; pushes not yet recorded in sfdcSeen (see commit)
-  updates: Update[]; creates: Create[]; phaseUpdates: PhaseUpdate[];
+  updates: Update[]; creates: Create[]; phaseUpdates: PhaseUpdate[]; phaseCreates: PhaseCreate[];
   pulled: string[]; pushed: string[]; conflicts: string[]; skipped: string[];
   unlinked: number;               // plan tasks that exist only here, held back on the first sync
 };
@@ -107,7 +108,7 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
   const plan: SyncPlan = structuredClone(input);
   const today = opts.today || new Date().toISOString().slice(0, 10);
   const first = !plan.sfdc?.syncedAt;
-  const out: SyncOutcome = { plan, updates: [], creates: [], phaseUpdates: [], pulled: [], pushed: [], conflicts: [], skipped: [], unlinked: 0 };
+  const out: SyncOutcome = { plan, updates: [], creates: [], phaseUpdates: [], phaseCreates: [], pulled: [], pushed: [], conflicts: [], skipped: [], unlinked: 0 };
   const activity: NonNullable<SyncPlan["activity"]> = [];
   const note = (text: string, task: string | null) => activity.push({ at: today, by: SFDC_AUTHOR, text, task });
   const lc = (s?: string) => (s || "").trim().toLowerCase();
@@ -146,17 +147,20 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     if (Object.keys(send).length) { out.phaseUpdates.push({ phaseId: phase.id, sfdcId: row.Id, fields: send, seen: seenAfter }); out.pushed.push(`phase “${label}”: ${Object.keys(send).map(k => k.replace("iseeit__", "").replace("_Date__c", " date").replace("__c", "").toLowerCase()).join(", ")}`); }
     else phase.sfdcSeen = seenAfter;
   }
-  // Phase order.
+  // Phase order. Plan phases Salesforce lacks are created below (held back on the first sync unless asked), which renumbers the others.
+  const newPhase = (p: Phase) => !p.sfdcId && !p.sfdcSkip && !(first && !opts.sendUnlinked);
   {
     const rowById = new Map(phaseRows.map(r => [r.Id, r]));
     const linked = plan.phases.filter(p => p.sfdcId && rowById.has(p.sfdcId));
-    if (linked.length > 1) {
+    if (linked.length > 1 || (linked.length === 1 && plan.phases.some(newPhase))) {
       const mineRank = linked.map((_, i) => i), sfRank = ranksOf(linked.map(p => num(rowById.get(p.sfdcId as string)!.iseeit__Phase_Order__c)));
       const base = linked.map((p, i) => p.sfdcRank ?? sfRank[i]);
-      const planMoved = linked.some((_, i) => mineRank[i] !== base[i]), sfMoved = linked.some((_, i) => sfRank[i] !== base[i]);
+      const newPhases = plan.phases.some(newPhase);
+      const planMoved = newPhases || linked.some((_, i) => mineRank[i] !== base[i]), sfMoved = linked.some((_, i) => sfRank[i] !== base[i]);
       if (planMoved) {
         linked.forEach((p, i) => {
-          if (mineRank[i] === sfRank[i]) { p.sfdcRank = mineRank[i]; return; }
+          const want = String(Math.min(plan.phases.indexOf(p) + 1, MAX_PHASE_ORDER));
+          if (mineRank[i] === sfRank[i] && !(newPhases && String(num(rowById.get(p.sfdcId as string)!.iseeit__Phase_Order__c)) !== want)) { p.sfdcRank = mineRank[i]; return; }
           const value = String(Math.min(plan.phases.indexOf(p) + 1, MAX_PHASE_ORDER));
           const existing = out.phaseUpdates.find(u => u.phaseId === p.id);
           if (existing) { existing.fields.iseeit__Phase_Order__c = value; existing.rank = mineRank[i]; }
@@ -171,6 +175,16 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
         out.pulled.push("phase order"); note("changed the order of the phases in Salesforce", null);
       } else linked.forEach((p, i) => { p.sfdcRank = sfRank[i]; });
     }
+  }
+  // New phases.
+  const creating = new Set<string>();
+  for (const p of plan.phases) {
+    if (p.sfdcId || p.sfdcSkip) continue;
+    if (first && !opts.sendUnlinked) { out.unlinked++; continue; }
+    const seen: PhaseSeen = { title: p.name || "Phase", start: p.start || null, end: p.end || null };
+    const position = plan.phases.indexOf(p);
+    out.phaseCreates.push({ phaseId: p.id, fields: { iseeit__Title__c: seen.title.slice(0, 255), iseeit__Start_Date__c: seen.start, iseeit__End_Date__c: seen.end, iseeit__Phase_Order__c: String(Math.min(position + 1, MAX_PHASE_ORDER)) }, seen, rank: position });
+    creating.add(p.id); out.pushed.push(`new phase “${seen.title}”`);
   }
   const personBySfdc = new Map<string, Person>();
   for (const p of plan.people) { if (p.sfdcUserId) personBySfdc.set(p.sfdcUserId, p); if (p.sfdcContactId) personBySfdc.set(p.sfdcContactId, p); }
@@ -278,11 +292,11 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
   for (const task of plan.tasks) {
     if (task.parent || task.sfdcId || task.sfdcSkip) continue;
     const phase = plan.phases.find(p => p.id === task.phase);
-    if (!phase?.sfdcId) { out.skipped.push(`“${task.title}”: its phase isn't in Salesforce`); continue; }
+    if (!phase || (!phase.sfdcId && !creating.has(phase.id))) { out.skipped.push(`“${task.title}”: its phase isn't in Salesforce`); continue; }
     if (first && !opts.sendUnlinked) { out.unlinked++; continue; }
     const owners = ownersOf(task), seen: Seen = { title: task.title, desc: task.desc || "", status: task.status, due: dateOf(task.due), shared: task.shared !== false, owners: owners || "", planOwners: owners };
     const ownerFields: SfFields = owners ? { iseeit__Phase_Checkpoint_Owner__c: owners, iseeit__Checkpoint_Phase_Owner_Description__c: [task.owner, ...(task.coworkers || [])].map(id => plan.people.find(p => p.id === id)?.name || "").join(" | ") } : {};
-    out.creates.push({ taskId: task.id, fields: { ...fieldsFor(seen), ...ownerFields, iseeit__Current_Phase__c: phase.sfdcId, iseeit__Is_From_Close_Plan__c: true, iseeit__Close_Plan_Order__c: String(Math.min(plan.tasks.filter(t => t.phase === task.phase && !t.parent).indexOf(task), MAX_TASK_ORDER)) }, seen });
+    out.creates.push({ taskId: task.id, fields: { ...fieldsFor(seen), ...ownerFields, ...(phase.sfdcId ? { iseeit__Current_Phase__c: phase.sfdcId } : {}), iseeit__Is_From_Close_Plan__c: true, iseeit__Close_Plan_Order__c: String(Math.min(plan.tasks.filter(t => t.phase === task.phase && !t.parent).indexOf(task), MAX_TASK_ORDER)) }, seen, ...(phase.sfdcId ? {} : { phaseRef: phase.id }) });
     out.pushed.push(`new “${task.title}”`);
   }
 
@@ -292,12 +306,13 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
 
 // Records what reached Salesforce: sfdcSeen for updated tasks, the new Id for created ones. On the first sync,
 // plan tasks that stayed here are marked so later syncs don't send them.
-export function commit(outcome: SyncOutcome, opportunityId: string, written: { updated: Set<string>; created: Map<string, string> }, now = new Date()): SyncPlan {
+export function commit(outcome: SyncOutcome, opportunityId: string, written: { updated: Set<string>; created: Map<string, string>; createdPhases?: Map<string, string> }, now = new Date()): SyncPlan {
   const plan = outcome.plan;
   for (const u of outcome.updates) if (written.updated.has(u.taskId)) { const t = plan.tasks.find(x => x.id === u.taskId); if (t) { t.sfdcSeen = u.seen; if (u.rank !== undefined) t.sfdcRank = u.rank; } }
   for (const u of outcome.phaseUpdates) if (written.updated.has(u.phaseId)) { const ph = plan.phases.find(x => x.id === u.phaseId); if (ph) { ph.sfdcSeen = u.seen; if (u.rank !== undefined) ph.sfdcRank = u.rank; } }
+  for (const c of outcome.phaseCreates) { const id = written.createdPhases?.get(c.phaseId), ph = plan.phases.find(x => x.id === c.phaseId); if (id && ph) { ph.sfdcId = id; ph.sfdcSeen = c.seen; ph.sfdcRank = c.rank; } }
   for (const c of outcome.creates) { const id = written.created.get(c.taskId), t = plan.tasks.find(x => x.id === c.taskId); if (id && t) { t.sfdcId = id; t.sfdcSeen = c.seen; } }
-  if (!plan.sfdc?.syncedAt) for (const t of plan.tasks) if (!t.sfdcId && !t.parent) t.sfdcSkip = true;
+  if (!plan.sfdc?.syncedAt) { for (const t of plan.tasks) if (!t.sfdcId && !t.parent) t.sfdcSkip = true; for (const ph of plan.phases) if (!ph.sfdcId) ph.sfdcSkip = true; }
   plan.sfdc = { ...plan.sfdc, opportunityId, syncedAt: now.toISOString() };
   return plan;
 }

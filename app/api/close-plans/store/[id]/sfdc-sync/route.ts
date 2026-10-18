@@ -54,8 +54,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const summary = { opportunityId, pulled: outcome.pulled, pushed: outcome.pushed, conflicts: outcome.conflicts, skipped: outcome.skipped, unlinked: outcome.unlinked };
   if (body.mode !== "apply") return Response.json({ applied: false, ...summary });
 
-  const updated = new Set<string>(), created = new Map<string, string>(), failed: string[] = [];
+  const updated = new Set<string>(), created = new Map<string, string>(), createdPhases = new Map<string, string>(), failed: string[] = [];
   try {
+    for (const part of chunks(outcome.phaseCreates)) {
+      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "POST", body: { allOrNone: false, records: part.map(c => ({ attributes: { type: "iseeit__Current_Phase__c" }, iseeit__Opportunity__c: opportunityId, ...c.fields })) } });
+      part.forEach((c, i) => { const r = results[i]; if (r?.success && r.id) createdPhases.set(c.phaseId, r.id); else failed.push(r?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a new phase"); });
+    }
     for (const part of chunks(outcome.phaseUpdates)) {
       const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: part.map(u => ({ attributes: { type: "iseeit__Current_Phase__c" }, id: u.sfdcId, ...u.fields })) } });
       part.forEach((u, i) => { if (results[i]?.success) updated.add(u.phaseId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a phase change"); });
@@ -64,8 +68,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: sobjects(part.map(u => ({ id: u.sfdcId, ...u.fields }))) } });
       part.forEach((u, i) => { if (results[i]?.success) updated.add(u.taskId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected an update"); });
     }
-    for (const part of chunks(outcome.creates)) {
-      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "POST", body: { allOrNone: false, records: sobjects(part.map(c => ({ iseeit__Opportunity__c: opportunityId, ...c.fields }))) } });
+    const creatable = outcome.creates.filter(c => !c.phaseRef || createdPhases.has(c.phaseRef));
+    if (creatable.length < outcome.creates.length) failed.push("Some tasks were not sent because their new phase could not be created");
+    for (const part of chunks(creatable)) {
+      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "POST", body: { allOrNone: false, records: sobjects(part.map(c => ({ iseeit__Opportunity__c: opportunityId, ...c.fields, ...(c.phaseRef ? { iseeit__Current_Phase__c: createdPhases.get(c.phaseRef) } : {}) }))) } });
       part.forEach((c, i) => { const r = results[i]; if (r?.success && r.id) created.set(c.taskId, r.id); else failed.push(r?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a new task"); });
     }
   } catch (error) {
@@ -74,7 +80,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     failed.push("Salesforce stopped answering part-way");
   }
   const first = !data.sfdc?.syncedAt;
-  const next = commit(outcome, opportunityId, { updated, created });
+  const next = commit(outcome, opportunityId, { updated, created, createdPhases });
   // An automatic sync that changed nothing must not bump the version (it would make every open page's next save conflict).
   const stable = (d: SyncPlan) => JSON.stringify({ ...d, sfdc: { ...d.sfdc, syncedAt: null } });
   if (!first && !failed.length && stable(next) === stable(data)) return Response.json({ applied: true, unchanged: true, ...summary, written: { updated: 0, created: 0 }, failed });

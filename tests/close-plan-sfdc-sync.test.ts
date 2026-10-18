@@ -179,3 +179,20 @@ test("phase order syncs the same way, and a Sales AI contact id becomes the Sale
   idLookupQueries(p.people);
   assert.equal(p.people.at(-1)!.sfdcContactId, "003000000000004AAA");
 });
+
+test("a phase added in the plan is created in Salesforce with its tasks, and the others are renumbered", () => {
+  const sfp: SfPhaseRow[] = [{ Id: "a0P000000000001AAA", iseeit__Title__c: "Align", iseeit__Phase_Order__c: "1", iseeit__Start_Date__c: "2026-10-01", iseeit__End_Date__c: "2026-10-30" }, { Id: "a0P000000000002AAA", iseeit__Title__c: "Close", iseeit__Phase_Order__c: "2" }];
+  const mk = (syncedAt?: string) => { const p = plan([task({ id: "n1", phase: "mid", title: "In new phase" })], syncedAt);
+    p.phases = [{ id: "align", name: "Align", sfdcId: sfp[0].Id, sfdcRank: 0, sfdcSeen: { title: "Align", start: "2026-10-01", end: "2026-10-30" } }, { id: "mid", name: "Middle", start: "2026-11-01", end: "2026-11-15" }, { id: "close", name: "Close", sfdcId: sfp[1].Id, sfdcRank: 1, sfdcSeen: { title: "Close", start: null, end: null } }]; return p; };
+  const o = syncPlan(mk("t"), sfp, []);
+  assert.equal(o.phaseCreates.length, 1);
+  assert.deepEqual(o.phaseCreates[0].fields, { iseeit__Title__c: "Middle", iseeit__Start_Date__c: "2026-11-01", iseeit__End_Date__c: "2026-11-15", iseeit__Phase_Order__c: "2" });
+  assert.equal(o.creates[0].phaseRef, "mid");
+  assert.equal(o.phaseUpdates.find(u => u.phaseId === "close")!.fields.iseeit__Phase_Order__c, "3");
+  const done = commit(o, "006000000000001AAA", { updated: new Set(["close"]), created: new Map([["n1", "a0Q000000000009AAA"]]), createdPhases: new Map([["mid", "a0P000000000003AAA"]]) });
+  assert.equal(done.phases[1].sfdcId, "a0P000000000003AAA");
+  // First sync: held back unless asked.
+  const first = syncPlan(mk(), sfp, []);
+  assert.equal(first.phaseCreates.length, 0);
+  assert.ok(first.unlinked >= 1);
+});
