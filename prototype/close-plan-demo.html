@@ -1052,6 +1052,8 @@ function canDelete(t) { if (!canEdit(t)) return false; return ui.mode === "selle
 // Only the plan owners manage people: the iSEEit plan owner both teams, the Meridian Biotech plan owner the Meridian Biotech team.
 // Plan owners manage the people of their plan; so do Site and Area Admins (same people who may delete a plan).
 const isAdminUser = () => Boolean(APP_ME && (APP_ME.role === "site_admin" || APP_ME.role === "area_admin"));
+// Everyone on the iSEEit team of the plan can add people to it (either side); removing people and managing access stays with the plan owners.
+function canAddPeople(side) { return !LINK && (canManage(side) || state.people.some(p => p.id === me() && p.side === "seller")); }
 function canManage(side) { return !LINK && (me() === state.planOwners.seller || isAdminUser() || (side === "buyer" && me() === state.planOwners.buyer)); }
 function rightsText(a) { return [a.level === "view" ? "View only" : a.level === "own" ? "Edits own tasks" : "Edits all tasks", a.create && a.level !== "view" ? "creates tasks" : ""].filter(Boolean).join(" · "); }
 function matches(t, f = ui.filter) {
@@ -1665,11 +1667,11 @@ function teamSection(side) {
   const summary = side === "buyer"
     ? `${people.length} people · ${people.filter(p => p.invite?.status === "active").length} active · ${people.filter(p => p.invite?.status === "invited").length} invited · ${people.filter(p => !p.invite || p.invite.status === "none").length} not invited`
     : `${people.length} people · Task AI users`;
-  const manage = canManage(side);
+  const manage = canManage(side), canAdd = canAddPeople(side);
   const maxTotal = Math.max(1, ...state.people.map(x => statsFor(x.id).total));
   return `<section class="team">
     <div class="team-h"><div><h2>${label}</h2><small>${summary}</small></div>
-      ${manage ? `<button type="button" class="btn sm ${ui.addFor === side ? "" : "primary"}" data-addperson="${side}">${ui.addFor === side ? "Cancel" : `<span class="i i-plus" style="width:14px;height:14px"></span>Add person`}</button>` : ""}</div>
+      ${canAdd ? `<button type="button" class="btn sm ${ui.addFor === side ? "" : "primary"}" data-addperson="${side}">${ui.addFor === side ? "Cancel" : `<span class="i i-plus" style="width:14px;height:14px"></span>Add person`}</button>` : ""}</div>
     ${ui.addFor === side ? addPersonForm(side) : ""}
     <div class="plist">${people.map(x => personRow(x, maxTotal)).join("")}</div>
   </section>`;
@@ -1708,7 +1710,7 @@ function loadPeopleOptions(force) {
   fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/people-options`, { credentials: "same-origin" })
     .then(async r => { const data = await r.json().catch(() => ({})); if (ui.peopleOpts !== mine) return; if (!r.ok) mine.err = data.error || "The list of people could not be loaded."; else Object.assign(mine, { users: data.users || [], contacts: data.contacts || [], contactsStatus: data.contactsStatus || "ok" }); })
     .catch(() => { if (ui.peopleOpts === mine) mine.err = "The list of people could not be loaded. Check your connection."; })
-    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor) render(); } });
+    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor || ui.picker) render(); } });
 }
 const onPlan = c => state.people.some(p => (c.email && p.email && p.email.toLowerCase() === c.email.toLowerCase()) || p.name.toLowerCase() === c.name.toLowerCase());
 function rolesDatalist(side) { return `<datalist id="roles-${side}">${roleLabels(side).map(r => `<option value="${esc(r)}"></option>`).join("")}</datalist>`; }
@@ -2231,19 +2233,30 @@ function pickerList(t, key, q) {
   const row = (val, name, sub, side) => `<button type="button" class="pf-opt" role="option" data-pf-pick="${esc(val)}"><span class="avatar av-sm ${side === "buyer" ? "buyer" : ""}">${esc(initials(name))}</span><span class="pf-name">${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></button>`;
   const group = (label, items) => items.length ? `<div class="pf-group">${esc(label)}</div>${items.join("")}` : "";
   const side = sd => state.people.filter(p => p.side === sd && !taken.has(p.id) && hit(p.name, `${p.title} ${p.email || ""} ${p.role || ""}`)).map(p => row(p.id, p.name, p.role || p.title, sd));
-  const others = (canManage("seller") || canManage("buyer")) ? notOnPlan().filter(o => hit(o.name, `${o.email || ""} ${o.title || ""}`)).map(o => row("add:" + o.key, o.name, o.email || o.title, "seller")) : [];
-  const html = group(B(), side("buyer")) + group("iSEEit", side("seller")) + group("Other Task AI users · adds them to the plan", others);
-  return html || `<p class="pf-empty">${q ? `No one matches “${esc(q)}”.` : "Everyone on the plan is already on this task."}</p>`;
+  const others = (canAddPeople("seller") || canAddPeople("buyer")) ? notOnPlan().filter(o => hit(o.name, `${o.email || ""} ${o.title || ""}`)).map(o => row("add:" + o.key, o.name, o.email || o.title, "seller")) : [];
+  // The customer's contacts from Sales AI (their account's contacts) who aren't on the plan yet; picking one adds them to the plan too.
+  const po = ui.peopleOpts && ui.peopleOpts.planId === state.id ? ui.peopleOpts : null;
+  const contacts = po && canAddPeople("buyer") ? po.contacts.map((c, i) => ({ c, i })).filter(({ c }) => !onPlan(c) && hit(c.name, `${c.email || ""} ${c.title || ""}`)).slice(0, 30).map(({ c, i }) => row("addc:" + i, c.name, [c.title, c.email].filter(Boolean).join(" · "), "buyer")) : [];
+  const html = group(B(), side("buyer")) + group("iSEEit", side("seller")) + group(`${B()} contacts from Sales AI · adds them to the plan`, contacts) + group("Other Task AI users · adds them to the plan", others);
+  const note = po && canAddPeople("buyer") ? (po.loading ? "Loading contacts from Sales AI…" : po.err ? po.err : po.contactsStatus === "no_account" ? "This plan has no Sales AI account yet, so its contacts can't be listed." : po.contactsStatus === "unavailable" ? "Sales AI contacts are not available right now." : "") : "";
+  if (!html && note) return `<p class="pf-empty">${q ? `No one matches “${esc(q)}”. ` : ""}${esc(note)}</p>`;
+  return (html + (note && po && po.loading ? `<p class="pf-empty">${esc(note)}</p>` : "")) || `<p class="pf-empty">${q ? `No one matches “${esc(q)}”.` : "Everyone on the plan is already on this task."}</p>`;
 }
 function pickPerson(t, key, val) {
   let id = val;
-  if (val.startsWith("add:")) { id = addUserToPlan(val.slice(4)); if (!id) { toast("Only plan owners can add people to the plan"); return; } toast(`${person(id).name} added to the plan`); }
+  if (val.startsWith("addc:")) {
+    const c = ui.peopleOpts && ui.peopleOpts.contacts[Number(val.slice(5))];
+    if (!c || !canAddPeople("buyer")) { toast("Only people on the iSEEit team can add people to the plan"); return; }
+    id = "p" + (++state.seq);
+    state.people.push({ id, name: c.name, email: c.email || "", title: c.title || "", role: "", side: "buyer", ...(c.contactIds && c.contactIds.length ? { contactIds: c.contactIds } : {}), access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } });
+    log(`added ${c.name} to the ${B()} team`, null); toast(`${c.name} added to the plan`);
+  } else if (val.startsWith("add:")) { id = addUserToPlan(val.slice(4)); if (!id) { toast("Only people on the iSEEit team can add people to the plan"); return; } toast(`${person(id).name} added to the plan`); }
   if (key === "owner") { t.owner = id; t.coworkers = (t.coworkers || []).filter(x => x !== id); log(`assigned “${t.title}” to ${person(id).name}`, t.id); ui.picker = null; }
   else { t[key] = [...(t[key] || []), id]; log(`added ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); ui.picker = { key, q: "" }; }
   save(); render();
 }
 function wirePicker(root, t) {
-  root.querySelectorAll("[data-pf-open]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pfOpen; ui.picker = ui.picker && ui.picker.key === k ? null : { key: k, q: "" }; render(); });
+  root.querySelectorAll("[data-pf-open]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pfOpen; ui.picker = ui.picker && ui.picker.key === k ? null : { key: k, q: "" }; if (ui.picker && IN_APP && !LINK && !state._demo && canAddPeople("buyer")) loadPeopleOptions(); render(); });
   const q = root.querySelector("#pf-q"); if (!q) return;
   const key = ui.picker.key, list = root.querySelector("#pf-list");
   const wireOpts = () => list.querySelectorAll("[data-pf-pick]").forEach(o => o.onclick = e => { e.stopPropagation(); pickPerson(t, key, o.dataset.pfPick); });
@@ -2262,7 +2275,7 @@ function wirePicker(root, t) {
 // picking one adds them to the plan and to the task in one go.
 function notOnPlan() { return SELLER_OPTIONS().filter(o => !state.people.some(p => p.name === o.name || (o.email && p.email === o.email))); }
 function notOnPlanOpts() {
-  if (!canManage("seller") && !canManage("buyer")) return "";
+  if (!canAddPeople("seller") && !canAddPeople("buyer")) return "";
   const list = notOnPlan(); if (!list.length) return "";
   return `<optgroup label="${usingAppUsers() ? "Other Task AI users (adds them to the plan)" : "Other Task AI users, demo examples (adds them to the plan)"}">${list.map(o => `<option value="add:${esc(o.key)}">${esc(o.name)}${o.email ? ` · ${esc(o.email)}` : ""}</option>`).join("")}</optgroup>`;
 }
@@ -2270,8 +2283,8 @@ function notOnPlanOpts() {
 function addUserToPlan(key) {
   const o = SELLER_OPTIONS().find(x => x.key === key); if (!o) return null;
   const buyer = Boolean(state.domain && o.email && o.email.toLowerCase().endsWith("@" + state.domain.toLowerCase()));
-  if (buyer && !canManage("buyer")) return null;
-  if (!buyer && !canManage("seller")) return null;
+  if (buyer && !canAddPeople("buyer")) return null;
+  if (!buyer && !canAddPeople("seller")) return null;
   const side = buyer ? "buyer" : "seller", id = "p" + (++state.seq);
   state.people.push({ id, name: o.name, email: o.email || "", title: (o.title || "Task AI user").replace(" · Task AI user", ""), role: "", side, access: { ...ACCESS_DEFAULTS[side] }, invite: side === "seller" ? { status: "member" } : { status: "none" } });
   log(`added ${o.name} to the ${side === "buyer" ? B() : "iSEEit"} team`, null);
@@ -2471,7 +2484,7 @@ async function openSalesforcePlan() {
 
 // Adds people to one side of the plan, each with a role. Plan owners and administrators only (canManage).
 function addPeopleToPlan(list, side) {
-  if (!canManage(side)) { toast("Only the plan owners can add people"); return; }
+  if (!canAddPeople(side)) { toast("Only people on the iSEEit team can add people"); return; }
   const added = [];
   for (const np of list) {
     if (onPlan(np)) continue;
