@@ -183,6 +183,9 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
 - **Deleting:** deleting a linked task in Close Plan (the confirmation says so) records it in `sfdcDeleted`; the next sync deletes the checkpoint in
   Salesforce (it goes to Salesforce's recycle bin) and does not pull it back meanwhile. A checkpoint deleted in Salesforce removes the task here
   (with its subtasks); one that merely left the close plan (no phase) is only unlinked. Failed deletes stay pending.
+- **Task phase:** the phase a task sits in (`iseeit__Current_Phase__c`) syncs both ways with the same rule (`sfdcSeen.phase`): moved only in
+  Close Plan → written; moved only in Salesforce → the task (with its subtasks) moves here; both → the plan wins. A task moved into a phase that
+  is created in the same sync follows it there. Tasks that were moved here before this existed are written to their plan phase at the next sync.
 - **Header:** the plan name can be renamed by the plan owner and admins (click it), and a milestone can be marked "Counts as" Target signature or
   Target go-live, which feed the two dates in the plan header and PDF (before, only template tasks carried them).
 - **Not yet:** subtasks (Salesforce `Task`), deleting phases in Salesforce
