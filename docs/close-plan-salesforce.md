@@ -178,6 +178,8 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
   follows (subtasks move with their task); the plan reordered → the values are written; both → the plan wins.
 - **Contacts:** a Sales AI contact carries its ids; one starting with `003` is used as the Salesforce contact id, otherwise the
   email is looked up in Contact.
-- **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
+- **New phases:** a phase added in the plan is created as `iseeit__Current_Phase__c` (title, dates, order = its position); its tasks follow in
+  the same sync and the other phases are renumbered so the order values stay unique. Held back on the first sync, like tasks.
+- **Not yet:** subtasks (Salesforce `Task`), deleting checkpoints in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
   checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.
