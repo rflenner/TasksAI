@@ -28,10 +28,10 @@ export async function POST(request: Request) {
     .where(and(isNull(closePlanDocuments.deletedAt), or(sql`${closePlanDocuments.data}->'sfdc'->>'opportunityId' = ${opportunityId}`, sql`${closePlanDocuments.data}->>'sfdcOpportunityId' = ${opportunityId}`))).limit(1);
   if (existing) return Response.json({ id: existing.id, existing: true });
 
-  let opp: { Name: string | null; Account?: { Name?: string | null } | null } | undefined, phases: SfPhaseRow[], rows: SfCheckpointRow[];
+  let opp: { Name: string | null; AccountId?: string | null; Account?: { Name?: string | null } | null } | undefined, phases: SfPhaseRow[], rows: SfCheckpointRow[];
   try {
     [[opp], phases, rows] = await Promise.all([
-      query<NonNullable<typeof opp>>(`SELECT Name, Account.Name FROM Opportunity WHERE Id = '${opportunityId}'`),
+      query<NonNullable<typeof opp>>(`SELECT Name, AccountId, Account.Name FROM Opportunity WHERE Id = '${opportunityId}'`),
       query<SfPhaseRow>(phaseQuery(opportunityId)), query<SfCheckpointRow>(checkpointQuery(opportunityId)),
     ]);
   } catch (error) {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   const me = "u" + actor.id, account = opp.Account?.Name || opp.Name || "Salesforce opportunity";
   const skeleton: SyncPlan & Record<string, unknown> = {
-    id: "pl" + Date.now(), account, domain: "", status: "draft", title: `${account} close plan`, accountId: null, sfdcOpportunityId: opportunityId,
+    id: "pl" + Date.now(), account, domain: "", status: "draft", title: `${account} close plan`, accountId: opp.AccountId || null, sfdcOpportunityId: opportunityId,
     opp: { name: opp.Name || "", stage: "", amount: null }, phases: [], tasks: [],
     people: [{ id: me, name: actor.name, email: actor.email, title: "Task AI user", side: "seller", role: "Account lead", access: { level: "all", create: true, manage: false }, invite: { status: "member" } }],
     planOwners: { seller: me, buyer: null }, activity: [], seq: 1000, setup: { dates: false, internal: false, hidden: false },

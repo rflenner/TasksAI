@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
-import { applySalesforceIds, checkpointQuery, commit, idLookupQueries, phaseQuery, syncPlan, type SfCheckpointRow, type SfPhaseRow, type SyncPlan } from "../../../../../lib/close-plan-sfdc-sync";
+import { addOwnerPeople, applySalesforceIds, checkpointQuery, commit, idLookupQueries, ownerLookupQueries, unknownOwnerIds, phaseQuery, syncPlan, type SfCheckpointRow, type SfPhaseRow, type SyncPlan } from "../../../../../lib/close-plan-sfdc-sync";
 import { isOpportunityId } from "../../../../../lib/salesforce-opportunity-search";
 import { canAccessPlan, canDeletePlan, memberEmails } from "../../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../../lib/request";
@@ -40,6 +40,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   if (!phases.length) return Response.json({ error: "That opportunity has no close plan in Salesforce yet" }, { status: 404 });
 
+  // Owners added in Salesforce who aren't on the plan yet become people on it; the plan remembers its account so Sales AI contacts can be added.
+  try {
+    const q = ownerLookupQueries(unknownOwnerIds(data, rows));
+    addOwnerPeople(data, q.users ? await query<{ Id: string; Name: string; Email: string }>(q.users) : [], q.contacts ? await query<{ Id: string; Name: string; Email: string; Title: string }>(q.contacts) : []);
+    if (!data.accountId) { const [o] = await query<{ AccountId: string | null }>(`SELECT AccountId FROM Opportunity WHERE Id = '${opportunityId}'`); if (o?.AccountId) data.accountId = o.AccountId; }
+  } catch (error) { console.error("Close Plan owner people lookup failed:", error instanceof Error ? error.message : error); }
   // Look up Salesforce ids for the people on the plan (by email), so owners can be written.
   const lookups = idLookupQueries(data.people);
   try { applySalesforceIds(data, lookups.users ? await query<{ Id: string; Email: string }>(lookups.users) : [], lookups.contacts ? await query<{ Id: string; Email: string }>(lookups.contacts) : []); }
@@ -50,6 +56,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const updated = new Set<string>(), created = new Map<string, string>(), failed: string[] = [];
   try {
+    for (const part of chunks(outcome.phaseUpdates)) {
+      const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: part.map(u => ({ attributes: { type: "iseeit__Current_Phase__c" }, id: u.sfdcId, ...u.fields })) } });
+      part.forEach((u, i) => { if (results[i]?.success) updated.add(u.phaseId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected a phase change"); });
+    }
     for (const part of chunks(outcome.updates)) {
       const results = await salesforceApi<WriteResult>("/composite/sobjects", { method: "PATCH", body: { allOrNone: false, records: sobjects(part.map(u => ({ id: u.sfdcId, ...u.fields }))) } });
       part.forEach((u, i) => { if (results[i]?.success) updated.add(u.taskId); else failed.push(results[i]?.errors?.map(e => e.message).join("; ") || "Salesforce rejected an update"); });
