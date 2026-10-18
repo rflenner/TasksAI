@@ -16,7 +16,7 @@ export type SfCheckpointRow = {
   iseeit__Phase_Checkpoint_Owner__c?: string | null; iseeit__Checklist_Description__c?: string | null; iseeit__Checkpoint_N_A__c?: boolean | null;
 };
 
-type Person = { id: string; name?: string; email?: string; title?: string; side?: string; role?: string; access?: object; invite?: object; sfdcUserId?: string; sfdcContactId?: string };
+type Person = { id: string; name?: string; email?: string; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
 type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string };
 export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string };
 type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcSkip?: boolean; [k: string]: unknown };
@@ -185,8 +185,9 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     const phase = plan.phases.find(p => p.id === task.phase);
     if (!phase?.sfdcId) { out.skipped.push(`“${task.title}”: its phase isn't in Salesforce`); continue; }
     if (first && !opts.sendUnlinked) { out.unlinked++; continue; }
-    const seen: Seen = { title: task.title, desc: task.desc || "", status: task.status, due: dateOf(task.due), shared: task.shared !== false, owners: "" };
-    out.creates.push({ taskId: task.id, fields: { ...fieldsFor(seen), iseeit__Current_Phase__c: phase.sfdcId, iseeit__Is_From_Close_Plan__c: true }, seen });
+    const owners = ownersOf(task), seen: Seen = { title: task.title, desc: task.desc || "", status: task.status, due: dateOf(task.due), shared: task.shared !== false, owners: owners || "", planOwners: owners };
+    const ownerFields: SfFields = owners ? { iseeit__Phase_Checkpoint_Owner__c: owners, iseeit__Checkpoint_Phase_Owner_Description__c: [task.owner, ...(task.coworkers || [])].map(id => plan.people.find(p => p.id === id)?.name || "").join(" | ") } : {};
+    out.creates.push({ taskId: task.id, fields: { ...fieldsFor(seen), ...ownerFields, iseeit__Current_Phase__c: phase.sfdcId, iseeit__Is_From_Close_Plan__c: true }, seen });
     out.pushed.push(`new “${task.title}”`);
   }
 
@@ -203,4 +204,28 @@ export function commit(outcome: SyncOutcome, opportunityId: string, written: { u
   if (!plan.sfdc?.syncedAt) for (const t of plan.tasks) if (!t.sfdcId && !t.parent) t.sfdcSkip = true;
   plan.sfdc = { ...plan.sfdc, opportunityId, syncedAt: now.toISOString() };
   return plan;
+}
+
+// People on a plan carry Salesforce ids only once they are looked up: iSEEit people by email in User, customer contacts
+// by email in Contact. Without an id a person can't be written as a checkpoint owner.
+const soqlString = (v: string) => `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+const emailOf = (p: Person) => (p.email || "").trim().toLowerCase();
+export function idLookupQueries(people: Person[]): { users: string | null; contacts: string | null } {
+  const need = (side: string) => [...new Set(people.filter(p => p.side === side && !p.sfdcUserId && !p.sfdcContactId && /^[^\s@']+@[^\s@']+$/.test(emailOf(p))).map(emailOf))].slice(0, 50);
+  const list = (emails: string[]) => emails.map(soqlString).join(",");
+  const sellers = need("seller"), buyers = need("buyer");
+  return {
+    users: sellers.length ? `SELECT Id, Email FROM User WHERE IsActive = true AND Email IN (${list(sellers)})` : null,
+    contacts: buyers.length ? `SELECT Id, Email FROM Contact WHERE Email IN (${list(buyers)})` : null,
+  };
+}
+export function applySalesforceIds(plan: SyncPlan, users: Array<{ Id: string; Email?: string | null }>, contacts: Array<{ Id: string; Email?: string | null }>): void {
+  const first = (rows: Array<{ Id: string; Email?: string | null }>) => { const m = new Map<string, string>(); for (const r of rows) { const e = (r.Email || "").toLowerCase(); if (e && !m.has(e)) m.set(e, r.Id); } return m; };
+  const byUser = first(users), byContact = first(contacts);
+  for (const p of plan.people) {
+    if (p.sfdcUserId || p.sfdcContactId) continue;
+    const e = emailOf(p);
+    if (p.side === "seller" && byUser.has(e)) p.sfdcUserId = byUser.get(e);
+    else if (p.side === "buyer" && byContact.has(e)) p.sfdcContactId = byContact.get(e);
+  }
 }
