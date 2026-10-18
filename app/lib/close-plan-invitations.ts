@@ -23,7 +23,7 @@ export function waitingTasks(data: Obj, personId: string, today = new Date().toI
   return tasks
     .filter(t => t.status !== "Closed" && isShared(t, tasks) && (t.owner === personId || strs(t.coworkers).includes(personId)))
     .sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")))
-    .map(t => ({ title: String(t.title || ""), due: typeof t.due === "string" ? t.due : null, overdue: typeof t.due === "string" && t.due < today }));
+    .map(t => ({ title: String(t.title || ""), due: typeof t.due === "string" ? t.due : null, overdue: typeof t.due === "string" && t.due < today, description: typeof t.desc === "string" ? t.desc.slice(0, 400) : undefined, status: typeof t.status === "string" ? t.status : undefined }));
 }
 
 // The invitation reminder: only for a link nobody has opened, after the configured days since the last email, at most

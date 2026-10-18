@@ -10,7 +10,7 @@ test("the invitation email has the link, what the person can do, their open task
   assert.ok(m.html.includes("https://x.test/p/abc") && m.html.includes("https://x.test/unsubscribe/t"));
   assert.ok(!m.html.includes("<script>"), "names are escaped");
   assert.match(m.html, /Sign off scope/);
-  assert.match(m.html, /overdue/);
+  assert.match(m.html, /Overdue/);
   assert.match(m.text, /Open the plan: https:\/\/x\.test\/p\/abc/);
   assert.match(m.text, /Stop these emails: https:\/\/x\.test\/unsubscribe\/t/);
   assert.ok(m.text.includes("Close and edit the tasks you own"));
