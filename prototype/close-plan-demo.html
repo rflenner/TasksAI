@@ -1004,7 +1004,7 @@ function freshStore() { return { plans: [seed()], current: "meridian" }; }
 let store = IN_APP ? { plans: [], current: null } : (load() || freshStore());
 let state = IN_APP ? null : (store.plans.find(x => x.id === store.current) || store.plans[0]);
 const B = () => (state && state.account) || "Customer";
-function switchPlan(id) { if (voice.open) voiceClose(); state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); }
+function switchPlan(id) { if (voice.open) voiceClose(); state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); sfAutoSoon(500); }
 let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null };
 try { const t = localStorage.getItem(STORE_KEY + ":tab"); if (t === "plan" || t === "people") ui.tab = t; } catch (e) {}
 try { const m = localStorage.getItem(STORE_KEY + ":mode"); if (m === "buyer" || m === "seller") ui.mode = m; } catch (e) {}
@@ -1096,6 +1096,7 @@ function render() {
   renderDrawer();
   growAll();
   renderVoice();
+  renderSfImport();
 }
 
 function sellerShell() {
@@ -1112,6 +1113,7 @@ function sellerShell() {
         <div class="nav-children">
           ${store.plans.map(pl => `<button type="button" class="${state && pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span>${esc(pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
           ${!APP_ME || APP_ME.canCreate ? `<button type="button" class="${ui.wizard ? "current" : ""}" data-newplan><span>+ New close plan</span></button>` : ""}
+          ${IN_APP && APP_ME && APP_ME.canCreate && !(state && state._demo) ? `<button type="button" data-sfimport><span>⇩ Import from Salesforce</span></button>` : ""}
         </div>
       </nav>
       <div class="side-foot"><span class="avatar" style="width:32px;height:32px;font-size:11px">${esc(initials(myName()))}</span><div><b>${esc(myName())}</b>${APP_ME ? esc({ site_admin: "Site Admin", area_admin: "Area Admin", collaborator: "Collaborator", readonly: "Read-only" }[APP_ME.role] || "") : "Site admin"}</div></div>
@@ -1199,6 +1201,75 @@ function titleBlock() {
 // Deleting a whole plan (e.g. a demo draft): the iSEEit plan owner or an administrator (Site or Area Admin in
 // Task AI), and only after a second confirmation. The server checks the same rule.
 function canDeleteThisPlan() { return me() === state.planOwners.seller || Boolean(APP_ME && (APP_ME.role === "site_admin" || APP_ME.role === "area_admin")); }
+// Admins: create a plan from an opportunity's close plan in Salesforce (search by name, then import).
+function renderSfImport() {
+  let root = document.getElementById("sfimport-root");
+  if (!ui.sfimport) { if (root) root.remove(); return; }
+  if (!root) { root = document.createElement("div"); root.id = "sfimport-root"; document.body.appendChild(root); }
+  const q = ui.sfimport;
+  root.innerHTML = `<div style="position:fixed;inset:0;background:rgba(30,40,55,.35);z-index:60;display:flex;align-items:flex-start;justify-content:center;padding-top:10vh" data-sfimport-close>
+    <div class="sf-box" style="margin:0;max-width:560px;width:calc(100% - 32px);background:#fff;border-radius:10px" role="dialog" aria-label="Import from Salesforce" onclick="event.stopPropagation()">
+      <b>Import a close plan from Salesforce</b><p>Search for the opportunity. Its phases and checkpoints become a new plan that stays in sync with Salesforce.</p>
+      <p><input type="text" id="sfimport-q" placeholder="Opportunity or account name" value="${esc(q.text || "")}" autocomplete="off" style="width:100%;box-sizing:border-box"></p>
+      ${q.busy ? "<p>Working…</p>" : q.hits ? (q.hits.length ? `<ul style="list-style:none;padding:0">${q.hits.map(h => `<li style="margin:4px 0"><button type="button" class="btn sm" style="width:100%;text-align:left" data-sfimport-pick="${esc(h.id)}"><b>${esc(h.name)}</b> · ${esc(h.account)} · ${esc(h.stage)}</button></li>`).join("")}</ul>` : "<p>No opportunities found.</p>") : ""}
+      ${q.error ? `<p style="color:#a8402f"><b>${esc(q.error)}</b></p>` : ""}
+      <div class="pe-actions"><button type="button" class="btn sm" data-sfimport-close>Cancel</button></div></div></div>`;
+  root.querySelectorAll("[data-sfimport-close]").forEach(b => b.onclick = () => { ui.sfimport = null; renderSfImport(); });
+  const input = root.querySelector("#sfimport-q"), refocus = () => { const el = document.getElementById("sfimport-q"); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } };
+  input.oninput = () => {
+    q.text = input.value; clearTimeout(q.timer);
+    q.timer = setTimeout(async () => {
+      if (q.text.trim().length < 2) { q.hits = null; q.error = null; renderSfImport(); return refocus(); }
+      try {
+        const r = await fetch("/api/playground/opportunities?q=" + encodeURIComponent(q.text), { credentials: "same-origin" }), res = await r.json().catch(() => ({}));
+        q.error = r.ok ? null : (res.error || "Salesforce search failed"); q.hits = r.ok ? res.opportunities : null;
+      } catch (e) { q.error = "Salesforce could not be reached."; }
+      renderSfImport(); refocus();
+    }, 350);
+  };
+  refocus();
+  root.querySelectorAll("[data-sfimport-pick]").forEach(b => b.onclick = async () => {
+    q.busy = true; q.error = null; renderSfImport();
+    try {
+      const r = await fetch("/api/close-plans/store/import-salesforce", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId: b.dataset.sfimportPick }) });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) { q.busy = false; q.error = res.error || "The import failed"; return renderSfImport(); }
+      const list = await (await fetch("/api/close-plans/store", { credentials: "same-origin" })).json();
+      store.plans = list.plans.map(p => ({ ...p.data, _v: p.version }));
+      ui.sfimport = null; switchPlan(res.id);
+      toast(res.existing ? "That opportunity already has a plan. Opened it." : `Imported ${res.phases} phases and ${res.tasks} tasks from Salesforce.`);
+    } catch (e) { q.busy = false; q.error = "The import failed. Check your connection."; renderSfImport(); }
+  });
+}
+// Plans that have synced once stay in sync by themselves (plan owner and admins): Salesforce is checked when the plan
+// is opened, and what changed here is written back a few seconds after each save. Close Plan wins on conflicts.
+const sfAuto = { busy: false, timer: null, last: 0 };
+function sfAutoEligible() { return IN_APP && state && !state._demo && !LINK && state.sfdc && state.sfdc.syncedAt && canDeleteThisPlan(); }
+function sfAutoSoon(ms = 3000) { clearTimeout(sfAuto.timer); if (sfAutoEligible()) sfAuto.timer = setTimeout(sfAutoRun, ms); }
+async function sfAutoRun() {
+  if (sfAuto.busy || !sfAutoEligible() || ui.sfsync) return;
+  sfAuto.busy = true;
+  const id = state.id;
+  try {
+    await flushPlanSave();
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(id)}/sfdc-sync`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "apply" }) });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok || !res.plan || !state || state.id !== id) return;
+    const fresh = { ...res.plan.data, _v: res.plan.version };
+    if (sync.dirty[id] || sync.inflight[id] || sync.timers[id]) {
+      // Edited meanwhile: keep the local edits, take the new version number, and remember which tasks now exist in Salesforce.
+      for (const t of fresh.tasks) { const mine = state.tasks.find(x => x.id === t.id); if (mine && !mine.sfdcId && t.sfdcId) { mine.sfdcId = t.sfdcId; mine.sfdcSeen = t.sfdcSeen; } }
+      for (const ph of fresh.phases) { const mine = state.phases.find(x => x.id === ph.id); if (mine && !mine.sfdcId && ph.sfdcId) mine.sfdcId = ph.sfdcId; }
+      state.sfdc = fresh.sfdc; state._v = fresh._v;
+    } else {
+      store.plans = store.plans.map(p => p.id === id ? fresh : p); state = fresh;
+      const open = ui.open; ui.open = state.tasks.some(t => t.id === open) ? open : null; render();
+      if (res.pulled && res.pulled.length) toast(`Brought ${res.pulled.length} change${res.pulled.length > 1 ? "s" : ""} in from Salesforce.`);
+    }
+    if (res.failed && res.failed.length) toast(`Salesforce refused ${res.failed.length} change${res.failed.length > 1 ? "s" : ""}: ${res.failed[0]}`);
+  } catch (e) { /* offline or Salesforce busy: the next save or open tries again */ }
+  finally { sfAuto.busy = false; }
+}
 function sfSyncBox() {
   const q = ui.sfsync, d = q.data, list = (a, n = 8) => a.length ? `<ul>${a.slice(0, n).map(x => `<li>${esc(x)}</li>`).join("")}${a.length > n ? `<li>and ${a.length - n} more</li>` : ""}</ul>` : "";
   let body = "";
@@ -2440,6 +2511,7 @@ function wirePage() {
   app.querySelectorAll("[data-report]").forEach(b => b.onclick = openReport);
   app.querySelectorAll("[data-sfplay]").forEach(b => b.onclick = openSalesforcePlan);
   app.querySelectorAll("[data-vx-title]").forEach(b => b.onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); });
+  app.querySelectorAll("[data-sfimport]").forEach(b => b.onclick = () => { ui.sfimport = { text: "" }; renderSfImport(); });
   app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "" }; render(); });
   app.querySelectorAll("[data-sfsync-close]").forEach(b => b.onclick = () => { ui.sfsync = null; render(); });
   app.querySelectorAll("[data-sfsync-preview]").forEach(b => b.onclick = () => sfSyncRun("preview"));
@@ -3109,7 +3181,7 @@ async function pushPlan(plan) {
   try {
     const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: plan._v || 0, data: cleanPlan(plan) }) });
     const res = await r.json().catch(() => ({}));
-    if (r.ok) { plan._v = res.version; setSaveState("Saved"); }
+    if (r.ok) { plan._v = res.version; setSaveState("Saved"); if (state && state.id === plan.id) sfAutoSoon(); }
     else if (r.status === 409 && res.plan) {
       const fresh = { ...res.plan.data, _v: res.plan.version };
       store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
@@ -3139,6 +3211,7 @@ async function bootFromServer() {
     let uploaded = []; try { uploaded = JSON.parse(localStorage.getItem(STORE_KEY + ":uploaded") || "[]"); } catch (e) {}
     ui.uploadOffer = ((load() || {}).plans || []).filter(p => /^pl\d/.test(p.id) && !serverIds.has(p.id) && !uploaded.includes(p.id));
     if (state) ui.viewer = state.planOwners.buyer || ui.viewer;
+    setTimeout(() => sfAutoSoon(800), 0);
   } catch (e) { ui.loadError = true; }
   ui.loading = false; render();
   setInterval(pollStore, 30000);

@@ -59,7 +59,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     console.error("Close Plan Salesforce write failed:", error instanceof Error ? error.message : error);
     failed.push("Salesforce stopped answering part-way");
   }
+  const first = !data.sfdc?.syncedAt;
   const next = commit(outcome, opportunityId, { updated, created });
+  // An automatic sync that changed nothing must not bump the version (it would make every open page's next save conflict).
+  const stable = (d: SyncPlan) => JSON.stringify({ ...d, sfdc: { ...d.sfdc, syncedAt: null } });
+  if (!first && !failed.length && stable(next) === stable(data)) return Response.json({ applied: true, unchanged: true, ...summary, written: { updated: 0, created: 0 }, failed });
   const [saved] = await getDb().update(closePlanDocuments)
     .set({ data: next, memberEmails: memberEmails(next), version: row.version + 1, updatedBy: actor.id, updatedAt: new Date() })
     .where(and(eq(closePlanDocuments.id, id), eq(closePlanDocuments.version, row.version), isNull(closePlanDocuments.deletedAt))).returning();

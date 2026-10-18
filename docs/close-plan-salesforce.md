@@ -159,6 +159,12 @@ on Habilelabs' `salesforceApi` (the OAuth connection under Integrations).
 - **New:** Salesforce checkpoints the plan lacks become tasks; new plan tasks become `iseeit__TO_DO__c`
   with `Is_From_Close_Plan__c = true`. On the first sync, tasks that exist only in the plan are held back
   unless "Also create…" is ticked, and are then marked `sfdcSkip` so later syncs leave them alone.
+- **Import:** sidebar → **Import from Salesforce** (admins who can create plans). Search the opportunity by name; its
+  phases and checkpoints become a new draft plan, linked and already synced once. `POST /api/close-plans/store/import-salesforce`
+  reads Salesforce only. An opportunity that already has a plan opens that plan instead of creating a second one.
+- **Automatic:** a plan that has synced once (owner and admins) checks Salesforce when it is opened and writes its
+  changes back about 3 seconds after each save (`sfAutoRun` in the page). A sync that changes nothing saves no new version.
+  If the user edited while it ran, their edits are kept and only the Salesforce ids and snapshots are taken over.
 - **Not yet:** subtasks (Salesforce `Task`), creating phases in Salesforce, deleting checkpoints in Salesforce
   (a checkpoint deleted there only unlinks the task here), a scheduled/automatic sync. Whether API-created
   checkpoints show in the iSEEit view/PDF is still to be checked on a test opportunity.

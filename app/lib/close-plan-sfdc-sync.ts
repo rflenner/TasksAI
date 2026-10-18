@@ -16,14 +16,14 @@ export type SfCheckpointRow = {
   iseeit__Phase_Checkpoint_Owner__c?: string | null; iseeit__Checklist_Description__c?: string | null; iseeit__Checkpoint_N_A__c?: boolean | null;
 };
 
-type Person = { id: string; name?: string; sfdcUserId?: string; sfdcContactId?: string };
+type Person = { id: string; name?: string; email?: string; title?: string; side?: string; role?: string; access?: object; invite?: object; sfdcUserId?: string; sfdcContactId?: string };
 type Phase = { id: string; name?: string; goal?: string; start?: string; end?: string; sfdcId?: string };
 export type Seen = { title: string; desc: string; status: string; due: string | null; shared: boolean; owners: string; planOwners?: string };
 type Task = { id: string; phase: string; parent: string | null; title: string; desc?: string; owner: string; coworkers?: string[]; due?: string; status: string; shared: boolean; sfdcId?: string; sfdcSeen?: Seen; sfdcSkip?: boolean; [k: string]: unknown };
 export type SyncPlan = {
   people: Person[]; phases: Phase[]; tasks: Task[]; seq?: number;
   activity?: { at: string; by: string; text: string; task: string | null }[];
-  planOwners?: { seller?: string | null };
+  planOwners?: { seller?: string | null; buyer?: string | null };
   sfdc?: { opportunityId?: string; syncedAt?: string };
   [k: string]: unknown;
 };
