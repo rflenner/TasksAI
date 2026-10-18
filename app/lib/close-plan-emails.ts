@@ -11,6 +11,10 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 // 2026-10-30 → 30 Oct 2026
 export const niceDate = (d?: string | null) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ""); return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : d || undefined; };
 
+// The header of every Close Plan email: the iSEEit mark, then "Mutual Closeplan". A text wordmark until the logo file is
+// added (then this becomes an <img> of the hosted logo).
+const HEADER = `<span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">iSEEit</span> <span style="display:inline-block;margin-left:10px;padding-left:12px;border-left:2px solid #d5dce6;font-size:18px;font-weight:700;color:#5c6b7d;vertical-align:middle">Mutual Closeplan</span>`;
+
 const eyebrow = (t: string) => `<div style="font-size:11px;letter-spacing:1.4px;font-weight:800;color:#173f76">${esc(t)}</div>`;
 const heading = (t: string) => `<h1 style="margin:10px 0;color:#102f59;font-size:27px;line-height:1.25">${esc(t)}</h1>`;
 const para = (html: string) => `<p style="color:#687384;font-size:15px;line-height:1.6;margin:10px 0 0">${html}</p>`;
@@ -40,7 +44,7 @@ export function renderInvitation(input: { firstName: string; fromName: string; p
     : `${input.fromName} from iSEEit invited you to the shared plan for ${input.planTitle}. It shows every step to signature and go-live, who owns what, and when it's due.`;
   const html = emailShell(`${eyebrow(input.reminder ? "REMINDER" : "YOU’RE INVITED")}${heading(`Hello ${input.firstName}, ${input.reminder ? "your shared plan is waiting." : "your shared plan is ready."}`)}${para(esc(introText).replace(esc(input.planTitle), `<b>${esc(input.planTitle)}</b>`))}
 ${canBox(input.can)}${cards(shown, input.planTitle, input.url)}${more > 0 ? `<p style="margin:2px 0 0;color:#9299a3;font-size:12px">+${more} more in the plan.</p>` : ""}
-${button(input.url, "Open the plan")}${small("This link is personal to you, so please don't forward it. No password needed. You'll get at most one email a week about this plan.")}`, footer(input.unsubscribeUrl));
+${button(input.url, "Open the plan")}${small("This link is personal to you, so please don't forward it. No password needed. You'll get at most one email a week about this plan.")}`, footer(input.unsubscribeUrl), HEADER);
   return {
     subject: input.reminder ? `Reminder: your ${input.planTitle} plan is waiting` : `${input.fromName} invited you to the ${input.planTitle} plan`,
     html,
@@ -52,7 +56,7 @@ export function renderAddedToPlan(input: { firstName: string; byName: string; pl
   const roleText = input.role ? ` as ${input.role}` : "";
   return {
     subject: `${input.byName} added you to the ${input.planTitle} close plan`,
-    html: emailShell(`${eyebrow("ADDED TO A PLAN")}${heading(`Hello ${input.firstName}, you're on the ${input.planTitle} close plan.`)}${para(`${esc(input.byName)} added you${esc(roleText)}. You can see every task, who owns it and when it's due, and work on your own.`)}${button(input.url, "Open the close plan")}`, footer(input.unsubscribeUrl)),
+    html: emailShell(`${eyebrow("ADDED TO A PLAN")}${heading(`Hello ${input.firstName}, you're on the ${input.planTitle} close plan.`)}${para(`${esc(input.byName)} added you${esc(roleText)}. You can see every task, who owns it and when it's due, and work on your own.`)}${button(input.url, "Open the close plan")}`, footer(input.unsubscribeUrl), HEADER),
     text: `Hello ${input.firstName},\n\n${input.byName} added you to the close plan ${input.planTitle}${roleText}. You can see every task, who owns it and when it's due, and work on your own.\n\nOpen the close plan: ${input.url}\n\nStop these emails: ${input.unsubscribeUrl}`,
   };
 }

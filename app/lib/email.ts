@@ -340,7 +340,7 @@ export async function sendWithResend(message: { to: string; cc?: string; subject
 // The Task AI email frame (white card on grey, the "Task AI" mark on top, responsive rules for the task cards), for emails that
 // bring their own content: `inner` goes below the header, `footer` is small print under the card. Close Plan emails use it
 // (app/lib/close-plan-emails.ts) so they look like the rest of Task AI's email.
-export function emailShell(inner: string, footer: string) {
+export function emailShell(inner: string, footer: string, header?: string) {
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><style>
     @media screen and (max-width:480px){
       .tai-outer{padding:20px 8px !important}
@@ -350,5 +350,5 @@ export function emailShell(inner: string, footer: string) {
       .tai-desc-full{display:none !important}
       .tai-desc-short{display:inline !important}
     }
-  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef"><span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span></td></tr><tr><td class="tai-inner" style="padding:38px 34px">${inner}</td></tr></table><p style="max-width:600px;margin:16px 0 0;color:#9299a3;font-size:11px;line-height:1.6">${footer}</p></td></tr></table></body></html>`;
+  </style></head><body style="margin:0;background:#f5f7fa;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" class="tai-outer" style="padding:40px 16px"><table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:16px"><tr><td class="tai-inner" style="padding:28px 34px;border-bottom:1px solid #e7ebef">${header ?? `<span style="font-size:28px;font-weight:800;color:#173f76;vertical-align:middle">Task</span> <span style="display:inline-block;padding:5px 6px;border-radius:5px;background:#ffa614;color:#fff;font-size:18px;font-weight:800;line-height:1;vertical-align:middle">AI</span>`}</td></tr><tr><td class="tai-inner" style="padding:38px 34px">${inner}</td></tr></table><p style="max-width:600px;margin:16px 0 0;color:#9299a3;font-size:11px;line-height:1.6">${footer}</p></td></tr></table></body></html>`;
 }
