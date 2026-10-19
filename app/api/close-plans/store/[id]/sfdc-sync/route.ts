@@ -2,6 +2,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
 import { addOwnerPeople, applySalesforceIds, checkpointQuery, commit, idLookupQueries, ownerLookupQueries, unknownOwnerIds, phaseQuery, syncPlan, type SfCheckpointRow, type SfPhaseRow, type SyncPlan } from "../../../../../lib/close-plan-sfdc-sync";
+import { notifyAssignments } from "../../../../../lib/close-plan-assignments";
+import { appBase } from "../../../../../lib/close-plan-invitations";
 import { isOpportunityId } from "../../../../../lib/salesforce-opportunity-search";
 import { isSalesforceId } from "../../../../../lib/salesforce-checkpoints";
 import { canAccessPlan, canDeletePlan, memberEmails } from "../../../../../lib/close-plan-store";
@@ -101,5 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .set({ data: next, memberEmails: memberEmails(next), version: row.version + 1, updatedBy: actor.id, updatedAt: new Date() })
     .where(and(eq(closePlanDocuments.id, id), eq(closePlanDocuments.version, row.version), isNull(closePlanDocuments.deletedAt))).returning();
   if (!saved) return Response.json({ error: "Someone changed the plan while it was syncing. Run the sync again.", ...summary }, { status: 409 });
+  // Owners changed in Salesforce are announced like any other change (Admin → Notifications decides).
+  void notifyAssignments({ plan: { id, title: row.title, oldData: data as Record<string, unknown>, newData: saved.data as Record<string, unknown> }, byName: "Salesforce", actorEmail: null, source: "salesforce", baseUrl: appBase() });
   return Response.json({ applied: true, ...summary, written: { updated: updated.size, created: created.size }, failed, plan: { id, version: saved.version, updatedAt: saved.updatedAt.toISOString(), data: saved.data } });
 }
