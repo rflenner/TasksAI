@@ -646,3 +646,14 @@ sync saved first, or a colleague edited), the page no longer drops the person's 
 deleted and reordered items) on top of the newer version, keeps what only the server changed (sync fields, other people's edits) and saves again, up to
 three times. Without a remembered base it falls back to showing the newer version with "please redo your last change". Found when a rename on an
 imported plan kept reverting.
+
+### Demo content and roles after creation (2026-10-19)
+
+- **Roles after the plan exists:** People tab → person → "Role on this plan" now offers the standard roles (Executive sponsor, Project lead, Technical lead,
+  IT security, Procurement, Legal, End-user representative for the customer; Account lead, Solutions engineer, Customer success, Project manager for iSEEit)
+  and still accepts any text.
+- **Fill with demo content (Site Admins):** Plan options → "Fill with demo content" (`public/close-plan-demo-content.js`, tested in
+  `tests/close-plan-demo-content.test.ts`). Shows what it will do, then gives every person without a role one (from their job title, else the next unused
+  default for their side; "Replace roles that are already set" overrides) and 2-3 realistic tasks each, spread over the phases with dates inside them:
+  closed, in progress and open tasks, exactly one overdue, a milestone, an internal task, status updates and requesters. Running it again adds no
+  duplicates. **Made-up names:** "Give the customer's people made-up names and addresses" (on by default) replaces their names and addresses (so nobody real is ever emailed from a demo plan), drops their Sales AI/Salesforce contact ids, and swaps the old names in task titles, descriptions, status updates and the activity; "Also give the iSEEit people made-up names" renames them but keeps their addresses (those decide who can open the plan). **Hang all dates on today** (on by default, `anchorPlanDates`): phases, deadlines, milestones, status updates and activity move together by one shift so that today sits at the 45th percentile of the task dates (about as much behind as ahead), and statuses follow the dates: past tasks closed except 1-3 left open and overdue, the next week in progress or open, the rest open; the anchor date is kept in `plan.demo.anchor`. Plan options → "Reset demo dates to today" (site admins, once a plan has an anchor) repeats it with the days since the anchor, so the same picture holds on any day. **Tidy dates** (only when the above is off): open tasks that are overdue move into the coming weeks, oldest first two days apart, except one that stays overdue (so "Next up" is not a wall of red while the screen still shows what overdue looks like). For demo plans: on a plan synced with Salesforce it warns that the tasks would be created there too.
