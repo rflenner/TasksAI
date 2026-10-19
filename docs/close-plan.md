@@ -617,3 +617,14 @@ plan" and assignment notices, overdue reminders and the Monday email for plan ta
 - **Do not email:** People tab → person → "Don't email …" sets `noEmail` on that person; every sender skips them. The Admin exclusion list and the
   unsubscribe link do the same by email address.
 - Every send is logged in `close_plan_email_log` (migration 0027): reminders, the weekly cap and de-duplication read it.
+
+### Link preview and a custom address (2026-10-19)
+
+- **What a pasted link shows:** the page title and link preview of `/p/<token>` is "<Account> × iSEEit · Mutual Closeplan" with the iSEEit logo
+  (`public/iseeit-logo-512.png`) and a short description (Open Graph tags in `closePlanPageHtml`); `/close-plans` says "Mutual Closeplan". Mail programs
+  and chat apps cache previews, so a link that was shared before shows the old text for a while.
+- **Custom address (closeplan.iseeit.ai):** add it as a custom domain on the `tasks-ai` web service in Render (DNS: a CNAME `closeplan` →
+  `tasks-ai.onrender.com`), then set `APP_URL` to `https://closeplan.iseeit.ai` on the web service and the cron jobs. Emails, personal links, unsubscribe
+  links and the logo in emails all follow `APP_URL`. A `/p/<token>` link opened on the old `*.onrender.com` address is redirected (308) to the
+  `APP_URL` address, so invitations sent earlier keep working. Salesforce: add `https://closeplan.iseeit.ai/api/integrations/salesforce/callback` as a
+  callback of the Connected App and connect again from the new address (the OAuth state cookie belongs to one host). People sign in again on a new host.

@@ -1,4 +1,5 @@
 import { closePlanPageHtml } from "../lib/close-plan-page";
+import { appLinkOrigin } from "../lib/request";
 import { currentActor } from "../lib/session";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +10,8 @@ export const dynamic = "force-dynamic";
 // next.config.ts blocks framing even from the same origin. Signed-in users
 // only, same rule as every other page; the relative Location header avoids
 // building an absolute URL from the internal host behind Render's proxy.
-export async function GET() {
+export async function GET(request: Request) {
   const actor = await currentActor();
   if (!actor) return new Response(null, { status: 307, headers: { location: "/login?returnTo=/close-plans" } });
-  return new Response(await closePlanPageHtml(), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  return new Response(await closePlanPageHtml({ title: "Mutual Closeplan", origin: appLinkOrigin(request) }), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }
