@@ -2527,7 +2527,7 @@ function wirePage() {
   const app = $("#app");
   // Renaming the plan: the name in the plan header (plan owners and admins).
   const pt = document.getElementById("plan-title");
-  if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
+  if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); flushPlanSave(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
   app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { ui.filter = ui.filter === b.dataset.f && b.classList.contains("stat") ? "all" : b.dataset.f; render(); });
   app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { setPhaseOpen([b.dataset.jump], true); render(); document.getElementById("ph-" + b.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
   const fold = id => { const open = !document.getElementById("ph-" + id).classList.contains("folded"); setPhaseOpen([id], !open); render(); };
@@ -3215,6 +3215,11 @@ function materializeMe(plan) {
 }
 const cleanPlan = plan => { const { _v, _demo, ...data } = plan; return data; };
 const sync = { inflight: {}, dirty: {}, timers: {} };
+// A change is saved 0.6 s after it is made. If the person leaves the page in that moment (a rename registers when they click
+// out of the field, often onto a menu link), send it now instead of losing it.
+function flushOnLeave() { if (!IN_APP || !state || state._demo) return; for (const id of Object.keys(sync.timers)) { if (sync.timers[id]) { clearTimeout(sync.timers[id]); sync.timers[id] = null; const plan = store.plans.find(p => p.id === id); if (plan) pushPlan(plan); } } }
+window.addEventListener("pagehide", flushOnLeave);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushOnLeave(); });
 function setSaveState(text, bad = false) { const el = document.getElementById("save-state"); if (el) { el.textContent = text; el.classList.toggle("bad", bad); } }
 function queueSave(plan) {
   clearTimeout(sync.timers[plan.id]);
@@ -3225,7 +3230,9 @@ async function pushPlan(plan) {
   if (sync.inflight[plan.id]) { sync.dirty[plan.id] = true; return; }
   sync.inflight[plan.id] = true; sync.dirty[plan.id] = false;
   try {
-    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: plan._v || 0, data: cleanPlan(plan) }) });
+    // keepalive lets the request finish even if the person leaves the page right after the change (it only accepts bodies under 64 KB).
+    const body = JSON.stringify({ version: plan._v || 0, data: cleanPlan(plan) });
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body, keepalive: body.length < 60000 });
     const res = await r.json().catch(() => ({}));
     if (r.ok) { plan._v = res.version; setSaveState("Saved"); if (state && state.id === plan.id) sfAutoSoon(); }
     else if (r.status === 409 && res.plan) {
