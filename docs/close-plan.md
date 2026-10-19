@@ -603,3 +603,17 @@ page, and every Close Plan email carries `/unsubscribe/<token>` (signed, a butto
 
 Built so far: the rules, the page, the opt-out list and the unsubscribe page. The senders that use them (invitation and reminder emails, "added to
 plan" and assignment notices, overdue reminders and the Monday email for plan tasks, Slack on updates) follow in separate steps.
+
+### Invitation emails, reminders and "added to plan" notices (2026-10-18)
+
+- **Send invitation** (People tab → person → Invitation) now emails the customer contact their personal link (`POST /api/close-plans/store/:id/invite`,
+  wording in `app/lib/close-plan-emails.ts`). The link is returned either way, so "Copy link instead" and the fallback when no email goes out
+  (rule off, person excluded, no address, sending not configured) still work. Each send creates a fresh link; earlier links keep working.
+- **Reminder:** a daily job (`scripts/send-close-plan-reminders.ts`, Render cron `tasks-ai-close-plan-reminders`, 06:30 UTC) emails people who were invited
+  by email but never opened their link, after `reminderAfterDays`, at most `maxReminders` times, within the weekly cap. The job needs `RESEND_API_KEY`
+  and `SESSION_SECRET` (the same values as the web service) in its Render environment.
+- **Added to the plan:** when the iSEEit team of a plan gains a person (any way of adding one), the plan save emails and Slack-DMs them (per
+  Admin → Notifications). Not the person who added them, and not Salesforce users pulled in by the sync.
+- **Do not email:** People tab → person → "Don't email …" sets `noEmail` on that person; every sender skips them. The Admin exclusion list and the
+  unsubscribe link do the same by email address.
+- Every send is logged in `close_plan_email_log` (migration 0027): reminders, the weekly cap and de-duplication read it.

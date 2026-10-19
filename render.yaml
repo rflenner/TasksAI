@@ -136,6 +136,32 @@ services:
       - key: SLACK_BOT_TOKEN
         sync: false
   - type: cron
+    name: tasks-ai-close-plan-reminders
+    runtime: node
+    plan: starter
+    region: frankfurt
+    # Daily, 06:30 UTC: reminds customer contacts who were invited to a close plan by email but have not opened their
+    # personal link (rules under Admin → Notifications). Needs the same SESSION_SECRET as the web service, so the
+    # unsubscribe links in its emails verify there.
+    schedule: "30 6 * * *"
+    buildCommand: npm install --global pnpm@11.19.0 && pnpm install --frozen-lockfile
+    startCommand: node --import tsx scripts/send-close-plan-reminders.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tasks-ai-db-frankfurt
+          property: connectionString
+      - key: APP_URL
+        value: https://tasks-ai.onrender.com
+      - key: TASK_AI_FROM_EMAIL
+        value: Task AI <notifications@tasks.flenner.at>
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+  - type: cron
     name: tasks-ai-overdue-nudges
     runtime: node
     plan: starter

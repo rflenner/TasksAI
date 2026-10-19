@@ -399,3 +399,14 @@ export const notificationOptouts = pgTable("notification_optouts", {
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// What Close Plan emailed to whom (invitation, reminder, added to plan, assigned task, overdue, digest). Migration 0027.
+export const closePlanEmailLog = pgTable("close_plan_email_log", {
+  id: serial("id").primaryKey(),
+  kind: text("kind").notNull(),
+  planId: text("plan_id").notNull(),
+  personId: text("person_id").notNull().default(""),
+  email: text("email").notNull(),
+  taskId: text("task_id"),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [index("close_plan_email_log_plan_idx").on(table.planId, table.personId, table.kind, table.sentAt), index("close_plan_email_log_email_idx").on(table.email, table.sentAt)]);
