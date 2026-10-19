@@ -160,6 +160,9 @@ button { cursor: pointer; }
 .vx-mic.stop { background: #c96539; }
 .vx-err { color: #a84235; font-size: 12px; }
 .vx-link { border: 0; background: none; color: var(--navy); font-weight: 700; font-size: 12px; cursor: pointer; padding: 2px 4px; margin-left: auto; border-radius: 6px; }
+.vx-offer { font-size: 12px; color: #102f59; background: #fff6e8; border: 1px solid #f0d9b0; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.vx-offer div { display: flex; gap: 6px; margin-top: 6px; }
+.vx-offer .vx-link { margin-left: 0; }
 .vx-link:hover { background: #eef3fa; }
 .vx-help h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #697181; margin: 8px 0 4px; }
 .vx-help h3:first-child { margin-top: 0; }
@@ -3485,7 +3488,7 @@ const voiceAvailable = () => IN_APP && !LINK && Boolean(APP_ME) && Boolean(state
 function voiceAudit(...events) {
   if (!voice.session) return;
   try { fetch("/api/voice-audit", { method: "POST", credentials: "same-origin", keepalive: true, headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sessionId: voice.session, source: "live", events: events.map(e => ({ ...e, detail: { surface: "close_plan", planId: state ? state.id : null, ...(e.detail || {}) } })) }) }).catch(() => {}); } catch (e) {}
+    body: JSON.stringify({ sessionId: voice.session, source: "live", events: events.map(e => ({ ...e, detail: { surface: "close_plan", planId: state ? state.id : null, planName: state ? state.account : null, ...(e.detail || {}) } })) }) }).catch(() => {}); } catch (e) {}
 }
 // The first time someone uses it, the greeting also says what it can do (once, then just the short greeting).
 function voiceGreeting(firstName) {
@@ -3514,6 +3517,7 @@ function voiceHeard(id, change) {
   renderVoice();
 }
 function voiceTeardown() {
+  if (voiceNoise.stop) { voiceNoise.stop(); voiceNoise.stop = null; }
   try { voice.dc && voice.dc.close(); } catch (e) {} try { voice.pc && voice.pc.close(); } catch (e) {}
   if (voice.stream) voice.stream.getTracks().forEach(t => t.stop());
   Object.assign(voice, { dc: null, pc: null, stream: null, activeSince: 0, wantResponse: false });
@@ -3544,7 +3548,8 @@ async function voiceAsk(callId, utterance) {
   if (!voice.pending && !voice.draft && /^\s*(next|next one|the next one|skip( this one| it)?)[\s.!?]*$/i.test(text)) { voice.feed = voice.feed.filter(i => !(i.kind === "asked" && i.text === text)); await voiceNext(callId); return; }
   if (voice.pending) {
     const pending = voice.pending; voice.pending = null;
-    if (VX_YES.test(text)) { voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "sent", utterance: text }); voiceReply(callId, voiceApply(pending)); return; }
+    if (VX_YES.test(text) && pending.phase) { const said = voiceApplyPhase(pending.phase); voiceAuditPhase(pending.phase, said, voice.applied > 0); voiceReply(callId, said); return; }
+    if (VX_YES.test(text)) { voice.applied = 0; const said = voiceApply(pending); voiceAudit({ event: "confirmation", mode: "close_plan", outcome: voice.applied > 0 ? "changed" : "not_done", utterance: text, spokenAnswer: said, detail: { taskId: pending.taskId, taskTitle: (state.tasks.find(x => x.id === pending.taskId) || {}).title || "", changes: voice.applied > 0 ? [said] : [] } }); voiceReply(callId, said); return; }
     voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "declined", utterance: text });
     if (VX_NO.test(text)) { voiceReply(callId, "Okay, I'll leave it."); return; }
     prefix = "Okay, I'll leave that. ";
@@ -3568,6 +3573,47 @@ function voiceShowTask(id) {
   ui.open = id; ui.addSub = false; render();
 }
 // Applies the server's answer on the page and returns what to say.
+// What was really done on the page (the server only proposes): logged so the audit shows the outcome, including
+// changes skipped for lack of permission. `res.mode` is act or add_task or a confirmed pending change.
+function voiceAuditApplied(taskId, text, applied, utterance) {
+  const t = state.tasks.find(x => x.id === taskId);
+  voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: applied ? "changed" : "not_done", utterance: utterance || "", spokenAnswer: text, detail: { taskId, taskTitle: t ? t.title : "", changes: applied ? [text] : [] } });
+}
+// Phase changes by voice: the same rights and saving as the phase editor (canEditPhases), the same activity log.
+function voiceApplyPhase(e) {
+  voice.applied = 0;
+  if (!canEditPhases()) return "Only the plan owners and admins can change phases.";
+  if (e.add) {
+    const ph = { id: "ph" + (++state.seq), name: e.name, goal: e.goal || "", start: e.start, end: e.end };
+    state.phases.push(ph); log(`added phase “${ph.name}” by voice`, null); save(); setPhaseOpen([ph.id], true); render(); voice.applied = 1;
+    return `Added the phase "${ph.name}", ${fmtY(ph.start)} to ${fmtY(ph.end)}.`;
+  }
+  const ph = state.phases.find(p => p.id === e.phaseId); if (!ph) return "I couldn't find that phase any more.";
+  if (e.remove) {
+    if (state.phases.length < 2) return "A plan needs at least one phase.";
+    const to = e.moveTo && state.phases.some(p => p.id === e.moveTo && p.id !== ph.id) ? e.moveTo : neighbourOf(ph.id), moved = state.tasks.filter(t => t.phase === ph.id).length;
+    voice.applied = 1; const name = ph.name; deletePhaseNow(ph.id, moved ? to : null);
+    return `Deleted the phase "${name}"${moved ? ` and moved its ${moved} task${moved > 1 ? "s" : ""} to ${state.phases.find(p => p.id === to).name}` : ""}.`;
+  }
+  const before = { ...ph }, parts = [];
+  if (e.name && e.name !== ph.name) { ph.name = e.name; parts.push(`name`); }
+  if (e.goal) { ph.goal = e.goal; parts.push("description"); }
+  if (e.start && e.start !== ph.start) { ph.start = e.start; parts.push("start date"); }
+  if (e.end && e.end !== ph.end) { ph.end = e.end; parts.push("end date"); }
+  if (ph.end < ph.start) { Object.assign(ph, before); return `${before.name} can't end before it starts.`; }
+  if (!parts.length) return `Nothing to change on ${ph.name}.`;
+  log(`changed the ${parts.join(", ")} of phase “${ph.name}” by voice`, null); save(); setPhaseOpen([ph.id], true); render(); voice.applied = 1;
+  const said = [];
+  if (parts.includes("name")) said.push(`Renamed "${before.name}" to "${ph.name}".`);
+  if (parts.includes("start date")) said.push(`${ph.name} now starts ${fmtY(ph.start)}.`);
+  if (parts.includes("end date")) said.push(`${ph.name} now ends ${fmtY(ph.end)}.`);
+  if (parts.includes("description")) said.push(`Updated the description of ${ph.name}.`);
+  return said.join(" ");
+}
+function voiceAuditPhase(e, text, applied) {
+  const ph = state.phases.find(p => p.id === e.phaseId);
+  voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: applied ? "changed" : "not_done", spokenAnswer: text, detail: { phaseId: e.phaseId, taskTitle: "", phaseName: ph ? ph.name : (e.name || ""), changes: applied ? [text] : [] } });
+}
 function voiceHandle(res) {
   switch (res.mode) {
     case "answer": if (res.taskId) voiceShowTask(res.taskId); return res.spokenAnswer;
@@ -3579,8 +3625,10 @@ function voiceHandle(res) {
       if (res.taskId) voiceShowTask(res.taskId); else { ui.open = null; render(); }
       return res.spokenAnswer;
     case "confirm": voice.pending = { taskId: res.taskId, actions: res.actions || [] }; voiceShowTask(res.taskId); return res.spokenAnswer;
-    case "act": voiceShowTask(res.taskId); return voiceApply({ taskId: res.taskId, actions: res.actions || [] }, res.spokenAnswer);
-    case "add_task": return voiceAdd(res.newTask);
+    case "confirm_phase": voice.pending = { phase: res.phaseEdit }; return res.spokenAnswer;
+    case "act_phase": { const text = voiceApplyPhase(res.phaseEdit); voiceAuditPhase(res.phaseEdit, text, voice.applied > 0); return text; }
+    case "act": { voiceShowTask(res.taskId); voice.applied = 0; const text = voiceApply({ taskId: res.taskId, actions: res.actions || [] }, res.spokenAnswer); voiceAuditApplied(res.taskId, text, voice.applied > 0); return text; }
+    case "add_task": { voice.applied = 0; voice.addedId = null; const text = voiceAdd(res.newTask); voiceAuditApplied(voice.addedId, text, voice.applied > 0); return text; }
     case "ask_more": return res.spokenAnswer;
     default: return res.spokenAnswer || "Sorry, I didn't get that.";
   }
@@ -3604,7 +3652,8 @@ function voiceApply(change, said) {
       log(`posted an update on “${t.title}” by voice`, t.id); startWork(t);
       done.push(`Posted your update on "${t.title}".`);
     } else if (a.type === "delete_task") {
-      return canDelete(t) ? deleteTaskNow(t.id, "by voice") : "You can't delete that task.";
+      if (canDelete(t)) { voice.applied = 1; return deleteTaskNow(t.id, "by voice"); }
+      return "You can't delete that task.";
     } else if (!edit) { skipped++; }
     else if (a.type === "set_due") {
       const from = t.due;
@@ -3644,6 +3693,7 @@ function voiceApply(change, said) {
       t.desc = a.text; log(`edited the description of “${t.title}”`, t.id); done.push(`Updated the details of "${t.title}".`);
     }
   }
+  voice.applied = done.length;
   save(); render();
   const note = skipped ? " You can only post updates and change the status on that task." : "";
   return (done.length ? done.join(" ") : said || "Nothing needed changing.") + note;
@@ -3658,6 +3708,7 @@ function voiceAdd(n) {
   state.tasks.push({ id, phase: ph.id, parent: parent ? parent.id : null, title: n.title, owner: n.ownerId || me(), due: n.due || (parent && parent.due) || ph.end, status: "Open",
     desc: n.description || undefined, shared: parent ? parent.shared : !n.internal, createdBy: me(), updates: [], coworkers: [], recipients: parent ? [...(parent.recipients || [])] : [] });
   log(parent ? `added subtask “${n.title}” to “${parent.title}” by voice` : `added “${n.title}” by voice`, id);
+  voice.applied = 1; voice.addedId = id;
   save(); voiceShowTask(parent ? parent.id : id);
   const t = state.tasks.find(x => x.id === id);
   const defaults = [!n.ownerId && "owner", !n.due && !(parent && parent.due) && "due date"].filter(Boolean);
@@ -3683,6 +3734,7 @@ function voiceEvent(m) {
   else if (m.type === "conversation.item.input_audio_transcription.completed") {
     const text = String(m.transcript || "").trim();
     if (m.item_id) voiceHeard(m.item_id, { text, done: true });
+    if (text.replace(/[^\p{L}\p{N}]/gu, "").length < 3) voiceNoteGarbled();
     if (text) voiceAudit({ event: "heard", utterance: text });
   } else if (m.type === "response.created" && m.response && m.response.id) {
     voice.activeSince = Date.now();
@@ -3700,16 +3752,40 @@ function voiceEvent(m) {
     if (voice.wantResponse) { voice.wantResponse = false; voiceRequest(); }
   } else if (m.type === "error") voiceAudit({ event: "error", outcome: "failed", spokenAnswer: `Realtime session error: ${(m.error && m.error.message) || "unknown"}` });
 }
+// Offers "Noisy room" listening when the mic's background level is high or speech keeps coming out unintelligible
+// (same rules as app/components/voice-noise.ts, which the Task AI assistant uses).
+const voiceNoise = { stop: null, garbled: [], offered: false };
+function voiceOfferNoisy(reason, extra) {
+  if (voiceMode() === "noisy" || voiceNoise.offered) return;
+  voiceNoise.offered = true; voice.noiseOffer = true;
+  voiceAudit({ event: "session", mode: "noise_offered", outcome: "shown", spokenAnswer: "Offered the Noisy room setting.", detail: Object.assign({ reason }, extra || {}) });
+  renderVoice();
+}
+function voiceNoteGarbled() { const now = Date.now(); voiceNoise.garbled = voiceNoise.garbled.filter(t => now - t < 45000).concat(now); if (voiceNoise.garbled.length >= 3) voiceOfferNoisy("unintelligible_speech"); }
+function voiceWatchNoise(stream) {
+  const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return null;
+  let ctx; try { ctx = new Ctx(); } catch (x) { return null; }
+  const an = ctx.createAnalyser(); an.fftSize = 2048; ctx.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize), levels = [];
+  const timer = setInterval(() => {
+    an.getFloatTimeDomainData(buf); let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    levels.push(20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-6)); if (levels.length > 50) levels.shift();
+    if (levels.length >= 25) { const f = levels.slice().sort((a, b) => a - b)[Math.floor(levels.length * 0.2)]; if (f > -48) { clearInterval(timer); voiceOfferNoisy("background_level", { floorDb: Math.round(f) }); } }
+  }, 200);
+  return () => { clearInterval(timer); try { ctx.close(); } catch (x) {} };
+}
+function voiceMode() { try { return localStorage.getItem("voiceMode") === "noisy" ? "noisy" : "normal"; } catch (x) { return "normal"; } }
 async function voiceStart() {
+  voiceNoise.offered = voiceMode() === "noisy"; voiceNoise.garbled = []; voice.noiseOffer = false;
   Object.assign(voice, { error: "", feed: [], status: "connecting", history: [], listIds: [], pending: null, draft: null, kinds: new Map(), said: new Map(),
     session: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "s" + Date.now() + Math.random().toString(36).slice(2, 8) });
   renderVoice();
   try {
-    const r = await fetch("/api/close-plans/voice/session", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: state.id }) });
+    const r = await fetch("/api/close-plans/voice/session", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: state.id, mode: voiceMode() }) });
     const s = await r.json().catch(() => ({}));
     if (!s.clientSecret) throw new Error(s.error || "Could not start the voice assistant.");
     voice.transcribing = s.transcription !== false; voice.caps = Array.isArray(s.capabilities) ? s.capabilities : [];
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); voice.stream = stream;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); voice.stream = stream; voiceNoise.stop = voiceWatchNoise(stream);
     const pc = new RTCPeerConnection(); voice.pc = pc;
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
     if (!voice.audio) { voice.audio = document.createElement("audio"); voice.audio.autoplay = true; }
@@ -3757,13 +3833,16 @@ function renderVoice() {
     ${t ? `<div class="vx-screen" title="${esc(t.title)}">On screen: ${esc(t.title)}</div>` : ""}
     ${voice.help && voice.caps.length ? `<div class="vx-feed vx-help">${voice.caps.map(g => `<h3>${esc(g.group)}</h3>${g.items.map(i => i.includes("…") ? `<div class="vx-say pattern">“${esc(i)}”</div>` : `<button type="button" class="vx-say" data-vx-say="${esc(i)}">“${esc(i)}”</button>`).join("")}`).join("")}</div>`
       : `<div class="vx-feed" aria-live="polite">${items || `<div class="vx-hint">${voice.status === "connecting" ? "Connecting…" : `Just talk. Try “where do we stand?”, “what is ${esc(B())} waiting on?” or “add a task to the current phase”.`}</div>`}</div>`}
+    ${voice.noiseOffer && voiceMode() !== "noisy" ? `<div class="vx-offer" role="status">It sounds noisy around you. Switch to Noisy room listening so background sound does not get in the way?<div><button type="button" class="vx-link" data-vx-noisy>Switch</button><button type="button" class="vx-link" data-vx-offer-no>Not now</button></div></div>` : ""}
     ${voice.error ? `<div class="vx-err">${esc(voice.error)}</div>` : ""}
-    <div class="vx-foot">${live ? `<button type="button" class="vx-mic stop" data-vx-close aria-label="Stop">■</button>` : `<button type="button" class="vx-mic" data-vx-start aria-label="Start again">🎙</button>`}<span>${voice.status === "connecting" ? "Connecting…" : voice.status === "connected" ? "Listening, just talk" : "Tap the mic to start again"}</span>${voice.caps.length ? `<button type="button" class="vx-link" data-vx-help>${voice.help ? "Back" : "What can I say?"}</button>` : ""}</div>
+    <div class="vx-foot">${live ? `<button type="button" class="vx-mic stop" data-vx-close aria-label="Stop">■</button>` : `<button type="button" class="vx-mic" data-vx-start aria-label="Start again">🎙</button>`}<span>${voice.status === "connecting" ? "Connecting…" : voice.status === "connected" ? "Listening, just talk" : "Tap the mic to start again"}</span><button type="button" class="vx-link" data-vx-noisy title="Stricter listening for a loud room">${voiceMode() === "noisy" ? "Noisy room: on" : "Noisy room"}</button>${voice.caps.length ? `<button type="button" class="vx-link" data-vx-help>${voice.help ? "Back" : "What can I say?"}</button>` : ""}</div>
   </div>`;
   const feed = root.querySelector(".vx-feed"); if (feed) feed.scrollTop = feed.scrollHeight;
   root.querySelectorAll("[data-vx-close]").forEach(b => b.onclick = voiceClose);
   const mn = root.querySelector("[data-vx-min]"); if (mn) mn.onclick = () => { voice.min = true; renderVoice(); };
   const st = root.querySelector("[data-vx-start]"); if (st) st.onclick = () => voiceStart();
+  const no = root.querySelector("[data-vx-offer-no]"); if (no) no.onclick = () => { voice.noiseOffer = false; renderVoice(); };
+  root.querySelectorAll("[data-vx-noisy]").forEach(nz => nz.onclick = () => { try { localStorage.setItem("voiceMode", voiceMode() === "noisy" ? "normal" : "noisy"); } catch (x) {} voice.noiseOffer = false; if (voice.status === "connected" || voice.status === "connecting") { voiceTeardown(); voiceStart(); } else renderVoice(); });
   const hp = root.querySelector("[data-vx-help]"); if (hp) hp.onclick = () => { voice.help = !voice.help; renderVoice(); };
   root.querySelectorAll("[data-vx-say]").forEach(b => b.onclick = () => voiceSay(b.dataset.vxSay));
 }

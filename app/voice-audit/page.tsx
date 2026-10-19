@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentActor } from "../lib/session";
 import {
-  isChange, loadVoiceAuditSessions, parseAuditFilters, rowLabel, summarizeSessions, VOICE_AUDIT_MAX_ROWS, VOICE_AUDIT_RETENTION_DAYS,
+  isChange, loadVoiceAuditSessions, sessionPlanName, sessionSurface, SURFACE_NAME, parseAuditFilters, rowLabel, summarizeSessions, VOICE_AUDIT_MAX_ROWS, VOICE_AUDIT_RETENTION_DAYS,
   type RowTone, type VoiceAuditRecord,
 } from "../lib/voice-audit";
 import ExportButtons from "./ExportButtons";
@@ -22,10 +22,11 @@ const SOURCE_LABEL: Record<string, string> = { live: "Live Voice Assistant", ask
 const PERIODS: Array<[string, number]> = [["24 hours", 1], ["7 days", 7], ["30 days", 30], [`${VOICE_AUDIT_RETENTION_DAYS} days`, VOICE_AUDIT_RETENTION_DAYS]];
 const MAX_SESSIONS = 100;
 
-function href(params: { source: string; show: string; days: number }) {
+function href(params: { source: string; show: string; days: number; surface: string }) {
   const query = new URLSearchParams();
   if (params.source !== "all") query.set("source", params.source);
   if (params.show !== "all") query.set("show", params.show);
+  if (params.surface !== "all") query.set("surface", params.surface);
   if (params.days !== 7) query.set("days", String(params.days));
   const text = query.toString();
   return `/voice-audit${text ? `?${text}` : ""}`;
@@ -45,6 +46,8 @@ function Details({ row }: { row: VoiceAuditRecord }) {
       {changes.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs text-[#25784b]">{changes.map((line, i) => <li key={i}>{line}</li>)}</ul>}
       {row.detail.createdSubject ? <div className="mt-1 text-xs text-[#25784b]">Created: {String(row.detail.createdSubject)}</div> : null}
       {target?.to && <div className="mt-1 text-xs text-[#697181]">To {target.to} via {target.channel}: “{(target.message || "").replace(/\s+/g, " ").slice(0, 200)}”</div>}
+      {typeof row.detail.phaseName === "string" && row.detail.phaseName ? <div className="mt-1 text-xs text-[#697181]">Phase: {row.detail.phaseName}</div> : null}
+      {typeof row.detail.taskTitle === "string" && row.detail.taskTitle ? <div className="mt-1 text-xs text-[#697181]">Task: {row.detail.taskTitle}</div> : null}
       {row.detail.error ? <div className="mt-1 text-xs text-[#a84235]">{String(row.detail.error)}</div> : null}
     </>
   );
@@ -58,10 +61,10 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
   // The same filters + loader the export endpoint uses, so "Copy as text"
   // is exactly what's on this page.
   const filters = parseAuditFilters(await searchParams);
-  const { source, show, days } = filters;
+  const { source, show, days, surface } = filters;
   const { sessions, rowLimitHit } = await loadVoiceAuditSessions(filters);
   const shown = sessions.slice(0, MAX_SESSIONS);
-  const exportQuery = new URLSearchParams({ source, show, days: String(days) }).toString();
+  const exportQuery = new URLSearchParams({ source, show, days: String(days), surface }).toString();
   const totals = summarizeSessions(sessions);
 
   return (
@@ -73,17 +76,22 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
 
       <div className="flex flex-wrap gap-x-6 gap-y-3 mb-5">
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Assistant</span>
-          <Choice label="Both" active={source === "all"} to={href({ source: "all", show, days })} />
-          <Choice label="Live Voice" active={source === "live"} to={href({ source: "live", show, days })} />
-          <Choice label="Ask Task AI (retired)" active={source === "ask"} to={href({ source: "ask", show, days })} />
+          <Choice label="Both" active={source === "all"} to={href({ source: "all", show, days, surface })} />
+          <Choice label="Live Voice" active={source === "live"} to={href({ source: "live", show, days, surface })} />
+          <Choice label="Ask Task AI (retired)" active={source === "ask"} to={href({ source: "ask", show, days, surface })} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Where</span>
+          <Choice label="All" active={surface === "all"} to={href({ source, show, days, surface: "all" })} />
+          <Choice label="Task AI" active={surface === "task_ai"} to={href({ source, show, days, surface: "task_ai" })} />
+          <Choice label="Close Plan" active={surface === "close_plan"} to={href({ source, show, days, surface: "close_plan" })} />
         </div>
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Show</span>
-          <Choice label="Everything" active={show === "all"} to={href({ source, show: "all", days })} />
-          <Choice label="Only changes" active={show === "changes"} to={href({ source, show: "changes", days })} />
-          <Choice label="Only problems" active={show === "problems"} to={href({ source, show: "problems", days })} />
+          <Choice label="Everything" active={show === "all"} to={href({ source, show: "all", days, surface })} />
+          <Choice label="Only changes" active={show === "changes"} to={href({ source, show: "changes", days, surface })} />
+          <Choice label="Needs review (not done, failed, declined)" active={show === "problems"} to={href({ source, show: "problems", days, surface })} />
         </div>
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-wide text-[#8b929d]">Period</span>
-          {PERIODS.map(([label, value]) => <Choice key={value} label={label} active={days === value} to={href({ source, show, days: value })} />)}
+          {PERIODS.map(([label, value]) => <Choice key={value} label={label} active={days === value} to={href({ source, show, days: value, surface })} />)}
         </div>
       </div>
 
@@ -109,6 +117,7 @@ export default async function VoiceAuditPage({ searchParams }: { searchParams: P
               <b className="text-[#102f59]"><LocalTime iso={session.startedAt.toISOString()} /></b>
               <span>{session.actorName}</span>
               <span className="text-[#697181]">{SOURCE_LABEL[session.source] ?? session.source}</span>
+              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#eef3fa] text-[#173f76]">{SURFACE_NAME[sessionSurface(session)]}{sessionPlanName(session) ? ` · ${sessionPlanName(session)}` : ""}</span>
               <span className="text-[#8b929d]">{session.events.length} event{session.events.length === 1 ? "" : "s"}</span>
               <span className="ml-auto"><ExportButtons query="" session={session.key} compact /></span>
             </header>

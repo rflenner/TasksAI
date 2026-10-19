@@ -171,6 +171,15 @@ export type VoiceAuditRecord = {
 };
 export type VoiceAuditSession = { key: string; actorName: string; source: string; startedAt: Date; endedAt: Date; events: VoiceAuditRecord[] };
 export type VoiceAuditShow = "all" | "changes" | "problems";
+// Which assistant a session belongs to. There is no column for it: the Close Plan
+// assistant tags every row it writes with detail.surface = "close_plan".
+export type VoiceAuditSurface = "all" | "task_ai" | "close_plan";
+export const sessionSurface = (session: { events: Array<{ detail: Record<string, unknown> }> }): "task_ai" | "close_plan" =>
+  session.events.some(row => row.detail.surface === "close_plan") ? "close_plan" : "task_ai";
+export const SURFACE_NAME: Record<string, string> = { task_ai: "Task AI", close_plan: "Close Plan" };
+// The plan a Close Plan session was about, from whichever of its rows carries the name.
+export const sessionPlanName = (session: { events: Array<{ detail: Record<string, unknown> }> }): string =>
+  String(session.events.map(row => row.detail.planName).find(name => typeof name === "string" && name) ?? "");
 
 // One session per sessionId (rows with no session id each stand alone, so
 // an old or malformed row never swallows unrelated ones). Events inside a
@@ -228,13 +237,14 @@ export function rowLabel(row: { event: string; outcome: string | null; mode: str
 
 export const VOICE_AUDIT_PERIODS: number[] = [1, 7, 30, VOICE_AUDIT_RETENTION_DAYS];
 export const VOICE_AUDIT_MAX_ROWS = 1500;
-export type VoiceAuditFilters = { source: "all" | VoiceAuditSource; show: VoiceAuditShow; days: number };
+export type VoiceAuditFilters = { source: "all" | VoiceAuditSource; show: VoiceAuditShow; days: number; surface: VoiceAuditSurface };
 
 export function parseAuditFilters(params: Record<string, string | undefined>): VoiceAuditFilters {
   const source = params.source === "live" || params.source === "ask" ? params.source : "all";
   const show: VoiceAuditShow = params.show === "changes" || params.show === "problems" ? params.show : "all";
   const days = VOICE_AUDIT_PERIODS.includes(Number(params.days)) ? Number(params.days) : 7;
-  return { source, show, days };
+  const surface: VoiceAuditSurface = params.surface === "task_ai" || params.surface === "close_plan" ? params.surface : "all";
+  return { source, show, days, surface };
 }
 
 // With `sessionId`, loads exactly that one session (whatever its age,
@@ -251,7 +261,7 @@ export async function loadVoiceAuditSessions(filters: VoiceAuditFilters, session
   const rows = await db.select().from(voiceAudit)
     .where(and(gte(voiceAudit.createdAt, since), filters.source === "all" ? undefined : eq(voiceAudit.source, filters.source)))
     .orderBy(desc(voiceAudit.createdAt)).limit(VOICE_AUDIT_MAX_ROWS);
-  return { sessions: groupIntoSessions(rows as VoiceAuditRecord[]).filter(session => sessionMatches(session, filters.show)), rowLimitHit: rows.length >= VOICE_AUDIT_MAX_ROWS };
+  return { sessions: groupIntoSessions(rows as VoiceAuditRecord[]).filter(session => (filters.surface === "all" || sessionSurface(session) === filters.surface) && sessionMatches(session, filters.show)), rowLimitHit: rows.length >= VOICE_AUDIT_MAX_ROWS };
 }
 
 const SOURCE_NAME: Record<string, string> = { live: "Live Voice Assistant", ask: "Ask Task AI (retired)" };
@@ -267,12 +277,12 @@ export function formatSessionsAsText(sessions: VoiceAuditSession[], filters: Voi
   const totals = summarizeSessions(sessions);
   const lines: string[] = [
     `VOICE AUDIT TRAIL — exported ${utcStamp(exportedAt)} UTC`,
-    filters ? `Filters: assistant=${filters.source} · show=${filters.show} · last ${filters.days} day${filters.days === 1 ? "" : "s"}` : "Single session",
+    filters ? `Filters: assistant=${filters.source} · surface=${filters.surface} · show=${filters.show} · last ${filters.days} day${filters.days === 1 ? "" : "s"}` : "Single session",
     `${totals.sessions} session${totals.sessions === 1 ? "" : "s"} · ${totals.changes} change${totals.changes === 1 ? "" : "s"} made · ${totals.problems} problem${totals.problems === 1 ? "" : "s"}`,
     'All times UTC. "Heard" is a separate transcript of the audio, not necessarily what the assistant understood — the request rows show what it actually acted on.',
   ];
   for (const session of sessions) {
-    lines.push("", `=== ${utcStamp(session.startedAt)} UTC · ${session.actorName} · ${SOURCE_NAME[session.source] ?? session.source} · ${session.events.length} events · session ${session.key} ===`);
+    lines.push("", `=== ${utcStamp(session.startedAt)} UTC · ${session.actorName} · ${SURFACE_NAME[sessionSurface(session)]}${sessionPlanName(session) ? ` “${sessionPlanName(session)}”` : ""} · ${SOURCE_NAME[session.source] ?? session.source} · ${session.events.length} events · session ${session.key} ===`);
     const startDay = session.startedAt.toISOString().slice(0, 10);
     for (const row of session.events) {
       const iso = row.createdAt.toISOString();
@@ -292,6 +302,7 @@ export function formatSessionsAsText(sessions: VoiceAuditSession[], filters: Voi
       if (row.detail.createdSubject) lines.push(`${pad}created: ${oneLine(String(row.detail.createdSubject))}`);
       if (row.detail.error) lines.push(`${pad}error: ${oneLine(String(row.detail.error))}`);
       if (row.event === "session" && row.detail.model) lines.push(`${pad}model: ${String(row.detail.model)}`);
+      if (typeof row.detail.taskTitle === "string") lines.push(`${pad}task: ${oneLine(row.detail.taskTitle)}`);
       if (row.taskIds.length) lines.push(`${pad}tasks: ${row.taskIds.map(id => `#${id}`).join(", ")}`);
     }
   }

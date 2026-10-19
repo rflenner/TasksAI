@@ -4,6 +4,7 @@ import { closePlanDocuments } from "../../../../../db/schema";
 import { capabilities } from "../../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../lib/request";
+import { audioInputSettings, NOISY_ROOM_INSTRUCTION, parseListeningMode } from "../../../../lib/voice-audio";
 import { currentActor } from "../../../../lib/session";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
   if (!actor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const key = process.env.OPENAI_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
-  const body = await request.json().catch(() => null) as { planId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { planId?: unknown; mode?: unknown } | null;
+  const mode = parseListeningMode(body?.mode);
   const planId = typeof body?.planId === "string" ? body.planId : "";
   const [row] = planId ? await getDb().select().from(closePlanDocuments).where(eq(closePlanDocuments.id, planId)).limit(1) : [];
   if (!row || row.deletedAt || !canAccessPlan(actor, row)) return Response.json({ error: "Plan not found" }, { status: 404 });
@@ -39,8 +41,8 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       session: {
         type: "realtime", model,
-        audio: { ...(withTranscription ? { input: { transcription: { model: transcribeModel } } } : {}), output: { voice } },
-        instructions: INSTRUCTIONS + (names.length ? ` People on this plan (spell them exactly like this): ${names.join(", ")}.` : ""),
+        audio: { input: { ...audioInputSettings(mode), ...(withTranscription ? { transcription: { model: transcribeModel } } : {}) }, output: { voice } },
+        instructions: INSTRUCTIONS + (names.length ? ` People on this plan (spell them exactly like this): ${names.join(", ")}.` : "") + (mode === "noisy" ? NOISY_ROOM_INSTRUCTION : ""),
         tools: [{
           type: "function", name: "ask_close_plan",
           description: "Ask the close plan anything or tell it to do something: where things stand, what's next, open/show tasks, change, close or add tasks. Pass the person's words verbatim.",

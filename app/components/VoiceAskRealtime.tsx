@@ -7,6 +7,7 @@ import { newVoiceSessionId, reportVoiceAudit, type ClientAuditEvent } from "./vo
 import { FIRST_TIME_HINT } from "../lib/voice-help";
 import { firstTimeFor, useVoiceCapabilities, VoiceHelpList } from "./VoiceHelp";
 import VoiceWaveIcon from "./VoiceWaveIcon";
+import { garbledTracker, isGarbled, watchBackgroundNoise } from "./voice-noise";
 
 // "Live Voice Assistant" (requested 2026-10-02) — true voice-to-voice over
 // OpenAI's Realtime API (WebRTC: continuous, interruptible, no
@@ -101,6 +102,19 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   const [error, setError] = useState("");
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [help, setHelp] = useState(false);
+  // "Noisy room": stricter listening (see app/lib/voice-audio.ts), remembered per browser.
+  const [noisy, setNoisy] = useState(false);
+  const noisyRef = useRef(false);
+  // Offered once per session when the room sounds noisy and the stricter mode is off.
+  const [noiseOffer, setNoiseOffer] = useState(false);
+  const stopNoiseWatchRef = useRef<(() => void) | null>(null);
+  const garbledRef = useRef(garbledTracker());
+  const offeredRef = useRef(false);
+  function offerNoisyMode(reason: "background_level" | "unintelligible_speech", detail?: Record<string, unknown>) {
+    if (noisyRef.current || offeredRef.current) return;
+    offeredRef.current = true; setNoiseOffer(true);
+    audit({ event: "session", mode: "noise_offered", outcome: "shown", spokenAnswer: "Offered the Noisy room setting.", detail: { reason, ...detail } });
+  }
   const caps = useVoiceCapabilities(open);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -191,6 +205,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   }, []);
 
   function teardown() {
+    stopNoiseWatchRef.current?.(); stopNoiseWatchRef.current = null;
     dcRef.current?.close(); dcRef.current = null;
     pcRef.current?.close(); pcRef.current = null;
     streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null;
@@ -402,9 +417,11 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
     } else if (msg.type === "conversation.item.input_audio_transcription.completed") {
       const text = msg.transcript?.trim() || "";
       if (msg.item_id) upsertHeard(msg.item_id, { text, done: true });
+      if (isGarbled(text) && garbledRef.current.note()) offerNoisyMode("unintelligible_speech");
       if (text) audit({ event: "heard", utterance: text });
     } else if (msg.type === "conversation.item.input_audio_transcription.failed") {
       if (msg.item_id) dropHeard(msg.item_id);
+      if (garbledRef.current.note()) offerNoisyMode("unintelligible_speech");
       audit({ event: "error", outcome: "failed", spokenAnswer: "Transcribing what the person said failed (the assistant may still have heard it).", detail: { message: msg.error?.message } });
     } else if (msg.type === "response.created" && msg.response?.id) {
       activeSinceRef.current = Date.now();
@@ -440,6 +457,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
 
   async function start() {
     setError(""); setFeed([]); setStatus("connecting");
+    try { noisyRef.current = localStorage.getItem("voiceMode") === "noisy"; setNoisy(noisyRef.current); } catch { /* storage unavailable */ }
+    offeredRef.current = noisyRef.current; setNoiseOffer(false); garbledRef.current = garbledTracker();
     historyRef.current = []; workingListRef.current = []; listLabelRef.current = null; listFiltersRef.current = null; cursorRef.current = null; draftRef.current = null;
     pendingDeleteRef.current = null; pendingNotifyRef.current = null;
     auditSessionRef.current = newVoiceSessionId();
@@ -447,13 +466,14 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
     responseKindRef.current.clear(); transcriptByResponseRef.current.clear();
     activeSinceRef.current = 0; wantResponseRef.current = false;
     try {
-      const sessionRes = await fetch("/api/voice-live/session", { method: "POST" });
+      const sessionRes = await fetch("/api/voice-live/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: noisyRef.current ? "noisy" : "normal" }) });
       const session = await sessionRes.json() as { clientSecret?: string; model?: string; transcription?: boolean; firstName?: string; error?: string };
       if (!session.clientSecret) throw new Error(session.error || "Could not start a live session");
       transcriptionOnRef.current = session.transcription !== false;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       streamRef.current = stream;
+      stopNoiseWatchRef.current = watchBackgroundNoise(stream, floorDb => offerNoisyMode("background_level", { floorDb: Math.round(floorDb) }));
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -502,6 +522,15 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
       setError(message);
       audit({ event: "session", mode: "start_failed", outcome: "failed", spokenAnswer: message });
     }
+  }
+
+  function toggleNoisy() {
+    setNoiseOffer(false);
+    const on = !noisyRef.current;
+    noisyRef.current = on; setNoisy(on);
+    try { localStorage.setItem("voiceMode", on ? "noisy" : "normal"); } catch { /* storage unavailable */ }
+    // The setting is fixed when a session starts, so a running one restarts.
+    if (pcRef.current) { teardown(); void start(); }
   }
 
   // Tapping a line in "What can I say?" says it for you, into the live
@@ -623,6 +652,16 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
 
           )}
 
+          {noiseOffer && !noisy && (
+            <div role="status" className="text-xs text-[#102f59] bg-[#fff6e8] border border-[#f0d9b0] rounded-lg px-2.5 py-2 mb-2">
+              <p className="mb-1.5">It sounds noisy around you. Switch to Noisy room listening so background sound does not get in the way?</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={toggleNoisy} className="font-bold text-white bg-[#173f76] rounded px-2 py-1">Switch</button>
+                <button type="button" onClick={() => setNoiseOffer(false)} className="font-bold text-[#173f76] rounded px-2 py-1 hover:bg-[#eef3fa]">Not now</button>
+              </div>
+            </div>
+          )}
+
           {error && <div className="text-xs text-[#a84235] mb-2">{error}</div>}
 
           <div className="flex items-center gap-2">
@@ -632,7 +671,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
               <button type="button" onClick={() => void start()} className="h-8 w-8 shrink-0 rounded-full bg-[#173f76] text-white flex items-center justify-center" aria-label="Start again"><VoiceWaveIcon className="h-4 w-4" /></button>
             )}
             <div className="text-[11px] text-[#8b929d]">{status === "idle" || status === "error" ? "Tap to start again" : statusText}</div>
-            {caps.length > 0 && <button type="button" onClick={() => setHelp(h => !h)} className="ml-auto text-[11px] font-bold text-[#173f76] rounded px-1.5 py-0.5 hover:bg-[#eef3fa]">{help ? "Back" : "What can I say?"}</button>}
+            <button type="button" onClick={toggleNoisy} aria-pressed={noisy} title="Stricter listening for a loud room" className={`ml-auto text-[11px] font-bold rounded px-1.5 py-0.5 ${noisy ? "bg-[#173f76] text-white" : "text-[#173f76] hover:bg-[#eef3fa]"}`}>{noisy ? "Noisy room: on" : "Noisy room"}</button>
+            {caps.length > 0 && <button type="button" onClick={() => setHelp(h => !h)} className="text-[11px] font-bold text-[#173f76] rounded px-1.5 py-0.5 hover:bg-[#eef3fa]">{help ? "Back" : "What can I say?"}</button>}
           </div>
         </div>
       )}
