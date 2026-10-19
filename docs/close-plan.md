@@ -620,8 +620,8 @@ plan" and assignment notices, overdue reminders and the Monday email for plan ta
 
 ### Link preview and a custom address (2026-10-19)
 
-- **What a pasted link shows:** the page title and link preview of `/p/<token>` is "<Account> × iSEEit · Mutual Closeplan" with the iSEEit logo
-  (`public/iseeit-logo-512.png`) and a short description (Open Graph tags in `closePlanPageHtml`); `/close-plans` says "Mutual Closeplan". Mail programs
+- **What a pasted link shows:** the page title and link preview of `/p/<token>` is the close plan's own name (the title you can rename in the plan header) with the iSEEit logo
+  (`public/iseeit-logo-512.png`) and a short description (Open Graph tags in `closePlanPageHtml`); `/close-plans` says "Mutual Closeplan" until a plan is open, then the browser tab shows that plan's name. Mail programs
   and chat apps cache previews, so a link that was shared before shows the old text for a while.
 - **Custom address (closeplan.iseeit.ai):** add it as a custom domain on the `tasks-ai` web service in Render (DNS: a CNAME `closeplan` →
   `tasks-ai.onrender.com`), then set `APP_URL` to `https://closeplan.iseeit.ai` on the web service and the cron jobs. Emails, personal links, unsubscribe

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // already keeps the token in this path from leaking to other sites.
 //
 // Two things make the link look right where it is pasted: the page title and link preview
-// ("Cluepoints × iSEEit · Mutual Closeplan" with the iSEEit logo), and the address: once APP_URL is a custom
+// (the close plan's own name, with the iSEEit logo), and the address: once APP_URL is a custom
 // domain (closeplan.iseeit.ai), a link opened on the old *.onrender.com address is sent on to it, so links
 // that were emailed before the move keep working and end up on the nice address.
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -24,8 +24,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   let title: string | undefined;
   try {
     const found = await resolvePlanLink(token);
-    const account = found && typeof (found.row.data as { account?: unknown }).account === "string" ? (found.row.data as { account: string }).account.trim() : "";
-    if (account) title = `${account} × iSEEit · Mutual Closeplan`;
+    const data = found ? found.row.data as { title?: unknown; account?: unknown } : null;
+    const name = typeof data?.title === "string" && data.title.trim() ? data.title.trim() : typeof data?.account === "string" ? data.account.trim() : "";
+    if (name) title = name;
   } catch { /* a database hiccup only costs the title */ }
   return new Response(await closePlanPageHtml({ title, origin: appLinkOrigin(request) }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" },
