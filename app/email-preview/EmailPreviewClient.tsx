@@ -4,6 +4,7 @@ const KINDS: Array<[string, string, string]> = [
   ["", "Weekly task summary", "A responsive summary for task owners and coworkers, styled to match Task AI."],
   ["close-plan-invitation", "Close Plan: invitation", "The email a customer contact gets from “Send invitation”: their personal link, what they can do and their open tasks."],
   ["close-plan-reminder", "Close Plan: reminder", "The reminder when the personal link was not opened (days and number of reminders are set under Admin → Notifications)."],
+  ["close-plan-assigned", "Close Plan: task assigned", "What someone gets when a task is assigned to them as owner or coworker (several tasks in one save are one email)."],
   ["close-plan-added", "Close Plan: added to a plan", "What an iSEEit colleague gets when they are added to a close plan."],
 ];
 

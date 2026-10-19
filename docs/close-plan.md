@@ -618,6 +618,15 @@ plan" and assignment notices, overdue reminders and the Monday email for plan ta
   unsubscribe link do the same by email address.
 - Every send is logged in `close_plan_email_log` (migration 0027): reminders, the weekly cap and de-duplication read it.
 
+### Assigned-task notices (2026-10-19)
+
+When a save makes someone **owner or coworker** of an open task (`assignmentChanges` in `app/lib/close-plan-assignments.ts`), they are told per
+Admin → Notifications: iSEEit people by email and Slack, customer contacts by email (only once invited; the email carries a fresh personal
+link). Several tasks assigned to one person in one save are one email. Not told: the person who made the change, people marked "Don't email" or
+excluded (unsubscribed), plans still in draft (template assignments), and the same person for the same task more than once a day. Owners changed
+in Salesforce are announced like any other change (rule "changes from Salesforce notify"), but tasks that merely arrive from Salesforce are not.
+Customer-side saves (a contact adding or assigning a task on their link) are not announced yet. Preview: `/email-preview` → "Close Plan: task assigned".
+
 ### Link preview and a custom address (2026-10-19)
 
 - **What a pasted link shows:** the page title and link preview of `/p/<token>` is the close plan's own name (the title you can rename in the plan header) with the iSEEit logo

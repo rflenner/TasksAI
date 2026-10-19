@@ -1,3 +1,4 @@
+import { notifyAssignments } from "../../../../lib/close-plan-assignments";
 import { appBase, newInternalMembers, notifyAddedToPlan } from "../../../../lib/close-plan-invitations";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../db";
@@ -39,6 +40,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   // Someone new on the iSEEit team: tell them (email and Slack, per Admin → Notifications). Never blocks the save.
   const members = newInternalMembers(existing.data as Record<string, unknown>, data as Record<string, unknown>, actor.email);
   if (members.length) void notifyAddedToPlan({ plan: { id, title }, members, byName: actor.name || "A colleague", baseUrl: appBase() });
+  // Tasks that were assigned to someone (owner or coworker) in this save: tell them (per Admin → Notifications).
+  void notifyAssignments({ plan: { id, title, oldData: existing.data as Record<string, unknown>, newData: data as Record<string, unknown> }, byName: actor.name || "A colleague", actorEmail: actor.email, source: "closeplan", baseUrl: appBase() });
   return Response.json({ id, version: row.version, updatedAt: row.updatedAt.toISOString() });
 }
 

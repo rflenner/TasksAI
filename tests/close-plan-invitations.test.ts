@@ -61,3 +61,31 @@ test("only new iSEEit people, not the person who added them nor Salesforce-pulle
   assert.deepEqual(newInternalMembers(before, after, "rizan@iseeit.com").map(m => [m.id, m.noEmail]), [["b", false], ["e", true]]);
   assert.deepEqual(newInternalMembers(before, before, "rizan@iseeit.com"), []);
 });
+
+import { assignmentChanges } from "../app/lib/close-plan-assignments";
+import { renderAssigned } from "../app/lib/close-plan-emails";
+
+test("assignment changes: a new owner or coworker on an open task, and every assignee of a new task", () => {
+  const before = { tasks: [{ id: "t1", title: "A", owner: "p1", coworkers: ["p2"], status: "Open" }, { id: "t2", title: "B", owner: "p1", status: "Open" }, { id: "t3", title: "C", owner: "p1", status: "Open" }] };
+  const after = { tasks: [
+    { id: "t1", title: "A", owner: "p3", coworkers: ["p2", "p4"], status: "Open", due: "2026-10-30", desc: "Do it" },
+    { id: "t2", title: "B", owner: "p1", status: "Open" },
+    { id: "t3", title: "C", owner: "p2", status: "Closed" },
+    { id: "t4", title: "New", owner: "p3", coworkers: ["p1"], status: "Open", due: "2026-10-01" },
+  ] };
+  const got = Object.fromEntries(assignmentChanges(before, after, "2026-10-19").map(c => [c.personId, c.tasks.map(t => `${t.taskId}:${t.role}${t.overdue ? ":overdue" : ""}`)]));
+  assert.deepEqual(got, { p3: ["t1:Owner", "t4:Owner:overdue"], p4: ["t1:Coworker"], p1: ["t4:Coworker:overdue"] });
+  assert.deepEqual(assignmentChanges(before, before), []);
+  assert.deepEqual(assignmentChanges(before, after, "2026-10-19", true).map(c => c.personId).sort(), ["p3", "p4"], "tasks that are new are skipped when asked");
+});
+
+test("the assigned-task email names who assigned what, in one email for several tasks", () => {
+  const one = renderAssigned({ firstName: "Drew", byName: "Rizan", planTitle: "Cluepoints", tasks: [{ title: "Sign off scope", role: "Owner", due: "2026-10-30" }], url: "https://x.test/close-plans", unsubscribeUrl: "https://x.test/unsubscribe/t" });
+  assert.match(one.subject, /Rizan assigned you “Sign off scope” in Cluepoints/);
+  assert.match(one.html, /Sign off scope/);
+  assert.match(one.html, /iseeit-logo\.png/);
+  assert.match(one.text, /as owner of “Sign off scope”/);
+  const many = renderAssigned({ firstName: "Drew", byName: "Rizan", planTitle: "Cluepoints", tasks: [{ title: "A", role: "Owner" }, { title: "B", role: "Coworker", overdue: true }], url: "u", unsubscribeUrl: "x" });
+  assert.match(many.subject, /assigned you 2 tasks in Cluepoints/);
+  assert.match(many.text, /- B \(Coworker, overdue\)/);
+});

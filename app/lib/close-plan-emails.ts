@@ -60,3 +60,18 @@ export function renderAddedToPlan(input: { firstName: string; byName: string; pl
     text: `Hello ${input.firstName},\n\n${input.byName} added you to the close plan ${input.planTitle}${roleText}. You can see every task, who owns it and when it's due, and work on your own.\n\nOpen the close plan: ${input.url}\n\nStop these emails: ${input.unsubscribeUrl}`,
   };
 }
+
+export type AssignedTask = PlanEmailTask & { role: "Owner" | "Coworker" };
+// Someone became owner or coworker of one or more tasks.
+export function renderAssigned(input: { firstName: string; byName: string; planTitle: string; tasks: AssignedTask[]; url: string; unsubscribeUrl: string }): Rendered {
+  const n = input.tasks.length, first = input.tasks[0];
+  const what = n === 1 ? `“${first.title}”` : `${n} tasks`;
+  const html = emailShell(`${eyebrow(n === 1 ? "NEW TASK FOR YOU" : "NEW TASKS FOR YOU")}${heading(`Hello ${input.firstName}, ${n === 1 ? "a task was assigned to you." : `${n} tasks were assigned to you.`}`)}${para(`${esc(input.byName)} assigned you ${n === 1 ? `as ${first.role.toLowerCase()} of` : "on"} <b>${esc(n === 1 ? first.title : `${n} tasks`)}</b> in the close plan <b>${esc(input.planTitle)}</b>.`)}
+${section(n === 1 ? "The task" : "The tasks")}<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${input.tasks.map(t => taskCard({ subject: t.title, description: t.description, project: `${input.planTitle} · ${t.role}`, due: niceDate(t.due), overdue: t.overdue, status: t.status === "In progress" ? "In progress" : "Open", url: input.url })).join("")}</table>
+${button(input.url, "Open the plan")}`, footer(input.unsubscribeUrl), header());
+  return {
+    subject: n === 1 ? `${input.byName} assigned you “${first.title}” in ${input.planTitle}` : `${input.byName} assigned you ${n} tasks in ${input.planTitle}`,
+    html,
+    text: `Hello ${input.firstName},\n\n${input.byName} assigned you ${n === 1 ? `as ${first.role.toLowerCase()} of ${what}` : `on ${what}`} in the close plan ${input.planTitle}.${input.tasks.map(t => `\n- ${t.title} (${t.role}${t.overdue ? ", overdue" : t.due ? `, due ${niceDate(t.due)}` : ""})`).join("")}\n\nOpen the plan: ${input.url}\n\nStop these emails: ${input.unsubscribeUrl}`,
+  };
+}
