@@ -85,6 +85,39 @@
     return { roles, tasks: result };
   }
 
-  const api = { planDemoContent, suggestedRoles };
+  // Made-up names for a screenshot or video: customer contacts get a new name AND a made-up address (so nobody real is ever emailed from a
+  // demo plan), iSEEit people only a new name (their address decides who can open the plan). `texts` is every free text of the plan, so the
+  // old names can be swapped for the new ones there too (task titles, descriptions, status updates, activity).
+  const FIRST = ["Hannah", "Lukas", "Olivia", "Marcus", "Priya", "Julien", "Elena", "Tomás", "Nina", "Daniel", "Sofia", "Mateo", "Amara", "Jonas", "Leila", "Noah", "Clara", "Viktor", "Mira", "Felix"];
+  const LAST = ["Weber", "Brenner", "Grant", "Reid", "Nair", "Moreau", "Rossi", "Silva", "Fischer", "Costa", "Lindgren", "Okafor", "Haddad", "Novak", "Sato", "Meyer", "Dubois", "Kowalski", "Berg", "Almeida"];
+  // 20 customer names (each first name with a different last name) and a few for the iSEEit side.
+  const CUSTOMER_NAMES = FIRST.map((f, i) => `${f} ${LAST[(i + 7) % LAST.length]}`);
+  const SELLER_NAMES = ["Sam Rivera", "Jordan Lee", "Taylor Brooks", "Casey Morgan", "Alex Novak", "Robin Hart", "Jamie Cole", "Morgan Reyes"];
+  const slug = n => n.normalize("NFKD").replace(/[^\w\s.-]/g, "").trim().toLowerCase().replace(/\s+/g, ".");
+  function madeUpNames(people, options) {
+    const o = options || { customers: true, sellers: false }, taken = new Set(people.map(p => p.name)), out = [];
+    const next = pool => pool.find(n => !taken.has(n)) || pool[0] + " " + (taken.size + 1);
+    for (const p of people) {
+      const buyer = p.side === "buyer";
+      if (!(buyer ? o.customers : o.sellers)) continue;
+      const name = next(buyer ? CUSTOMER_NAMES : SELLER_NAMES); taken.add(name);
+      out.push({ id: p.id, oldName: p.name, name, ...(buyer ? { email: `${slug(name)}@${(o.domain || "acme.example").replace(/^@/, "")}` } : {}) });
+    }
+    return out;
+  }
+  const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Swaps old names for new ones in a text: the full name, and the first name when it is unique among the plan's people.
+  function renameInText(text, renames, people) {
+    let out = String(text || "");
+    const firsts = people.map(p => (p.name || "").split(/\s+/)[0]);
+    for (const r of renames) {
+      out = out.replace(new RegExp("\\b" + esc(r.oldName) + "\\b", "g"), r.name);
+      const first = (r.oldName || "").split(/\s+/)[0];
+      if (first.length >= 3 && firsts.filter(f => f === first).length === 1) out = out.replace(new RegExp("\\b" + esc(first) + "\\b", "g"), r.name.split(/\s+/)[0]);
+    }
+    return out;
+  }
+
+  const api = { planDemoContent, suggestedRoles, madeUpNames, renameInText };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.closePlanDemoContent = api;
 })(typeof window !== "undefined" ? window : globalThis);

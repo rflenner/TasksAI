@@ -1298,23 +1298,34 @@ async function sfAutoRun() {
 // Site admins: give the people on a demo plan roles and a few realistic tasks each, for screenshots and videos (public/close-plan-demo-content.js).
 function demoFillPlan() {
   const q = ui.demoFill, today = new Date().toISOString().slice(0, 10);
-  return closePlanDemoContent.planDemoContent({ people: state.people, phases: state.phases, tasks: state.tasks, today, newId: () => "preview", replace: q.replace, sellerOwner: state.planOwners.seller });
+  const gen = closePlanDemoContent.planDemoContent({ people: state.people, phases: state.phases, tasks: state.tasks, today, newId: () => "preview", replace: q.replace, sellerOwner: state.planOwners.seller });
+  gen.renames = closePlanDemoContent.madeUpNames(state.people, { customers: q.customers, sellers: q.sellers, domain: state.domain });
+  return gen;
 }
 function demoFillBox() {
   const q = ui.demoFill, gen = demoFillPlan(), name = id => (state.people.find(p => p.id === id) || { name: id }).name;
   const counts = {}; gen.tasks.forEach(t => { counts[t.owner] = (counts[t.owner] || 0) + 1; });
-  const rows = gen.roles.map(r => { const p = state.people.find(x => x.id === r.id); return `<li><b>${esc(p.name)}</b>${p.title ? ` <span style="color:#7a8492">· ${esc(p.title)}</span>` : ""} → ${esc(r.role)}${r.kept ? ` <span style="color:#7a8492">(kept)</span>` : ""}${counts[r.id] ? ` · ${counts[r.id]} task${counts[r.id] > 1 ? "s" : ""}` : ""}</li>`; }).join("");
+  const rows = gen.roles.map(r => { const p = state.people.find(x => x.id === r.id), rn = gen.renames.find(x => x.id === r.id); return `<li><b>${rn ? `${esc(p.name)} → ${esc(rn.name)}` : esc(p.name)}</b>${p.title ? ` <span style="color:#7a8492">· ${esc(p.title)}</span>` : ""} → ${esc(r.role)}${r.kept ? ` <span style="color:#7a8492">(kept)</span>` : ""}${counts[r.id] ? ` · ${counts[r.id]} task${counts[r.id] > 1 ? "s" : ""}` : ""}</li>`; }).join("");
   const synced = state.sfdc && state.sfdc.syncedAt;
   return `<div class="sf-box" role="dialog" aria-label="Fill with demo content"><b>Fill “${esc(state.title)}” with demo content</b>
     <p>Gives everyone a role on this plan and a few realistic tasks (some closed, some in progress, one overdue, a milestone and a couple of status updates), spread over the phases. Meant for demo plans: screenshots and customer videos.</p>
     <ul>${rows}</ul>
-    <p><label><input type="checkbox" data-demofill-replace ${q.replace ? "checked" : ""}> Replace roles that are already set</label></p>
+    <p><label><input type="checkbox" data-demofill-customers ${q.customers ? "checked" : ""}> Give the customer's people made-up names and addresses (nobody real gets emailed from this plan)</label><br>
+    <label><input type="checkbox" data-demofill-sellers ${q.sellers ? "checked" : ""}> Also give the iSEEit people made-up names</label><br>
+    <label><input type="checkbox" data-demofill-replace ${q.replace ? "checked" : ""}> Replace roles that are already set</label></p>
     ${gen.tasks.length ? `<p><b>${gen.tasks.length} task${gen.tasks.length > 1 ? "s" : ""}</b> will be added.</p>` : `<p>All the demo tasks are already on this plan; only roles will change.</p>`}
     ${synced ? `<p style="color:#a8402f"><b>This plan syncs with Salesforce:</b> the demo tasks would be created there too. Use a demo plan.</p>` : ""}
     <div class="pe-actions"><button type="button" class="btn sm primary" data-demofill-apply>Apply</button><button type="button" class="btn sm" data-demofill-close>Cancel</button></div></div>`;
 }
 function demoFillApply() {
   const gen = demoFillPlan(); let roles = 0;
+  // Made-up names first: the old names are swapped in the plan's free text too (task titles, descriptions, updates, activity).
+  if (gen.renames.length) {
+    const names = state.people.map(p => ({ name: p.name })), fix = t => closePlanDemoContent.renameInText(t, gen.renames, names);
+    state.tasks.forEach(t => { t.title = fix(t.title); if (t.desc) t.desc = fix(t.desc); (t.updates || []).forEach(u => { u.text = fix(u.text); }); });
+    (state.activity || []).forEach(a => { a.text = fix(a.text); });
+    for (const r of gen.renames) { const p = state.people.find(x => x.id === r.id); p.name = r.name; if (r.email) p.email = r.email; delete p.contactIds; delete p.sfdcContactId; }
+  }
   for (const r of gen.roles) { const p = state.people.find(x => x.id === r.id); if (p && !r.kept && p.role !== r.role) { p.role = r.role; roles++; } }
   for (const t of gen.tasks) {
     const task = { ...t, id: newTaskId() };
@@ -1322,8 +1333,8 @@ function demoFillApply() {
     if (at < 0) { const order = state.phases.map(p => p.id), mine = order.indexOf(task.phase); state.tasks.forEach((x, i) => { if (order.indexOf(x.phase) < mine) at = i; }); }
     state.tasks.splice(at + 1, 0, task);
   }
-  log(`filled the plan with demo content: ${roles} role${roles === 1 ? "" : "s"} and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"}`, null);
-  ui.demoFill = null; save(); render(); toast(`${roles} role${roles === 1 ? "" : "s"} set and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"} added`);
+  log(`filled the plan with demo content: ${gen.renames.length ? `${gen.renames.length} made-up name${gen.renames.length === 1 ? "" : "s"}, ` : ""}${roles} role${roles === 1 ? "" : "s"} and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"}`, null);
+  ui.demoFill = null; save(); render(); toast(`${gen.renames.length ? gen.renames.length + " renamed, " : ""}${roles} role${roles === 1 ? "" : "s"} set and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"} added`);
 }
 function sfSyncBox() {
   const q = ui.sfsync, d = q.data, list = (a, n = 8) => a.length ? `<ul>${a.slice(0, n).map(x => `<li>${esc(x)}</li>`).join("")}${a.length > n ? `<li>and ${a.length - n} more</li>` : ""}</ul>` : "";
@@ -2608,9 +2619,11 @@ function wirePage() {
   app.querySelectorAll("[data-sfplay]").forEach(b => b.onclick = openSalesforcePlan);
   app.querySelectorAll("[data-vx-title]").forEach(b => b.onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); });
   app.querySelectorAll("[data-sfimport]").forEach(b => b.onclick = () => { ui.sfimport = { text: "" }; renderSfImport(); });
-  app.querySelectorAll("[data-demofill]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.demoFill = { replace: false }; render(); });
+  app.querySelectorAll("[data-demofill]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.demoFill = { replace: false, customers: true, sellers: false }; render(); });
   app.querySelectorAll("[data-demofill-close]").forEach(b => b.onclick = () => { ui.demoFill = null; render(); });
   app.querySelectorAll("[data-demofill-replace]").forEach(i => i.onchange = () => { ui.demoFill.replace = i.checked; render(); });
+  app.querySelectorAll("[data-demofill-customers]").forEach(i => i.onchange = () => { ui.demoFill.customers = i.checked; render(); });
+  app.querySelectorAll("[data-demofill-sellers]").forEach(i => i.onchange = () => { ui.demoFill.sellers = i.checked; render(); });
   app.querySelectorAll("[data-demofill-apply]").forEach(b => b.onclick = demoFillApply);
   app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "", sendUnlinked: !(state.sfdc && state.sfdc.syncedAt) }; render(); });
   app.querySelectorAll("[data-sfsync-close]").forEach(b => b.onclick = () => { ui.sfsync = null; render(); });

@@ -41,3 +41,26 @@ test("running it twice does not add the same tasks again", () => {
   const again = run({ tasks: first.tasks.map(t => ({ title: t.title })) });
   assert.equal(again.tasks.length, 0);
 });
+
+const { madeUpNames, renameInText } = createRequire(import.meta.url)("../public/close-plan-demo-content.js") as {
+  madeUpNames: (people: unknown[], o?: { customers?: boolean; sellers?: boolean; domain?: string }) => Array<{ id: string; oldName: string; name: string; email?: string }>;
+  renameInText: (text: string, renames: Array<{ oldName: string; name: string }>, people: Array<{ name: string }>) => string;
+};
+
+test("customers get made-up names and made-up addresses; iSEEit people only a new name, and only when asked", () => {
+  const renames = madeUpNames(people);
+  assert.deepEqual(renames.map(r => r.id), ["a", "b", "c", "d"], "only the customer's people by default");
+  assert.ok(renames.every(r => r.email && r.email.endsWith("@acme.example") && !r.email.includes(" ")));
+  assert.equal(new Set(renames.map(r => r.name)).size, renames.length);
+  const both = madeUpNames(people, { customers: true, sellers: true, domain: "demo.test" });
+  const sam = both.find(r => r.id === "se")!;
+  assert.equal(sam.email, undefined, "iSEEit addresses stay, they decide who can open the plan");
+  assert.ok(both.find(r => r.id === "a")!.email!.endsWith("@demo.test"));
+});
+
+test("old names are swapped in free text, including a first name that is unique", () => {
+  const ppl = [{ name: "Erik Thorne" }, { name: "Gary Leach" }, { name: "Gary Other" }];
+  const renames = [{ oldName: "Erik Thorne", name: "Hannah Weber" }, { oldName: "Gary Leach", name: "Lukas Brenner" }];
+  assert.equal(renameInText("Invite Erik to a mutual close plan; Erik Thorne agreed", renames, ppl), "Invite Hannah to a mutual close plan; Hannah Weber agreed");
+  assert.equal(renameInText("Gary Leach joined, Gary said hi", renames, ppl), "Lukas Brenner joined, Gary said hi", "an ambiguous first name is left alone");
+});
