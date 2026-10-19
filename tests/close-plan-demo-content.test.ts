@@ -64,3 +64,18 @@ test("old names are swapped in free text, including a first name that is unique"
   assert.equal(renameInText("Invite Erik to a mutual close plan; Erik Thorne agreed", renames, ppl), "Invite Hannah to a mutual close plan; Hannah Weber agreed");
   assert.equal(renameInText("Gary Leach joined, Gary said hi", renames, ppl), "Lukas Brenner joined, Gary said hi", "an ambiguous first name is left alone");
 });
+
+test("old open tasks that are overdue move into the coming weeks, except one that stays overdue; closed ones and future ones are left alone", () => {
+  const old = [
+    { id: "o1", title: "Old 1", due: "2026-09-20", status: "Open" }, { id: "o2", title: "Old 2", due: "2026-10-01", status: "In progress" },
+    { id: "o3", title: "Old 3", due: "2026-10-02", status: "Open" }, { id: "done", title: "Done", due: "2026-09-01", status: "Closed" }, { id: "soon", title: "Soon", due: "2026-10-30", status: "Open" },
+  ];
+  const out = run({ tasks: old }) as Out & { reschedule: Array<{ id: string; from: string; to: string }> };
+  const overdueNew = out.tasks.filter(t => t.status === "Open" && t.due < "2026-10-25").length;
+  assert.equal(overdueNew, 1, "the generated overdue task is the one that stays overdue");
+  assert.deepEqual(out.reschedule.map(r => r.id), ["o1", "o2", "o3"]);
+  assert.deepEqual(out.reschedule.map(r => r.to), ["2026-10-27", "2026-10-29", "2026-10-31"]);
+  const noGenerated = (planDemoContent({ people: [people[2]], phases: [{ id: "p", name: "Only", start: "2026-12-01", end: "2026-12-20" }], tasks: old, today: "2026-10-25", newId: () => "x" }) as Out & { reschedule: Array<{ id: string }> });
+  assert.deepEqual(noGenerated.reschedule.map(r => r.id), ["o2", "o3"], "with no generated overdue task the oldest existing one stays");
+  assert.deepEqual((run({ tasks: old, tidy: false }) as Out & { reschedule: unknown[] }).reschedule, []);
+});

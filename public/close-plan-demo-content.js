@@ -82,7 +82,18 @@
       return { id: newId(), phase: t.phase, parent: null, title: t.title, desc: t.desc, owner: t.person, coworkers: t.coworkers, recipients: t.recipients, due: t.due,
         status, shared: !t.internal, milestone: t.milestone, createdBy: seller ? seller.id : t.person, updates, ...(status === "Closed" ? { closedAt: t.due } : {}) };
     });
-    return { roles, tasks: result };
+    return { roles, tasks: result, reschedule: input.tidy === false ? [] : rescheduleOverdue(tasks, result, today) };
+  }
+
+  // "Next up" lists open tasks soonest first, overdue ones on top: on an older plan that is a wall of red. Every task that is still open
+  // and past its date moves into the coming weeks (oldest first, two days apart), except one that stays overdue so the screen still
+  // shows what overdue looks like (the generated overdue task if there is one, else the oldest existing one).
+  function rescheduleOverdue(existing, generated, today) {
+    const open = t => t.status !== "Closed" && t.due && t.due < today;
+    const keepGenerated = generated.some(t => t.status === "Open" && t.due < today);
+    const late = existing.filter(open).sort((a, b) => a.due.localeCompare(b.due));
+    const keep = keepGenerated ? null : late[0];
+    return late.filter(t => t !== keep).map((t, i) => ({ id: t.id, from: t.due, to: addDays(today, 2 + i * 2) }));
   }
 
   // Made-up names for a screenshot or video: customer contacts get a new name AND a made-up address (so nobody real is ever emailed from a

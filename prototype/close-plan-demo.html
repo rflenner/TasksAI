@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Close Plan Demo</title>
 <style>
 /* Layout: Task AI shell (white sidebar + content) with a Close Plans section; phases render as Task AI groups of task cards, subtasks nest under their card, details open in Task AI's right drawer. Light-only, matching Task AI. */
@@ -1298,7 +1299,7 @@ async function sfAutoRun() {
 // Site admins: give the people on a demo plan roles and a few realistic tasks each, for screenshots and videos (public/close-plan-demo-content.js).
 function demoFillPlan() {
   const q = ui.demoFill, today = new Date().toISOString().slice(0, 10);
-  const gen = closePlanDemoContent.planDemoContent({ people: state.people, phases: state.phases, tasks: state.tasks, today, newId: () => "preview", replace: q.replace, sellerOwner: state.planOwners.seller });
+  const gen = closePlanDemoContent.planDemoContent({ people: state.people, phases: state.phases, tasks: state.tasks, today, newId: () => "preview", replace: q.replace, tidy: q.tidy, sellerOwner: state.planOwners.seller });
   gen.renames = closePlanDemoContent.madeUpNames(state.people, { customers: q.customers, sellers: q.sellers, domain: state.domain });
   return gen;
 }
@@ -1312,13 +1313,15 @@ function demoFillBox() {
     <ul>${rows}</ul>
     <p><label><input type="checkbox" data-demofill-customers ${q.customers ? "checked" : ""}> Give the customer's people made-up names and addresses (nobody real gets emailed from this plan)</label><br>
     <label><input type="checkbox" data-demofill-sellers ${q.sellers ? "checked" : ""}> Also give the iSEEit people made-up names</label><br>
-    <label><input type="checkbox" data-demofill-replace ${q.replace ? "checked" : ""}> Replace roles that are already set</label></p>
+    <label><input type="checkbox" data-demofill-replace ${q.replace ? "checked" : ""}> Replace roles that are already set</label><br>
+    <label><input type="checkbox" data-demofill-tidy ${q.tidy ? "checked" : ""}> Move open tasks that are overdue into the coming weeks, so "Next up" is not all red (one stays overdue)${q.tidy && gen.reschedule.length ? ` · ${gen.reschedule.length} task${gen.reschedule.length > 1 ? "s" : ""}` : ""}</label></p>
     ${gen.tasks.length ? `<p><b>${gen.tasks.length} task${gen.tasks.length > 1 ? "s" : ""}</b> will be added.</p>` : `<p>All the demo tasks are already on this plan; only roles will change.</p>`}
     ${synced ? `<p style="color:#a8402f"><b>This plan syncs with Salesforce:</b> the demo tasks would be created there too. Use a demo plan.</p>` : ""}
     <div class="pe-actions"><button type="button" class="btn sm primary" data-demofill-apply>Apply</button><button type="button" class="btn sm" data-demofill-close>Cancel</button></div></div>`;
 }
 function demoFillApply() {
   const gen = demoFillPlan(); let roles = 0;
+  for (const r of gen.reschedule) { const t = state.tasks.find(x => x.id === r.id); if (t) t.due = r.to; }
   // Made-up names first: the old names are swapped in the plan's free text too (task titles, descriptions, updates, activity).
   if (gen.renames.length) {
     const names = state.people.map(p => ({ name: p.name })), fix = t => closePlanDemoContent.renameInText(t, gen.renames, names);
@@ -1333,7 +1336,7 @@ function demoFillApply() {
     if (at < 0) { const order = state.phases.map(p => p.id), mine = order.indexOf(task.phase); state.tasks.forEach((x, i) => { if (order.indexOf(x.phase) < mine) at = i; }); }
     state.tasks.splice(at + 1, 0, task);
   }
-  log(`filled the plan with demo content: ${gen.renames.length ? `${gen.renames.length} made-up name${gen.renames.length === 1 ? "" : "s"}, ` : ""}${roles} role${roles === 1 ? "" : "s"} and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"}`, null);
+  log(`filled the plan with demo content: ${gen.renames.length ? `${gen.renames.length} made-up name${gen.renames.length === 1 ? "" : "s"}, ` : ""}${roles} role${roles === 1 ? "" : "s"}, ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"}${gen.reschedule.length ? ` and ${gen.reschedule.length} rescheduled` : ""}`, null);
   ui.demoFill = null; save(); render(); toast(`${gen.renames.length ? gen.renames.length + " renamed, " : ""}${roles} role${roles === 1 ? "" : "s"} set and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"} added`);
 }
 function sfSyncBox() {
@@ -2619,9 +2622,10 @@ function wirePage() {
   app.querySelectorAll("[data-sfplay]").forEach(b => b.onclick = openSalesforcePlan);
   app.querySelectorAll("[data-vx-title]").forEach(b => b.onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); });
   app.querySelectorAll("[data-sfimport]").forEach(b => b.onclick = () => { ui.sfimport = { text: "" }; renderSfImport(); });
-  app.querySelectorAll("[data-demofill]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.demoFill = { replace: false, customers: true, sellers: false }; render(); });
+  app.querySelectorAll("[data-demofill]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.demoFill = { replace: false, customers: true, sellers: false, tidy: true }; render(); });
   app.querySelectorAll("[data-demofill-close]").forEach(b => b.onclick = () => { ui.demoFill = null; render(); });
   app.querySelectorAll("[data-demofill-replace]").forEach(i => i.onchange = () => { ui.demoFill.replace = i.checked; render(); });
+  app.querySelectorAll("[data-demofill-tidy]").forEach(i => i.onchange = () => { ui.demoFill.tidy = i.checked; render(); });
   app.querySelectorAll("[data-demofill-customers]").forEach(i => i.onchange = () => { ui.demoFill.customers = i.checked; render(); });
   app.querySelectorAll("[data-demofill-sellers]").forEach(i => i.onchange = () => { ui.demoFill.sellers = i.checked; render(); });
   app.querySelectorAll("[data-demofill-apply]").forEach(b => b.onclick = demoFillApply);
