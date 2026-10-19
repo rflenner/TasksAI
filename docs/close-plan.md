@@ -646,3 +646,14 @@ sync saved first, or a colleague edited), the page no longer drops the person's 
 deleted and reordered items) on top of the newer version, keeps what only the server changed (sync fields, other people's edits) and saves again, up to
 three times. Without a remembered base it falls back to showing the newer version with "please redo your last change". Found when a rename on an
 imported plan kept reverting.
+
+### Demo content and roles after creation (2026-10-19)
+
+- **Roles after the plan exists:** People tab → person → "Role on this plan" now offers the standard roles (Executive sponsor, Project lead, Technical lead,
+  IT security, Procurement, Legal, End-user representative for the customer; Account lead, Solutions engineer, Customer success, Project manager for iSEEit)
+  and still accepts any text.
+- **Fill with demo content (Site Admins):** Plan options → "Fill with demo content" (`public/close-plan-demo-content.js`, tested in
+  `tests/close-plan-demo-content.test.ts`). Shows what it will do, then gives every person without a role one (from their job title, else the next unused
+  default for their side; "Replace roles that are already set" overrides) and 2-3 realistic tasks each, spread over the phases with dates inside them:
+  closed, in progress and open tasks, exactly one overdue, a milestone, an internal task, status updates and requesters. Running it again adds no
+  duplicates. For demo plans: on a plan synced with Salesforce it warns that the tasks would be created there too.
