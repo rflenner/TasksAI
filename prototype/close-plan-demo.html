@@ -3542,12 +3542,21 @@ const VX_NO = /^\s*(no|nope|cancel|don'?t|stop|never mind|leave it)\b[\s,.!]*$/i
 async function voiceAsk(callId, utterance) {
   let text = String(utterance || "").trim();
   if (!text) { voiceReply(callId, ""); return; }
+  // The model sometimes calls the tool twice for one sentence; the same words again within 5 seconds are ignored.
+  const key = text.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim(), now = Date.now();
+  if (!voice.pending && voice.lastAsk && voice.lastAsk.key === key && now - voice.lastAsk.at < 5000) { voiceAudit({ event: "session", mode: "duplicate_ignored", outcome: "shown", utterance: text, spokenAnswer: "Ignored a repeated tool call." }); voiceReply(callId, ""); return; }
+  voice.lastAsk = { key, at: now };
   voiceFeed("asked", text);
   voice.history = [...voice.history, { role: "you", text }].slice(-12);
   let prefix = "";
   if (!voice.pending && !voice.draft && /^\s*(next|next one|the next one|skip( this one| it)?)[\s.!?]*$/i.test(text)) { voice.feed = voice.feed.filter(i => !(i.kind === "asked" && i.text === text)); await voiceNext(callId); return; }
   if (voice.pending) {
     const pending = voice.pending; voice.pending = null;
+    if (VX_YES.test(text) && (pending.many || pending.shift)) {
+      const said = pending.many ? voiceApplyMany(pending.many) : voiceApplyShift(pending.shift);
+      voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: voice.applied > 0 ? "changed" : "not_done", utterance: text, spokenAnswer: said, detail: { taskTitle: pending.many ? `${pending.many.taskIds.length} tasks` : "whole plan", changes: voice.applied > 0 ? [said] : [] } });
+      voiceReply(callId, said); return;
+    }
     if (VX_YES.test(text) && pending.phase) { const said = voiceApplyPhase(pending.phase); voiceAuditPhase(pending.phase, said, voice.applied > 0); voiceReply(callId, said); return; }
     if (VX_YES.test(text)) { voice.applied = 0; const said = voiceApply(pending); voiceAudit({ event: "confirmation", mode: "close_plan", outcome: voice.applied > 0 ? "changed" : "not_done", utterance: text, spokenAnswer: said, detail: { taskId: pending.taskId, taskTitle: (state.tasks.find(x => x.id === pending.taskId) || {}).title || "", changes: voice.applied > 0 ? [said] : [] } }); voiceReply(callId, said); return; }
     voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "declined", utterance: text });
@@ -3583,6 +3592,11 @@ function voiceAuditApplied(taskId, text, applied, utterance) {
 function voiceApplyPhase(e) {
   voice.applied = 0;
   if (!canEditPhases()) return "Only the plan owners and admins can change phases.";
+  if (e.sort) {
+    state.phases.sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+    log("put the phases in date order by voice", null); save(); render(); voice.applied = 1;
+    return `Put the phases in date order: ${state.phases.map(p => p.name).join(", ")}.`;
+  }
   if (e.add) {
     const ph = { id: "ph" + (++state.seq), name: e.name, goal: e.goal || "", start: e.start, end: e.end };
     state.phases.push(ph); log(`added phase “${ph.name}” by voice`, null); save(); setPhaseOpen([ph.id], true); render(); voice.applied = 1;
@@ -3610,6 +3624,29 @@ function voiceApplyPhase(e) {
   if (parts.includes("description")) said.push(`Updated the description of ${ph.name}.`);
   return said.join(" ");
 }
+// The same change on many tasks, one task at a time through voiceApply (so every access rule and log line applies).
+function voiceApplyMany(m) {
+  let ok = 0, skipped = 0;
+  for (const id of m.taskIds) { voice.applied = 0; voiceApply({ taskId: id, actions: m.actions }); if (voice.applied > 0) ok++; else skipped++; }
+  voice.applied = ok;
+  return ok ? `Done for ${ok} task${ok > 1 ? "s" : ""}.${skipped ? ` ${skipped} could not be changed or were already like that.` : ""}` : "Nothing changed. You may not have the right to change those tasks, or they were already like that.";
+}
+// Moves every phase, and with `tasks` the due date of every open task, by `days` (negative = earlier).
+function voiceApplyShift(c) {
+  voice.applied = 0;
+  if (!canEditPhases()) return "Only the plan owners and admins can move the whole plan.";
+  const move = ymd => new Date(Date.parse(ymd + "T12:00:00Z") + c.days * 864e5).toISOString().slice(0, 10), today = new Date().toISOString().slice(0, 10);
+  state.phases.forEach(p => { p.start = move(p.start); p.end = move(p.end); });
+  let moved = 0;
+  if (c.tasks) state.tasks.forEach(t => {
+    if (t.status === "Closed" || !t.due) return;
+    const from = t.due; t.due = move(from); moved++;
+    t.dateChanges = [...(t.dateChanges || []), { from, to: t.due, at: today, by: me() }];
+  });
+  log(`moved the whole plan ${Math.abs(c.days)} days ${c.days > 0 ? "later" : "earlier"}${c.tasks ? ` (${moved} task dates too)` : ""} by voice`, null);
+  save(); render(); voice.applied = 1;
+  return `Moved ${state.phases.length} phases${c.tasks ? ` and ${moved} task due dates` : ""} ${Math.abs(c.days)} days ${c.days > 0 ? "later" : "earlier"}.`;
+}
 function voiceAuditPhase(e, text, applied) {
   const ph = state.phases.find(p => p.id === e.phaseId);
   voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: applied ? "changed" : "not_done", spokenAnswer: text, detail: { phaseId: e.phaseId, taskTitle: "", phaseName: ph ? ph.name : (e.name || ""), changes: applied ? [text] : [] } });
@@ -3626,6 +3663,8 @@ function voiceHandle(res) {
       return res.spokenAnswer;
     case "confirm": voice.pending = { taskId: res.taskId, actions: res.actions || [] }; voiceShowTask(res.taskId); return res.spokenAnswer;
     case "confirm_phase": voice.pending = { phase: res.phaseEdit }; return res.spokenAnswer;
+    case "confirm_many": voice.pending = { many: res.bulk }; return res.spokenAnswer;
+    case "confirm_shift": voice.pending = { shift: res.shift }; return res.spokenAnswer;
     case "act_phase": { const text = voiceApplyPhase(res.phaseEdit); voiceAuditPhase(res.phaseEdit, text, voice.applied > 0); return text; }
     case "act": { voiceShowTask(res.taskId); voice.applied = 0; const text = voiceApply({ taskId: res.taskId, actions: res.actions || [] }, res.spokenAnswer); voiceAuditApplied(res.taskId, text, voice.applied > 0); return text; }
     case "add_task": { voice.applied = 0; voice.addedId = null; const text = voiceAdd(res.newTask); voiceAuditApplied(voice.addedId, text, voice.applied > 0); return text; }

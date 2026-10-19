@@ -36,16 +36,17 @@ export type NewTask = { title: string; phaseId: string | null; parentId: string 
 // already been asked (so nobody is asked twice). Held by the page between turns.
 export type Draft = { title: string; phaseId: string | null; parentId: string | null; ownerId: string | null; due: string | null; description: string | null; internal: boolean; askedPhase: boolean; askedDetails: boolean };
 export type Proposal = {
-  mode: "answer" | "open_task" | "list" | "next" | "act" | "act_phase" | "briefing" | "news" | "add_task" | "unsupported" | "wish" | "unclear";
+  mode: "answer" | "open_task" | "list" | "next" | "act" | "act_many" | "shift_plan" | "act_phase" | "briefing" | "news" | "add_task" | "unsupported" | "wish" | "unclear";
   answer: string; taskId: string | null; filter: ListFilter | null; personId: string | null; phaseId: string | null;
   actions: VoiceAction[]; newTask: NewTask | null; requestName?: string | null; phaseEdit?: PhaseEditProposal | null;
+  shiftDays?: number | null; shiftTasks?: boolean | null;
 };
 
 // A change to a phase of the plan, spoken: rename it, move its start or end date, change its description, add a
 // new phase, or delete one. Only the fields the person mentioned are set; the rest stay null.
-export type PhaseEditProposal = { add: boolean; remove: boolean; name: string | null; goal: string | null; start: string | null; end: string | null; moveTo: string | null };
+export type PhaseEditProposal = { sort?: boolean | null; add: boolean; remove: boolean; name: string | null; goal: string | null; start: string | null; end: string | null; moveTo: string | null };
 // What the page applies (same shape, checked): `phaseId` null only for a new phase.
-export type PhaseEdit = { phaseId: string | null; add: boolean; remove: boolean; name: string | null; goal: string | null; start: string | null; end: string | null; moveTo: string | null; moved: number };
+export type PhaseEdit = { sort?: boolean; phaseId: string | null; add: boolean; remove: boolean; name: string | null; goal: string | null; start: string | null; end: string | null; moveTo: string | null; moved: number };
 
 // Checks a spoken phase change against the plan. Names and descriptions must be the person's own words,
 // dates must be real and in order (a phase can't end before it starts), and a phase is only deleted after a
@@ -54,6 +55,12 @@ export function checkPhaseEdit(data: Obj, phaseId: string | null, e: PhaseEditPr
   { ok: true; edit: PhaseEdit; said: string; question: string | null } | { ok: false; reason: string } {
   if (!e) return { ok: false, reason: "I understood it was about a phase, but not what to change." };
   const phases = arr(data.phases), tasks = arr(data.tasks);
+  if (e.sort) {
+    const sorted = [...phases].sort((a, b) => str(a.start).localeCompare(str(b.start)) || str(a.end).localeCompare(str(b.end)));
+    const same = sorted.every((p, i) => p.id === phases[i].id);
+    if (same) return { ok: false, reason: "The phases are already in date order." };
+    return { ok: true, question: null, said: `Put the phases in date order: ${sorted.map(p => str(p.name)).join(", ")}.`, edit: { sort: true, phaseId: null, add: false, remove: false, name: null, goal: null, start: null, end: null, moveTo: null, moved: 0 } };
+  }
   const cleanDate = (v: string | null) => v && DATE.test(v) && !Number.isNaN(Date.parse(`${v}T12:00:00Z`)) ? v : null;
   const name = e.name && e.name.trim() && grounded(e.name, utterance) ? e.name.trim().slice(0, 120) : null;
   const goal = e.goal && e.goal.trim() && grounded(e.goal, utterance) ? e.goal.trim().slice(0, 300) : null;
@@ -93,6 +100,55 @@ export function checkPhaseEdit(data: Obj, phaseId: string | null, e: PhaseEditPr
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// ---- Changing many tasks at once, and moving the whole plan. Both are always confirmed first, with the count. ----
+
+// The task changes that make sense for a whole list or phase. Text edits, updates and deletes stay one task at a time.
+const BULK_ACTIONS = ["set_status", "set_due", "set_owner", "set_phase", "set_shared", "set_milestone", "add_coworker", "remove_coworker", "add_requester", "remove_requester"];
+export type BulkChange = { taskIds: string[]; actions: VoiceAction[] };
+export function checkBulk(data: Obj, p: Proposal, listIds: string[], utterance: string):
+  { ok: true; change: BulkChange; question: string; said: string } | { ok: false; reason: string } {
+  const tasks = arr(data.tasks), phases = arr(data.phases);
+  const phase = p.phaseId ? phases.find(x => x.id === p.phaseId) : null;
+  let targets = phase ? tasks.filter(t => t.phase === phase.id && !t.parent) : tasks.filter(t => listIds.includes(String(t.id)));
+  if (!targets.length) return { ok: false, reason: "There is no list on screen to change. Ask for one first, like the tasks in a phase, or name the phase." };
+  if ((p.actions || []).some(a => !BULK_ACTIONS.includes(a.type))) return { ok: false, reason: "I can change status, dates, owners, sharing and phase on many tasks at once. Posting updates, renaming and deleting go one task at a time." };
+  if ((p.actions || []).some(a => a.type === "set_phase")) targets = targets.filter(t => !t.parent);
+  targets = targets.slice(0, 100);
+  // The actions are checked once against a task of the group (a subtask can't change phase on its own, etc.).
+  const checked = checkProposal(data, { ...p, taskId: String(targets[0].id) }, null, utterance);
+  if (!checked.ok) return checked;
+  const n = targets.length, where = phase ? ` in ${str(phase.name)}` : "";
+  const a = checked.actions[0], people = arr(data.people);
+  const who = str(people.find(x => x.id === a.personId)?.name);
+  const verb = checked.actions.length > 1 ? `Change ${plural(n, "task")}${where}`
+    : a.type === "set_shared" ? `Make ${plural(n, "task")}${where} ${a.flag ? "shared with the customer" : "internal"}`
+    : a.type === "set_status" ? `Set ${plural(n, "task")}${where} to ${a.status}`
+    : a.type === "set_due" ? `Move ${plural(n, "task")}${where} to ${speakable(a.date, "")}`
+    : a.type === "set_owner" ? `Make ${who} the owner of ${plural(n, "task")}${where}`
+    : a.type === "set_phase" ? `Move ${plural(n, "task")}${where} to ${str(phases.find(x => x.id === a.phaseId)?.name)}`
+    : a.type === "set_milestone" ? `${a.flag ? "Mark" : "Unmark"} ${plural(n, "task")}${where} as milestones`
+    : `Change ${plural(n, "task")}${where}`;
+  return { ok: true, change: { taskIds: targets.map(t => String(t.id)), actions: checked.actions }, question: `${verb}? Say yes to confirm.`, said: `${verb}.` };
+}
+
+// Moving the whole plan by some days (negative = earlier): every phase, and with `tasks` also the due date of every open task.
+export type ShiftChange = { days: number; tasks: boolean; phases: number; taskCount: number };
+export function checkShift(data: Obj, days: unknown, tasks: unknown, utterance: string):
+  { ok: true; change: ShiftChange; question: string } | { ok: false; reason: string } {
+  const d = typeof days === "number" && Number.isInteger(days) ? days : 0;
+  if (!d) return { ok: false, reason: "By how many days or weeks should I move the plan, and later or earlier?" };
+  if (Math.abs(d) > 365) return { ok: false, reason: "That is more than a year. Say a smaller shift." };
+  const phases = arr(data.phases).length;
+  const withTasks = tasks === true || /\b(whole|entire) plan\b|\beverything\b|\band the tasks\b|\ball (the )?(dates|tasks)\b/i.test(utterance);
+  const taskCount = withTasks ? arr(data.tasks).filter(t => t.status !== "Closed" && DATE.test(str(t.due))).length : 0;
+  if (!phases) return { ok: false, reason: "The plan has no phases to move." };
+  const abs = Math.abs(d), span = abs % 7 === 0 ? plural(abs / 7, "week") : plural(abs, "day"), dir = d > 0 ? "later" : "earlier";
+  return {
+    ok: true, change: { days: d, tasks: withTasks, phases, taskCount },
+    question: `Move all ${plural(phases, "phase")}${withTasks ? ` and the due dates of ${plural(taskCount, "open task")}` : ""} ${span} ${dir}?${withTasks ? " Closed tasks stay as they are." : " Task due dates stay as they are."} Say yes to confirm.`,
+  };
+}
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -228,7 +284,7 @@ export function listMatches(data: Obj, filter: ListFilter, viewer: string | null
       case "buyer": return open(t) && sideOf(t.owner) === "buyer";
       case "seller": return open(t) && sideOf(t.owner) === "seller";
       case "internal": return t.shared === false;
-      case "person": return Boolean(personId) && (t.owner === personId || strs(t.coworkers).includes(personId!) || strs(t.recipients).includes(personId!));
+      case "person": return Boolean(personId) && open(t) && (t.owner === personId || strs(t.coworkers).includes(personId!) || strs(t.recipients).includes(personId!));
       default: return true;
     }
   };
@@ -409,7 +465,8 @@ export function capabilities(customer: string, phase: string, person: string): C
     { group: "Find", items: [`What is ${customer} waiting on?`, `What are we waiting on from ${customer}?`, "Show my tasks", `What's left in ${phase}?`, "Show the internal tasks", "Next"] },
     { group: "Change a task", items: ["Open the … task", "Post an update: …", "Mark it done", "Set it to in progress", "Move it to next Friday", `Assign it to ${person}`, `Add ${person} as coworker`, `Take ${person} off as coworker`, `Move it to ${phase}`, "Rename it to …", "Change the description to …", "Make it internal", "Share it with the customer", "Mark it as a milestone", "Delete it"] },
     { group: "Subtask checkboxes", items: ["Tick off the … subtask", "Untick the … subtask"] },
-    { group: "Phases", items: [`Rename ${phase} to …`, `Move the end of ${phase} to …`, `Change the start of ${phase} to …`, `Change the description of ${phase} to …`, "Add a phase … from … to …", `Delete the phase ${phase}`] },
+    { group: "Phases", items: [`Rename ${phase} to …`, `Move the end of ${phase} to …`, `Change the start of ${phase} to …`, `Change the description of ${phase} to …`, "Add a phase … from … to …", `Delete the phase ${phase}`, "Put the phases in date order", "Move the whole plan back four weeks"] },
+    { group: "Many tasks at once", items: [`Make all tasks in ${phase} internal`, "Close all of these", "Move them all to Friday"] },
     { group: "Add", items: ["Add a task: …", `Add a task to ${phase}: …, owner ${person}, due Friday`, "Add a subtask to …: …"] },
     { group: "Ideas", items: ["I wish you could …"] },
   ];

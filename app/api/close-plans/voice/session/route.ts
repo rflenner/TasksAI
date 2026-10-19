@@ -4,7 +4,7 @@ import { closePlanDocuments } from "../../../../../db/schema";
 import { capabilities } from "../../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../lib/request";
-import { audioInputSettings, NOISY_ROOM_INSTRUCTION, parseListeningMode } from "../../../../lib/voice-audio";
+import { audioInputSettings, NO_CHATTER_INSTRUCTION, NOISY_ROOM_INSTRUCTION, parseListeningMode, transcriptionSettings } from "../../../../lib/voice-audio";
 import { currentActor } from "../../../../lib/session";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
   // The plan's people, so their names are heard right.
   const people = Array.isArray(row.data.people) ? row.data.people as Array<{ name?: unknown }> : [];
   const names = [...new Set(people.map(p => String(p.name || "").trim()).filter(n => n && n.length <= 60))].slice(0, 80);
+  const phaseNames = (Array.isArray(row.data.phases) ? row.data.phases as Array<{ name?: unknown }> : []).map(p => String(p.name || "").trim()).filter(n => n && n.length <= 60).slice(0, 30);
   const model = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1-mini";
   const voice = process.env.OPENAI_REALTIME_VOICE || "marin";
   const transcribeModel = process.env.OPENAI_REALTIME_TRANSCRIBE_MODEL || "gpt-transcribe";
@@ -41,8 +42,8 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       session: {
         type: "realtime", model,
-        audio: { input: { ...audioInputSettings(mode), ...(withTranscription ? { transcription: { model: transcribeModel } } : {}) }, output: { voice } },
-        instructions: INSTRUCTIONS + (names.length ? ` People on this plan (spell them exactly like this): ${names.join(", ")}.` : "") + (mode === "noisy" ? NOISY_ROOM_INSTRUCTION : ""),
+        audio: { input: { ...audioInputSettings(mode), ...(withTranscription ? { transcription: transcriptionSettings(transcribeModel, [...names, ...phaseNames, String(row.data.account || "")]) } : {}) }, output: { voice } },
+        instructions: INSTRUCTIONS + NO_CHATTER_INSTRUCTION + (phaseNames.length ? ` Phases on this plan: ${phaseNames.join(", ")}.` : "") + (names.length ? ` People on this plan (spell them exactly like this): ${names.join(", ")}.` : "") + (mode === "noisy" ? NOISY_ROOM_INSTRUCTION : ""),
         tools: [{
           type: "function", name: "ask_close_plan",
           description: "Ask the close plan anything or tell it to do something: where things stand, what's next, open/show tasks, change, close or add tasks. Pass the person's words verbatim.",

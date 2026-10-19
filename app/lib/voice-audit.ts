@@ -218,6 +218,7 @@ export function rowLabel(row: { event: string; outcome: string | null; mode: str
   if (row.event === "heard") return { label: "Heard", tone: "info" };
   if (row.event === "said") return isUnbackedReply(row) ? { label: "Answered on its own — no Task AI action", tone: "bad" } : { label: "Assistant said", tone: "neutral" };
   if (row.event === "session" && row.mode === "noise_offered") return { label: "Offered Noisy room listening", tone: "info" };
+  if (row.event === "session" && row.mode === "duplicate_ignored") return { label: "Ignored a repeated request", tone: "info" };
   if (row.event === "session") return row.outcome === "failed" ? { label: "Session problem", tone: "bad" } : { label: row.mode === "stopped" ? "Session ended" : "Session started", tone: "neutral" };
   if (row.event === "error") return { label: "Error", tone: "bad" };
   switch (row.outcome) {
