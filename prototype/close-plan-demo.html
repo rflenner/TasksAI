@@ -72,6 +72,8 @@ button { cursor: pointer; }
 .title h1 { font-size: 34px; color: var(--dark); margin: 8px 0; line-height: 1.15; text-wrap: balance; }
 .title p { color: var(--muted); margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .title p b { color: var(--ink); }
+.sf-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 8px; border: 1px solid; }
+.sf-chip.ok { background: #eaf6ef; color: #25784b; border-color: #cfe9da; } .sf-chip.warn { background: #fff4de; color: #9b5d00; border-color: #f3dca9; } .sf-chip.bad { background: #fdecea; color: #a8402f; border-color: #f1c6bf; }
 .crm-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef4fc; color: var(--navy); border: 1px solid #dce7f5; border-radius: 14px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
 .title-actions { display: flex; gap: 10px; align-items: center; flex: none; }
 .btn { height: 42px; border: 1px solid #d7dce3; background: #fff; border-radius: 8px; padding: 0 18px; font-weight: 700; color: var(--navy); display: inline-flex; align-items: center; gap: 8px; }
@@ -797,6 +799,7 @@ button.wz-card { font: inherit; text-align: left; }
 <div id="report-root"></div>
 <div id="toast-root"></div>
 
+<script src="/close-plan-rebase.js"></script>
 <script>
 const STORE_KEY = "closeplan-demo-v1";
 const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
@@ -1191,7 +1194,7 @@ function titleBlock() {
       <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}${(IN_APP || LINK) && !state._demo ? ` <span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}</label>
       ${ui.mode === "seller" && !LINK && !state._demo && (canManage("seller") || isAdminUser()) ? `<h1><input class="plan-title" id="plan-title" value="${esc(state.title)}" maxlength="120" aria-label="Close plan name" title="Click to rename this close plan"></h1>` : `<h1>${esc(state.title)}</h1>`}
       <p><span>Target signature <b>${sign ? fmtY(sign.due) : "–"}</b></span><span>Target go-live <b>${live ? fmtY(live.due) : "–"}</b></span><span>Plan owners <b>${esc(person(state.planOwners.seller).name)}</b> · <b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></span>
-      ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}</p>
+      ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}${sfStatusChip()}</p>
     </div>
     <div class="title-actions">
       ${ui.mode === "seller" ? `<button type="button" class="btn" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : ""}
@@ -1241,7 +1244,7 @@ function renderSfImport() {
       const res = await r.json().catch(() => ({}));
       if (!r.ok) { q.busy = false; q.error = res.error || "The import failed"; return renderSfImport(); }
       const list = await (await fetch("/api/close-plans/store", { credentials: "same-origin" })).json();
-      store.plans = list.plans.map(p => ({ ...p.data, _v: p.version }));
+      store.plans = list.plans.map(p => fromServerData(p.data, p.version));
       ui.sfimport = null; switchPlan(res.id);
       toast(res.existing ? "That opportunity already has a plan. Opened it." : `Imported ${res.phases} phases and ${res.tasks} tasks from Salesforce.`);
     } catch (e) { q.busy = false; q.error = "The import failed. Check your connection."; renderSfImport(); }
@@ -1249,7 +1252,19 @@ function renderSfImport() {
 }
 // Plans that have synced once stay in sync by themselves (plan owner and admins): Salesforce is checked when the plan
 // is opened, and what changed here is written back a few seconds after each save. Close Plan wins on conflicts.
-const sfAuto = { busy: false, timer: null, last: 0 };
+const sfAuto = { busy: false, timer: null, last: 0, status: {} }; // status[planId] = { ok: true|false, at, message } of the last automatic sync
+// The Salesforce status of this plan, shown next to the title for plan owners and admins: syncing (and when it last worked), not
+// syncing yet (nobody has run the first sync), or the reason the last automatic sync failed. Clicking opens the sync dialog.
+function sfStatusChip() {
+  if (!IN_APP || LINK || !state || state._demo || ui.mode !== "seller" || !canDeleteThisPlan()) return "";
+  const linked = (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId;
+  if (!linked) return "";
+  const st = sfAuto.status[state.id], at = st ? new Date(st.at) : (state.sfdc && state.sfdc.syncedAt ? new Date(state.sfdc.syncedAt) : null);
+  const time = at ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  if (!(state.sfdc && state.sfdc.syncedAt)) return `<button type="button" class="sf-chip warn" data-sfsync title="This plan is linked to a Salesforce opportunity but has not been synced yet. New tasks and phases are not sent until you run the first sync.">⇄ Not syncing with Salesforce yet · Sync now</button>`;
+  if (st && !st.ok) return `<button type="button" class="sf-chip bad" data-sfsync title="${esc(st.message)}">⇄ Salesforce sync failed${time ? " at " + time : ""}: ${esc(st.message.slice(0, 90))}</button>`;
+  return `<button type="button" class="sf-chip ok" data-sfsync title="Changes are sent to Salesforce a few seconds after you save, and Salesforce is checked when you open the plan.">⇄ Synced with Salesforce${time ? " · " + time : ""}</button>`;
+}
 function sfAutoEligible() { return IN_APP && state && !state._demo && !LINK && state.sfdc && state.sfdc.syncedAt && canDeleteThisPlan(); }
 function sfAutoSoon(ms = 3000) { clearTimeout(sfAuto.timer); if (sfAutoEligible()) sfAuto.timer = setTimeout(sfAutoRun, ms); }
 async function sfAutoRun() {
@@ -1260,8 +1275,11 @@ async function sfAutoRun() {
     await flushPlanSave();
     const r = await fetch(`/api/close-plans/store/${encodeURIComponent(id)}/sfdc-sync`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "apply" }) });
     const res = await r.json().catch(() => ({}));
-    if (!r.ok || !res.plan || !state || state.id !== id) return;
-    const fresh = { ...res.plan.data, _v: res.plan.version };
+    if (!r.ok) { sfAuto.status[id] = { ok: false, at: Date.now(), message: res.error || "Salesforce could not be reached" }; if (state && state.id === id) render(); return; }
+    if (!res.plan) { sfAuto.status[id] = { ok: true, at: Date.now(), message: "" }; if (state && state.id === id) render(); return; }
+    if (!state || state.id !== id) return;
+    sfAuto.status[id] = { ok: !(res.failed && res.failed.length), at: Date.now(), message: res.failed && res.failed.length ? res.failed[0] : "" };
+    const fresh = fromServerData(res.plan.data, res.plan.version);
     if (sync.dirty[id] || sync.inflight[id] || sync.timers[id]) {
       // Edited meanwhile: keep the local edits, take the new version number, and remember which tasks now exist in Salesforce.
       for (const t of fresh.tasks) { const mine = state.tasks.find(x => x.id === t.id); if (mine && !mine.sfdcId && t.sfdcId) { mine.sfdcId = t.sfdcId; mine.sfdcSeen = t.sfdcSeen; } }
@@ -1273,7 +1291,7 @@ async function sfAutoRun() {
       if (res.pulled && res.pulled.length) toast(`Brought ${res.pulled.length} change${res.pulled.length > 1 ? "s" : ""} in from Salesforce.`);
     }
     if (res.failed && res.failed.length) toast(`Salesforce refused ${res.failed.length} change${res.failed.length > 1 ? "s" : ""}: ${res.failed[0]}`);
-  } catch (e) { /* offline or Salesforce busy: the next save or open tries again */ }
+  } catch (e) { sfAuto.status[id] = { ok: false, at: Date.now(), message: "Salesforce could not be reached" }; if (state && state.id === id) render(); }
   finally { sfAuto.busy = false; }
 }
 function sfSyncBox() {
@@ -1303,7 +1321,7 @@ async function sfSyncRun(mode) {
     else if (mode === "preview") q.data = res;
     else {
       q.done = res; q.data = null;
-      if (res.plan) { const fresh = { ...res.plan.data, _v: res.plan.version }; store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p); if (state.id === fresh.id) state = fresh; }
+      if (res.plan) { const fresh = fromServerData(res.plan.data, res.plan.version); store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p); if (state.id === fresh.id) state = fresh; }
     }
   } catch (e) { q.error = "Salesforce could not be reached. Check your connection."; }
   q.busy = null; render();
@@ -2559,7 +2577,7 @@ function wirePage() {
   app.querySelectorAll("[data-sfplay]").forEach(b => b.onclick = openSalesforcePlan);
   app.querySelectorAll("[data-vx-title]").forEach(b => b.onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); });
   app.querySelectorAll("[data-sfimport]").forEach(b => b.onclick = () => { ui.sfimport = { text: "" }; renderSfImport(); });
-  app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "" }; render(); });
+  app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "", sendUnlinked: !(state.sfdc && state.sfdc.syncedAt) }; render(); });
   app.querySelectorAll("[data-sfsync-close]").forEach(b => b.onclick = () => { ui.sfsync = null; render(); });
   app.querySelectorAll("[data-sfsync-preview]").forEach(b => b.onclick = () => sfSyncRun("preview"));
   app.querySelectorAll("[data-sfsync-apply]").forEach(b => b.onclick = () => sfSyncRun("apply"));
@@ -3214,7 +3232,10 @@ function materializeMe(plan) {
   if (!plan.people.some(p => p.id === ME_ID())) plan.people.push({ ...creatorPerson(), role: "", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
   remapPerson(plan, "__me", ME_ID());
 }
-const cleanPlan = plan => { const { _v, _demo, ...data } = plan; return data; };
+const cleanPlan = plan => { const { _v, _demo, _base, _rebases, ...data } = plan; return data; };
+// A plan as the server has it. `_base` remembers exactly that version: if a save is later rejected because the server moved on
+// (the Salesforce sync saved first, a colleague edited), the person's own changes are re-applied on top of the newer version.
+const fromServerData = (data, version) => ({ ...data, _v: version, _base: JSON.stringify(data) });
 const sync = { inflight: {}, dirty: {}, timers: {} };
 // A change is saved 0.6 s after it is made. If the person leaves the page in that moment (a rename registers when they click
 // out of the field, often onto a menu link), send it now instead of losing it.
@@ -3232,16 +3253,26 @@ async function pushPlan(plan) {
   sync.inflight[plan.id] = true; sync.dirty[plan.id] = false;
   try {
     // keepalive lets the request finish even if the person leaves the page right after the change (it only accepts bodies under 64 KB).
-    const body = JSON.stringify({ version: plan._v || 0, data: cleanPlan(plan) });
+    const sent = cleanPlan(plan), sentJson = JSON.stringify(sent);
+    const body = JSON.stringify({ version: plan._v || 0, data: sent });
     const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body, keepalive: body.length < 60000 });
     const res = await r.json().catch(() => ({}));
-    if (r.ok) { plan._v = res.version; setSaveState("Saved"); if (state && state.id === plan.id) sfAutoSoon(); }
+    if (r.ok) { plan._v = res.version; plan._base = sentJson; plan._rebases = 0; setSaveState("Saved"); if (state && state.id === plan.id) sfAutoSoon(); }
     else if (r.status === 409 && res.plan) {
-      const fresh = { ...res.plan.data, _v: res.plan.version };
-      store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
-      if (state && state.id === fresh.id) state = fresh;
-      sync.dirty[plan.id] = false; render();
-      toast("Someone else changed this plan at the same time. You now see their latest version; please redo your last change.");
+      if (plan._base && typeof rebasePlan === "function" && (plan._rebases || 0) < 3) {
+        // The server has a newer version (the Salesforce sync or a colleague saved first): keep what the person changed, take
+        // everything else from the newer version, and send that.
+        const merged = rebasePlan(sent, JSON.parse(plan._base), res.plan.data);
+        for (const k of Object.keys(plan)) if (k[0] !== "_") delete plan[k];
+        Object.assign(plan, merged); plan._v = res.plan.version; plan._base = JSON.stringify(res.plan.data); plan._rebases = (plan._rebases || 0) + 1;
+        sync.dirty[plan.id] = true; setSaveState("Saving…"); if (state && state.id === plan.id) render();
+      } else {
+        const fresh = fromServerData(res.plan.data, res.plan.version);
+        store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
+        if (state && state.id === fresh.id) state = fresh;
+        sync.dirty[plan.id] = false; render();
+        toast("Someone else changed this plan at the same time. You now see their latest version; please redo your last change.");
+      }
     } else { setSaveState("Not saved", true); toast(res.error || "The plan could not be saved. Check your connection and try again."); }
   } catch (e) { setSaveState("Not saved", true); toast("The plan could not be saved. Check your connection."); }
   sync.inflight[plan.id] = false;
@@ -3256,7 +3287,7 @@ async function bootFromServer() {
   try {
     const data = await fetchStore();
     APP_ME = data.me;
-    store = { plans: data.plans.map(p => ({ ...p.data, _v: p.version })), current: null };
+    store = { plans: data.plans.map(p => fromServerData(p.data, p.version)), current: null };
     let last = null; try { last = localStorage.getItem(STORE_KEY + ":current:" + APP_ME.id); } catch (e) {}
     state = store.plans.find(p => p.id === last) || store.plans[0] || null;
     if (state) store.current = state.id;
@@ -3278,7 +3309,7 @@ async function pollStore() {
     const data = await fetchStore();
     const byId = new Map(data.plans.map(p => [p.id, p]));
     let changed = false;
-    const next = data.plans.map(p => { const local = store.plans.find(x => x.id === p.id); if (local && local._v === p.version) return local; changed = true; return { ...p.data, _v: p.version }; });
+    const next = data.plans.map(p => { const local = store.plans.find(x => x.id === p.id); if (local && local._v === p.version) return local; changed = true; return fromServerData(p.data, p.version); });
     if (store.plans.some(p => !p._demo && !byId.has(p.id))) changed = true;
     if (!changed) return;
     const demo = store.plans.filter(p => p._demo);

@@ -637,3 +637,12 @@ Customer-side saves (a contact adding or assigning a task on their link) are not
   links and the logo in emails all follow `APP_URL`. A `/p/<token>` link opened on the old `*.onrender.com` address is redirected (308) to the
   `APP_URL` address, so invitations sent earlier keep working. Salesforce: add `https://closeplan.iseeit.ai/api/integrations/salesforce/callback` as a
   callback of the Connected App and connect again from the new address (the OAuth state cookie belongs to one host). People sign in again on a new host.
+
+### Saves that collide with a newer version (2026-10-19)
+
+The page remembers each plan exactly as the server last had it (`_base`). If a save is rejected because the server has a newer version (the Salesforce
+sync saved first, or a colleague edited), the page no longer drops the person's change: `rebasePlan` (`public/close-plan-rebase.js`, tested in
+`tests/close-plan-rebase.test.ts`) re-applies what the person changed (field by field for tasks, phases and people, plus their activity entries, added,
+deleted and reordered items) on top of the newer version, keeps what only the server changed (sync fields, other people's edits) and saves again, up to
+three times. Without a remembered base it falls back to showing the newer version with "please redo your last change". Found when a rename on an
+imported plan kept reverting.
