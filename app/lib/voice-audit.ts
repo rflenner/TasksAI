@@ -217,6 +217,7 @@ export type RowTone = "good" | "neutral" | "warn" | "bad" | "info";
 export function rowLabel(row: { event: string; outcome: string | null; mode: string | null; detail: Record<string, unknown> }): { label: string; tone: RowTone } {
   if (row.event === "heard") return { label: "Heard", tone: "info" };
   if (row.event === "said") return isUnbackedReply(row) ? { label: "Answered on its own — no Task AI action", tone: "bad" } : { label: "Assistant said", tone: "neutral" };
+  if (row.event === "session" && row.mode === "noise_offered") return { label: "Offered Noisy room listening", tone: "info" };
   if (row.event === "session") return row.outcome === "failed" ? { label: "Session problem", tone: "bad" } : { label: row.mode === "stopped" ? "Session ended" : "Session started", tone: "neutral" };
   if (row.event === "error") return { label: "Error", tone: "bad" };
   switch (row.outcome) {
@@ -302,6 +303,7 @@ export function formatSessionsAsText(sessions: VoiceAuditSession[], filters: Voi
       if (row.detail.createdSubject) lines.push(`${pad}created: ${oneLine(String(row.detail.createdSubject))}`);
       if (row.detail.error) lines.push(`${pad}error: ${oneLine(String(row.detail.error))}`);
       if (row.event === "session" && row.detail.model) lines.push(`${pad}model: ${String(row.detail.model)}`);
+      if (typeof row.detail.phaseName === "string" && row.detail.phaseName) lines.push(`${pad}phase: ${oneLine(row.detail.phaseName)}`);
       if (typeof row.detail.taskTitle === "string") lines.push(`${pad}task: ${oneLine(row.detail.taskTitle)}`);
       if (row.taskIds.length) lines.push(`${pad}tasks: ${row.taskIds.map(id => `#${id}`).join(", ")}`);
     }

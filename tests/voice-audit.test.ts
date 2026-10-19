@@ -198,3 +198,7 @@ test("formatSessionsAsText: a paste-friendly report with what was heard, underst
 test("formatSessionsAsText: an empty export says so instead of printing nothing", () => {
   assert.match(formatSessionsAsText([], null, new Date("2026-10-02T14:00:00Z")), /\(nothing recorded for these filters\)/);
 });
+
+test("rowLabel: a noise offer is not shown as a session start", () => {
+  assert.equal(rowLabel({ event: "session", outcome: "shown", mode: "noise_offered", detail: {} }).label, "Offered Noisy room listening");
+});
