@@ -241,3 +241,44 @@ test("briefing and whatsNew: counted by code, in plain sentences", () => {
   assert.equal(whatsNew(data, "2026-10-19", 7), "1 change in the last 7 days. Drew closed “POC”.");
   assert.equal(whatsNew({ ...data, activity: [] }, "2026-10-19", 1), "Nothing has changed today.");
 });
+
+import { checkBulk, checkShift } from "../app/lib/close-plan-voice";
+import { transcriptionSettings } from "../app/lib/voice-audio";
+const bulkData = {
+  phases: [{ id: "p1", name: "Validation", start: "2026-10-01", end: "2026-10-31" }, { id: "p2", name: "Close", start: "2026-11-01", end: "2026-11-30" }],
+  people: [{ id: "a", name: "Drew", side: "seller" }],
+  tasks: [
+    { id: "1", phase: "p1", title: "A", status: "Open", due: "2026-10-10" }, { id: "2", phase: "p1", title: "B", status: "Open", due: "2026-10-12" },
+    { id: "3", phase: "p1", parent: "1", title: "A1", status: "Open" }, { id: "4", phase: "p2", title: "C", status: "Closed", due: "2026-11-01" },
+  ],
+};
+const prop = (m: Partial<Proposal>): Proposal => ({ mode: "act_many", answer: "", taskId: null, filter: null, personId: null, phaseId: null, actions: [], newTask: null, ...m });
+const act = (a: Partial<VoiceAction>): VoiceAction => ({ type: "set_shared", status: null, text: null, date: null, personId: null, flag: false, ...a } as VoiceAction);
+
+test("checkBulk: a phase or the list on screen, asked first with the count; one-task-only changes refused", () => {
+  const byPhase = checkBulk(bulkData, prop({ phaseId: "p1", actions: [act({})] }), [], "make all tasks in Validation internal");
+  assert.ok(byPhase.ok && byPhase.change.taskIds.join() === "1,2" && /Make 2 tasks in Validation internal\? Say yes/.test(byPhase.question));
+  const byList = checkBulk(bulkData, prop({ actions: [act({ type: "set_status", status: "Closed" })] }), ["1", "2", "3"], "close all of these");
+  assert.ok(byList.ok && byList.change.taskIds.length === 3 && /Set 3 tasks to Closed/.test(byList.question));
+  assert.equal(checkBulk(bulkData, prop({ actions: [act({})] }), [], "make them internal").ok, false);
+  assert.equal(checkBulk(bulkData, prop({ phaseId: "p1", actions: [act({ type: "delete_task" })] }), [], "delete all").ok, false);
+});
+
+test("checkShift: whole plan by days, tasks only when meant, bounded", () => {
+  const all = checkShift(bulkData, 28, null, "move the whole plan back four weeks");
+  assert.ok(all.ok && all.change.tasks && all.change.taskCount === 2 && /Move all 2 phases and the due dates of 2 open tasks 4 weeks later\?/.test(all.question));
+  const phasesOnly = checkShift(bulkData, -3, false, "bring the phases forward three days");
+  assert.ok(phasesOnly.ok && !phasesOnly.change.tasks && /3 days earlier/.test(phasesOnly.question));
+  assert.equal(checkShift(bulkData, 0, null, "x").ok, false); assert.equal(checkShift(bulkData, 999, null, "x").ok, false);
+});
+
+test("checkPhaseEdit sort, person lists are open tasks only, transcription is English with a vocabulary", () => {
+  const unsorted = { ...bulkData, phases: [bulkData.phases[1], bulkData.phases[0]] };
+  const base = { sort: true, add: false, remove: false, name: null, goal: null, start: null, end: null, moveTo: null };
+  const r = checkPhaseEdit(unsorted, null, base, "put the phases in date order", "2026-10-19");
+  assert.ok(r.ok && r.edit.sort && /Validation, Close/.test(r.said));
+  assert.equal(checkPhaseEdit(bulkData, null, base, "sort", "2026-10-19").ok, false);
+  assert.deepEqual(listMatches({ ...bulkData, tasks: [{ id: "1", phase: "p1", status: "Closed", owner: "a" }, { id: "2", phase: "p1", status: "Open", owner: "a" }] }, "person", null, "2026-10-19", "a"), ["2"]);
+  const t = transcriptionSettings("gpt-transcribe", ["CluePoints", "Drew Klein"]);
+  assert.equal(t.language, "en"); assert.match(t.prompt, /CluePoints/);
+});
