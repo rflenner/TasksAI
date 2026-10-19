@@ -75,3 +75,15 @@ ${button(input.url, "Open the plan")}`, footer(input.unsubscribeUrl), header());
     text: `Hello ${input.firstName},\n\n${input.byName} assigned you ${n === 1 ? `as ${first.role.toLowerCase()} of ${what}` : `on ${what}`} in the close plan ${input.planTitle}.${input.tasks.map(t => `\n- ${t.title} (${t.role}${t.overdue ? ", overdue" : t.due ? `, due ${niceDate(t.due)}` : ""})`).join("")}\n\nOpen the plan: ${input.url}\n\nStop these emails: ${input.unsubscribeUrl}`,
   };
 }
+
+// A note one person sends another about a task (the bell button): their own words, the task, and a way into the plan.
+export function renderTaskNote(input: { firstName: string; fromName: string; planTitle: string; message: string; task: PlanEmailTask; url: string; unsubscribeUrl: string }): Rendered {
+  const body = esc(input.message).replace(/\n/g, "<br>");
+  return {
+    subject: `${input.fromName} sent you a note on “${input.task.title}”`,
+    html: emailShell(`${eyebrow("A NOTE ON A TASK")}${heading(`Hello ${input.firstName}, ${input.fromName} wrote to you.`)}<div style="margin:14px 0 0;padding:14px 18px;background:#f5f8fc;border-left:3px solid #173f76;border-radius:0 10px 10px 0;color:#2b3445;font-size:15px;line-height:1.6">${body}</div>
+${section("The task")}<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${taskCard({ subject: input.task.title, description: input.task.description, project: input.planTitle, due: niceDate(input.task.due), overdue: input.task.overdue, status: input.task.status === "In progress" ? "In progress" : "Open", url: input.url })}</table>
+${button(input.url, "Open the plan")}`, footer(input.unsubscribeUrl), header()),
+    text: `Hello ${input.firstName},\n\n${input.fromName} wrote to you about “${input.task.title}” in the close plan ${input.planTitle}:\n\n${input.message}\n\nOpen the plan: ${input.url}\n\nStop these emails: ${input.unsubscribeUrl}`,
+  };
+}
