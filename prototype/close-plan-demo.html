@@ -1092,6 +1092,8 @@ function render() {
   if (IN_APP && state) { try { localStorage.setItem(STORE_KEY + ":current:" + (APP_ME ? APP_ME.id : ""), state.id); } catch (e) {} }
   clearTimeout(render.flash); if (ui.justAdded) render.flash = setTimeout(() => { ui.justAdded = null; document.querySelector(".just-added")?.classList.remove("just-added"); }, 1600);
   if (state) checkSetup();
+  // The browser tab is named after the close plan (and the link preview of a personal link is made on the server the same way).
+  if (IN_APP || LINK) document.title = state && state.title ? state.title : "Mutual Closeplan";
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
   $("#mode-buyer").className = ui.mode === "buyer" ? "on" : "";
   $("#mode-buyer").textContent = `${B()} (shared link)`;
@@ -2226,8 +2228,6 @@ function renderDrawer() {
   };
   $("#d-phase").onchange = e => { t.phase = e.target.value; children(t.id).forEach(k => k.phase = t.phase); log(`moved “${t.title}” to ${state.phases.find(p => p.id === t.phase).name}`, t.id); save(); render(); };
   const sh = $("#d-shared"); if (sh) sh.onchange = () => { t.shared = sh.checked; save(); render(); toast(t.shared ? `Now visible to ${B()}` : `Hidden from ${B()}`); };
-  const pt = document.getElementById("plan-title");
-  if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
   const tk = $("#d-key"); if (tk) tk.onchange = () => { if (tk.value) state.tasks.forEach(x => { if (x.key === tk.value) delete x.key; }); if (tk.value) t.key = tk.value; else delete t.key; save(); render(); };
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
@@ -2525,6 +2525,9 @@ function addPeopleToPlan(list, side) {
 
 function wirePage() {
   const app = $("#app");
+  // Renaming the plan: the name in the plan header (plan owners and admins).
+  const pt = document.getElementById("plan-title");
+  if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
   app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { ui.filter = ui.filter === b.dataset.f && b.classList.contains("stat") ? "all" : b.dataset.f; render(); });
   app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { setPhaseOpen([b.dataset.jump], true); render(); document.getElementById("ph-" + b.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
   const fold = id => { const open = !document.getElementById("ph-" + id).classList.contains("folded"); setPhaseOpen([id], !open); render(); };

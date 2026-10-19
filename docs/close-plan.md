@@ -626,3 +626,14 @@ link). Several tasks assigned to one person in one save are one email. Not told:
 excluded (unsubscribed), plans still in draft (template assignments), and the same person for the same task more than once a day. Owners changed
 in Salesforce are announced like any other change (rule "changes from Salesforce notify"), but tasks that merely arrive from Salesforce are not.
 Customer-side saves (a contact adding or assigning a task on their link) are not announced yet. Preview: `/email-preview` → "Close Plan: task assigned".
+
+### Link preview and a custom address (2026-10-19)
+
+- **What a pasted link shows:** the page title and link preview of `/p/<token>` is the close plan's own name (the title you can rename in the plan header) with the iSEEit logo
+  (`public/iseeit-logo-512.png`) and a short description (Open Graph tags in `closePlanPageHtml`); `/close-plans` says "Mutual Closeplan" until a plan is open, then the browser tab shows that plan's name. Mail programs
+  and chat apps cache previews, so a link that was shared before shows the old text for a while.
+- **Custom address (closeplan.iseeit.ai):** add it as a custom domain on the `tasks-ai` web service in Render (DNS: a CNAME `closeplan` →
+  `tasks-ai.onrender.com`), then set `APP_URL` to `https://closeplan.iseeit.ai` on the web service and the cron jobs. Emails, personal links, unsubscribe
+  links and the logo in emails all follow `APP_URL`. A `/p/<token>` link opened on the old `*.onrender.com` address is redirected (308) to the
+  `APP_URL` address, so invitations sent earlier keep working. Salesforce: add `https://closeplan.iseeit.ai/api/integrations/salesforce/callback` as a
+  callback of the Connected App and connect again from the new address (the OAuth state cookie belongs to one host). People sign in again on a new host.
