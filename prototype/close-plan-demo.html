@@ -797,6 +797,7 @@ button.wz-card { font: inherit; text-align: left; }
 <div id="report-root"></div>
 <div id="toast-root"></div>
 
+<script src="/close-plan-rebase.js"></script>
 <script>
 const STORE_KEY = "closeplan-demo-v1";
 const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
@@ -1241,7 +1242,7 @@ function renderSfImport() {
       const res = await r.json().catch(() => ({}));
       if (!r.ok) { q.busy = false; q.error = res.error || "The import failed"; return renderSfImport(); }
       const list = await (await fetch("/api/close-plans/store", { credentials: "same-origin" })).json();
-      store.plans = list.plans.map(p => ({ ...p.data, _v: p.version }));
+      store.plans = list.plans.map(p => fromServerData(p.data, p.version));
       ui.sfimport = null; switchPlan(res.id);
       toast(res.existing ? "That opportunity already has a plan. Opened it." : `Imported ${res.phases} phases and ${res.tasks} tasks from Salesforce.`);
     } catch (e) { q.busy = false; q.error = "The import failed. Check your connection."; renderSfImport(); }
@@ -1261,7 +1262,7 @@ async function sfAutoRun() {
     const r = await fetch(`/api/close-plans/store/${encodeURIComponent(id)}/sfdc-sync`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "apply" }) });
     const res = await r.json().catch(() => ({}));
     if (!r.ok || !res.plan || !state || state.id !== id) return;
-    const fresh = { ...res.plan.data, _v: res.plan.version };
+    const fresh = fromServerData(res.plan.data, res.plan.version);
     if (sync.dirty[id] || sync.inflight[id] || sync.timers[id]) {
       // Edited meanwhile: keep the local edits, take the new version number, and remember which tasks now exist in Salesforce.
       for (const t of fresh.tasks) { const mine = state.tasks.find(x => x.id === t.id); if (mine && !mine.sfdcId && t.sfdcId) { mine.sfdcId = t.sfdcId; mine.sfdcSeen = t.sfdcSeen; } }
@@ -1303,7 +1304,7 @@ async function sfSyncRun(mode) {
     else if (mode === "preview") q.data = res;
     else {
       q.done = res; q.data = null;
-      if (res.plan) { const fresh = { ...res.plan.data, _v: res.plan.version }; store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p); if (state.id === fresh.id) state = fresh; }
+      if (res.plan) { const fresh = fromServerData(res.plan.data, res.plan.version); store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p); if (state.id === fresh.id) state = fresh; }
     }
   } catch (e) { q.error = "Salesforce could not be reached. Check your connection."; }
   q.busy = null; render();
@@ -3213,7 +3214,10 @@ function materializeMe(plan) {
   if (!plan.people.some(p => p.id === ME_ID())) plan.people.push({ ...creatorPerson(), role: "", access: { ...ACCESS_DEFAULTS.seller }, invite: { status: "member" } });
   remapPerson(plan, "__me", ME_ID());
 }
-const cleanPlan = plan => { const { _v, _demo, ...data } = plan; return data; };
+const cleanPlan = plan => { const { _v, _demo, _base, _rebases, ...data } = plan; return data; };
+// A plan as the server has it. `_base` remembers exactly that version: if a save is later rejected because the server moved on
+// (the Salesforce sync saved first, a colleague edited), the person's own changes are re-applied on top of the newer version.
+const fromServerData = (data, version) => ({ ...data, _v: version, _base: JSON.stringify(data) });
 const sync = { inflight: {}, dirty: {}, timers: {} };
 // A change is saved 0.6 s after it is made. If the person leaves the page in that moment (a rename registers when they click
 // out of the field, often onto a menu link), send it now instead of losing it.
@@ -3231,16 +3235,26 @@ async function pushPlan(plan) {
   sync.inflight[plan.id] = true; sync.dirty[plan.id] = false;
   try {
     // keepalive lets the request finish even if the person leaves the page right after the change (it only accepts bodies under 64 KB).
-    const body = JSON.stringify({ version: plan._v || 0, data: cleanPlan(plan) });
+    const sent = cleanPlan(plan), sentJson = JSON.stringify(sent);
+    const body = JSON.stringify({ version: plan._v || 0, data: sent });
     const r = await fetch(`/api/close-plans/store/${encodeURIComponent(plan.id)}`, { method: "PUT", credentials: "same-origin", headers: { "content-type": "application/json" }, body, keepalive: body.length < 60000 });
     const res = await r.json().catch(() => ({}));
-    if (r.ok) { plan._v = res.version; setSaveState("Saved"); if (state && state.id === plan.id) sfAutoSoon(); }
+    if (r.ok) { plan._v = res.version; plan._base = sentJson; plan._rebases = 0; setSaveState("Saved"); if (state && state.id === plan.id) sfAutoSoon(); }
     else if (r.status === 409 && res.plan) {
-      const fresh = { ...res.plan.data, _v: res.plan.version };
-      store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
-      if (state && state.id === fresh.id) state = fresh;
-      sync.dirty[plan.id] = false; render();
-      toast("Someone else changed this plan at the same time. You now see their latest version; please redo your last change.");
+      if (plan._base && typeof rebasePlan === "function" && (plan._rebases || 0) < 3) {
+        // The server has a newer version (the Salesforce sync or a colleague saved first): keep what the person changed, take
+        // everything else from the newer version, and send that.
+        const merged = rebasePlan(sent, JSON.parse(plan._base), res.plan.data);
+        for (const k of Object.keys(plan)) if (k[0] !== "_") delete plan[k];
+        Object.assign(plan, merged); plan._v = res.plan.version; plan._base = JSON.stringify(res.plan.data); plan._rebases = (plan._rebases || 0) + 1;
+        sync.dirty[plan.id] = true; setSaveState("Saving…"); if (state && state.id === plan.id) render();
+      } else {
+        const fresh = fromServerData(res.plan.data, res.plan.version);
+        store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
+        if (state && state.id === fresh.id) state = fresh;
+        sync.dirty[plan.id] = false; render();
+        toast("Someone else changed this plan at the same time. You now see their latest version; please redo your last change.");
+      }
     } else { setSaveState("Not saved", true); toast(res.error || "The plan could not be saved. Check your connection and try again."); }
   } catch (e) { setSaveState("Not saved", true); toast("The plan could not be saved. Check your connection."); }
   sync.inflight[plan.id] = false;
@@ -3255,7 +3269,7 @@ async function bootFromServer() {
   try {
     const data = await fetchStore();
     APP_ME = data.me;
-    store = { plans: data.plans.map(p => ({ ...p.data, _v: p.version })), current: null };
+    store = { plans: data.plans.map(p => fromServerData(p.data, p.version)), current: null };
     let last = null; try { last = localStorage.getItem(STORE_KEY + ":current:" + APP_ME.id); } catch (e) {}
     state = store.plans.find(p => p.id === last) || store.plans[0] || null;
     if (state) store.current = state.id;
@@ -3277,7 +3291,7 @@ async function pollStore() {
     const data = await fetchStore();
     const byId = new Map(data.plans.map(p => [p.id, p]));
     let changed = false;
-    const next = data.plans.map(p => { const local = store.plans.find(x => x.id === p.id); if (local && local._v === p.version) return local; changed = true; return { ...p.data, _v: p.version }; });
+    const next = data.plans.map(p => { const local = store.plans.find(x => x.id === p.id); if (local && local._v === p.version) return local; changed = true; return fromServerData(p.data, p.version); });
     if (store.plans.some(p => !p._demo && !byId.has(p.id))) changed = true;
     if (!changed) return;
     const demo = store.plans.filter(p => p._demo);
