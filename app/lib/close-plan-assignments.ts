@@ -8,6 +8,7 @@ import { closePlanEmailLog } from "../../db/schema";
 import { renderAssigned, type AssignedTask } from "./close-plan-emails";
 import { appBase, logEmail, slackDirect, unsubscribeUrl } from "./close-plan-invitations";
 import { createPlanLink } from "./close-plan-links";
+import { customerBase } from "./close-plan-urls";
 import { isOptedOut, loadRules, normalizeEmail } from "./close-plan-notify-rules";
 import { sendWithResend } from "./email";
 
@@ -80,7 +81,7 @@ export async function notifyAssignments(input: { plan: { id: string; title: stri
         const status = (person.invite as Obj | undefined)?.status;
         if (status !== "invited" && status !== "active") continue;
         const { token } = await createPlanLink(plan.id, change.personId, null);
-        const url = `${appBase(input.baseUrl)}/p/${token}`;
+        const url = `${customerBase(input.baseUrl)}/p/${token}`;
         const mail = renderAssigned({ firstName: first, byName: input.byName, planTitle: plan.title, tasks, url, unsubscribeUrl: unsubscribeUrl(email, input.baseUrl) });
         const r = await sendWithResend({ to: email, subject: mail.subject, html: mail.html, text: mail.text }).catch(() => ({ sent: false }));
         if (r.sent) for (const t of tasks) await logEmail("assigned", plan.id, change.personId, email, t.taskId);

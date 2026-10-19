@@ -31,6 +31,11 @@ services:
       # a different subdomain for the app.
       - key: APP_URL
         value: https://tasks-ai.onrender.com
+      # The customer-facing address of Close Plan (https://closeplan.iseeit.ai): personal links, invitation and reminder emails to customers,
+      # unsubscribe links, the link preview. Set it in Render once the custom domain is verified; unset, everything keeps using APP_URL.
+      # A /p/<token> link opened on any other address is redirected to it. Task AI's own emails keep APP_URL.
+      - key: CLOSEPLAN_URL
+        sync: false
       - key: TASK_AI_FROM_EMAIL
         value: Task AI <notifications@tasks.flenner.at>
       - key: SITE_ADMIN_EMAIL
@@ -160,6 +165,8 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: SESSION_SECRET
+        sync: false
+      - key: CLOSEPLAN_URL
         sync: false
   - type: cron
     name: tasks-ai-overdue-nudges

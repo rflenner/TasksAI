@@ -7,6 +7,7 @@ import { closePlanEmailLog, closePlanLinks } from "../../db/schema";
 import { accessOf, customerPerson, isShared } from "./close-plan-share";
 import { accessSummary, renderAddedToPlan, renderInvitation, type PlanEmailTask, type Rendered } from "./close-plan-emails";
 import { createPlanLink } from "./close-plan-links";
+import { customerBase, internalBase } from "./close-plan-urls";
 import { isOptedOut, loadRules, normalizeEmail, unsubscribeToken, type NotificationRules } from "./close-plan-notify-rules";
 import { sendWithResend } from "./email";
 
@@ -14,8 +15,10 @@ type Obj = Record<string, unknown>;
 const arr = (v: unknown): Obj[] => Array.isArray(v) ? v.filter(x => x && typeof x === "object") as Obj[] : [];
 const strs = (v: unknown): string[] => Array.isArray(v) ? v.filter(x => typeof x === "string") as string[] : [];
 
-export const appBase = (base?: string) => (base || process.env.APP_URL || "https://tasks-ai.onrender.com").replace(/\/+$/, "");
-export const unsubscribeUrl = (email: string, base?: string) => `${appBase(base)}/unsubscribe/${unsubscribeToken(email)}`;
+// Internal links (colleagues) use APP_URL; customer links use CLOSEPLAN_URL when it is set (app/lib/close-plan-urls.ts). The unsubscribe page is public, so it
+// lives on the customer address for everyone.
+export const appBase = internalBase;
+export const unsubscribeUrl = (email: string, base?: string) => `${customerBase(base)}/unsubscribe/${unsubscribeToken(email)}`;
 
 // Open shared tasks a customer contact owns or works on, soonest first.
 export function waitingTasks(data: Obj, personId: string, today = new Date().toISOString().slice(0, 10)): PlanEmailTask[] {
@@ -48,7 +51,7 @@ export async function sendInvitation(input: { plan: { id: string; title: string;
   const person = customerPerson(plan.data, personId);
   if (!person) throw new Error("Not a customer contact on this plan");
   const { token } = await createPlanLink(plan.id, personId, input.createdBy);
-  const url = `${appBase(input.baseUrl)}/p/${token}`;
+  const url = `${customerBase(input.baseUrl)}/p/${token}`;
   const email = typeof person.email === "string" ? normalizeEmail(person.email) : "";
   const rules = await loadRules();
   if (!rules.invitation.email) return { sent: false, url, reason: "Invitation emails are switched off under Admin → Notifications." };
