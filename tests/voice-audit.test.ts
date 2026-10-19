@@ -167,9 +167,9 @@ test("rowLabel: the opening greeting is not flagged as an answer given without a
 });
 
 test("parseAuditFilters: defaults to everything/7 days and ignores anything it doesn't recognise", () => {
-  assert.deepEqual(parseAuditFilters({}), { source: "all", show: "all", days: 7 });
-  assert.deepEqual(parseAuditFilters({ source: "live", show: "problems", days: "30" }), { source: "live", show: "problems", days: 30 });
-  assert.deepEqual(parseAuditFilters({ source: "x", show: "y", days: "1234" }), { source: "all", show: "all", days: 7 });
+  assert.deepEqual(parseAuditFilters({}), { source: "all", show: "all", days: 7, surface: "all" });
+  assert.deepEqual(parseAuditFilters({ source: "live", show: "problems", days: "30" }), { source: "live", show: "problems", days: 30, surface: "all" });
+  assert.deepEqual(parseAuditFilters({ source: "x", show: "y", days: "1234" }), { source: "all", show: "all", days: 7, surface: "all" });
 });
 
 test("formatSessionsAsText: a paste-friendly report with what was heard, understood, said, changed and why something failed", () => {
@@ -181,10 +181,10 @@ test("formatSessionsAsText: a paste-friendly report with what was heard, underst
     record({ id: 4, sessionId: "s9", createdAt: at("13:12:30"), event: "said", spokenAnswer: "Done, I sent it.", detail: { kind: "direct" } }),
     record({ id: 5, sessionId: "s9", createdAt: at("13:12:40"), event: "request", utterance: "notify Pavneet", mode: "unclear", outcome: "not_done", spokenAnswer: "Pavneet isn't someone I can notify." }),
   ]);
-  const text = formatSessionsAsText(sessions, { source: "all", show: "all", days: 7 }, new Date("2026-10-02T14:00:00Z"));
+  const text = formatSessionsAsText(sessions, { source: "all", show: "all", days: 7, surface: "all" }, new Date("2026-10-02T14:00:00Z"));
   assert.match(text, /^VOICE AUDIT TRAIL — exported 2026-10-02 14:00:00 UTC/);
   assert.match(text, /1 session · 1 change made · 2 problems/);
-  assert.match(text, /=== 2026-10-02 13:11:00 UTC · Rizan Flenner · Live Voice Assistant · 5 events · session s9 ===/);
+  assert.match(text, /=== 2026-10-02 13:11:00 UTC · Rizan Flenner · Task AI · Live Voice Assistant · 5 events · session s9 ===/);
   assert.match(text, /13:11:00 {2}\[Heard\] "show me my overdue tasks"/);
   assert.match(text, /understood as: filter/);
   assert.match(text, /on screen: #6/);

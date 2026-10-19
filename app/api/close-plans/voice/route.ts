@@ -142,7 +142,7 @@ export async function POST(request: Request) {
     await recordVoiceAudit({ id: actor.id, name: actor.name }, [{
       sessionId: cleanSessionId(body?.sessionId), source: "live", event: "request", utterance, mode: `close_plan:${reply.mode}`,
       outcome: reply.mode === "act" || reply.mode === "add_task" ? "changed" : reply.mode === "confirm" ? "awaiting_confirmation" : reply.mode === "unclear" || reply.mode === "unsupported" ? "not_done" : "shown",
-      taskIds: [], spokenAnswer: reply.spokenAnswer, detail: { surface: "close_plan", planId, taskId: reply.taskId ?? null, requestName: proposal.requestName ?? null, proposal },
+      taskIds: [], spokenAnswer: reply.spokenAnswer, detail: { surface: "close_plan", planId, planName: String(data.account || ""), taskId: reply.taskId ?? null, taskTitle: taskTitleOf(data, reply.taskId), requestName: proposal.requestName ?? null, proposal },
     }]);
   } catch (error) { console.error("Close plan voice audit failed:", error instanceof Error ? error.message : error); }
   return Response.json(reply);
@@ -188,4 +188,11 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
     case "wish": return { mode: "wish", spokenAnswer: p.answer || "Thanks, I've noted that." };
     default: return { mode: "unclear", spokenAnswer: p.answer || "Sorry, I didn't get that." };
   }
+}
+
+// The title of the task a reply is about, so the audit trail reads as words, not ids.
+function taskTitleOf(data: { tasks?: unknown }, id: string | null | undefined): string {
+  if (!id || !Array.isArray(data.tasks)) return "";
+  const task = (data.tasks as Array<{ id?: unknown; title?: unknown }>).find(t => t && t.id === id);
+  return typeof task?.title === "string" ? task.title.slice(0, 200) : "";
 }
