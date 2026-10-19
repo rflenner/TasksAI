@@ -1367,7 +1367,7 @@ const DOTS = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor
 const PENCIL = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
 const isCurrent = ph => TODAY >= d(ph.start) && TODAY <= d(ph.end);
 // Plan owners (either side) can rename, re-date, reorder, add and delete phases.
-function canEditPhases() { return !LINK && (me() === state.planOwners.seller || me() === state.planOwners.buyer); }
+function canEditPhases() { return !LINK && (isAdminUser() || me() === state.planOwners.seller || me() === state.planOwners.buyer); }
 
 // Do any two phases share at least one day?
 function overlapping() {
