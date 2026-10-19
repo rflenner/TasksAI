@@ -36,7 +36,7 @@ export type NewTask = { title: string; phaseId: string | null; parentId: string 
 // already been asked (so nobody is asked twice). Held by the page between turns.
 export type Draft = { title: string; phaseId: string | null; parentId: string | null; ownerId: string | null; due: string | null; description: string | null; internal: boolean; askedPhase: boolean; askedDetails: boolean };
 export type Proposal = {
-  mode: "answer" | "open_task" | "list" | "next" | "act" | "act_phase" | "add_task" | "unsupported" | "wish" | "unclear";
+  mode: "answer" | "open_task" | "list" | "next" | "act" | "act_phase" | "briefing" | "news" | "add_task" | "unsupported" | "wish" | "unclear";
   answer: string; taskId: string | null; filter: ListFilter | null; personId: string | null; phaseId: string | null;
   actions: VoiceAction[]; newTask: NewTask | null; requestName?: string | null; phaseEdit?: PhaseEditProposal | null;
 };
@@ -93,6 +93,56 @@ export function checkPhaseEdit(data: Obj, phaseId: string | null, e: PhaseEditPr
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+// "Give me a briefing": the plan in a few spoken sentences. Every number is counted here, never by the AI.
+// Overdue, due soon and who owes what are about open tasks (subtasks included); progress counts main tasks.
+export function briefing(data: Obj, customer: string, today: string): string {
+  const phases = arr(data.phases), tasks = arr(data.tasks), people = arr(data.people);
+  const sideOf = (id: unknown) => people.find(p => p.id === id)?.side;
+  const open = tasks.filter(t => t.status !== "Closed");
+  const main = tasks.filter(t => !t.parent), mainClosed = main.filter(t => t.status === "Closed").length;
+  const current = phases.filter(p => str(p.start) <= today && today <= str(p.end));
+  const parts: string[] = [];
+  if (current.length) parts.push(`You are in ${current.map(p => `${str(p.name)}, which ends ${speakable(p.end, today)}`).join(" and ")}.`);
+  else { const next = phases.find(p => str(p.start) > today); parts.push(next ? `The plan starts with ${str(next.name)} on ${speakable(next.start, today)}.` : "All phases are in the past."); }
+  parts.push(`${mainClosed} of ${plural(main.length, "main task")} ${mainClosed === 1 ? "is" : "are"} closed.`);
+  const overdue = open.filter(t => str(t.due) && str(t.due) < today).sort((a, b) => str(a.due).localeCompare(str(b.due)));
+  parts.push(overdue.length ? `${plural(overdue.length, "task")} ${overdue.length === 1 ? "is" : "are"} overdue${overdue.length <= 2 ? `: ${overdue.map(t => `"${str(t.title)}"`).join(" and ")}` : `, the oldest is "${str(overdue[0].title)}"`}.` : "Nothing is overdue.");
+  const soon = open.filter(t => str(t.due) >= today && str(t.due) <= addDays(today, 7));
+  if (soon.length) parts.push(`${plural(soon.length, "task")} ${soon.length === 1 ? "is" : "are"} due in the next 7 days.`);
+  const onUs = open.filter(t => sideOf(t.owner) === "seller").length, onThem = open.filter(t => sideOf(t.owner) === "buyer").length;
+  parts.push(`We have ${plural(onUs, "open task")}; ${customer} has ${onThem}.`);
+  const milestone = tasks.filter(t => t.milestone && t.status !== "Closed" && str(t.due) >= today).sort((a, b) => str(a.due).localeCompare(str(b.due)))[0];
+  if (milestone) parts.push(`The next milestone is "${str(milestone.title)}" on ${speakable(milestone.due, today)}.`);
+  if (overdue.length) parts.push("Say 'what's overdue' to go through them.");
+  return parts.join(" ");
+}
+
+// How far back "what's new" looks: said in the request ("today", "yesterday", "this week", "this month"), else a week.
+export function newsDays(utterance: string): number {
+  if (/\btoday\b/i.test(utterance)) return 1;
+  if (/\byesterday\b/i.test(utterance)) return 2;
+  if (/\b(month)\b/i.test(utterance)) return 30;
+  return 7;
+}
+
+// "What's new": what the plan's activity feed recorded in the last few days, newest first. The feed keeps the
+// latest 40 changes, so a long period on a busy plan can be cut short; the answer says so.
+export function whatsNew(data: Obj, today: string, days: number): string {
+  const people = arr(data.people), name = (id: unknown) => str(people.find(p => p.id === id)?.name).split(" ")[0] || "Someone";
+  const since = addDays(today, -(days - 1));
+  const items = arr(data.activity).filter(a => DATE.test(str(a.at).slice(0, 10)) && str(a.at).slice(0, 10) >= since && str(a.text));
+  const period = days === 1 ? "today" : days === 2 ? "since yesterday" : `in the last ${days} days`;
+  if (!items.length) return `Nothing has changed ${period}.`;
+  const lines = items.slice(0, 4).map(a => `${name(a.by)} ${str(a.text, 160).replace(/\s+by voice$/, "")}`);
+  const more = items.length - lines.length;
+  const cut = arr(data.activity).length >= 40 && days > 7 ? " That is only the latest 40 changes." : "";
+  return `${plural(items.length, "change")} ${period}. ${lines.join(". ")}.${more > 0 ? ` And ${more} more.` : ""}${cut}`;
+}
+
 export function speakable(date: unknown, today: string): string {
   if (typeof date !== "string" || !DATE.test(date)) return "";
   const d = new Date(`${date}T12:00:00Z`);
@@ -355,6 +405,7 @@ export function describeActions(data: Obj, taskId: string, actions: VoiceAction[
 export function capabilities(customer: string, phase: string, person: string): Capability[] {
   return [
     { group: "Ask", items: ["Where do we stand?", "What should I do next?", "What's overdue?"] },
+    { group: "Catch up", items: ["Give me a briefing", "What's new?", "What changed this week?"] },
     { group: "Find", items: [`What is ${customer} waiting on?`, `What are we waiting on from ${customer}?`, "Show my tasks", `What's left in ${phase}?`, "Show the internal tasks", "Next"] },
     { group: "Change a task", items: ["Open the … task", "Post an update: …", "Mark it done", "Set it to in progress", "Move it to next Friday", `Assign it to ${person}`, `Add ${person} as coworker`, `Take ${person} off as coworker`, `Move it to ${phase}`, "Rename it to …", "Change the description to …", "Make it internal", "Share it with the customer", "Mark it as a milestone", "Delete it"] },
     { group: "Subtask checkboxes", items: ["Tick off the … subtask", "Untick the … subtask"] },
@@ -363,5 +414,5 @@ export function capabilities(customer: string, phase: string, person: string): C
     { group: "Ideas", items: ["I wish you could …"] },
   ];
 }
-export const HELP_SPOKEN = (customer: string) => `I can tell you where the plan stands and what to do next, change phases (rename, move the start or end date, change the description, add or delete one), show lists like what ${customer} is waiting on or what's overdue, open and walk through tasks, post updates, change any field of a task like status, phase, dates, owners and the description, tick off subtasks, and add tasks, asking you for the phase, owner, due date and description if you leave them out. The full list is in the panel under "What can I say?". And if you wish I could do something else, just tell me.`;
+export const HELP_SPOKEN = (customer: string) => `I can give you a briefing, tell you what's new, tell you where the plan stands and what to do next, change phases (rename, move the start or end date, change the description, add or delete one), show lists like what ${customer} is waiting on or what's overdue, open and walk through tasks, post updates, change any field of a task like status, phase, dates, owners and the description, tick off subtasks, and add tasks, asking you for the phase, owner, due date and description if you leave them out. The full list is in the panel under "What can I say?". And if you wish I could do something else, just tell me.`;
 export { isHelpRequest };

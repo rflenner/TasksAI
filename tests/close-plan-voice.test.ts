@@ -220,3 +220,24 @@ test("checkPhaseEdit: rename, dates, add and delete a phase", () => {
   const del = edit("p2", { remove: true }, "delete the phase Validate");
   assert.ok(del.ok && del.question && /Its 2 tasks move to Discovery/.test(del.question) && del.edit.moveTo === "p1");
 });
+
+import { briefing, newsDays, whatsNew } from "../app/lib/close-plan-voice";
+test("briefing and whatsNew: counted by code, in plain sentences", () => {
+  const data = {
+    phases: [{ id: "p1", name: "Validate", start: "2026-10-01", end: "2026-10-31" }],
+    people: [{ id: "a", name: "Drew Klein", side: "seller" }, { id: "b", name: "Olivia Grant", side: "buyer" }],
+    tasks: [
+      { id: "1", phase: "p1", title: "Security review", status: "Open", owner: "b", due: "2026-10-10" },
+      { id: "2", phase: "p1", title: "POC", status: "Closed", owner: "a", due: "2026-10-05" },
+      { id: "3", phase: "p1", title: "Sign-off", status: "Open", owner: "a", due: "2026-10-22", milestone: true },
+      { id: "4", phase: "p1", parent: "3", title: "Draft", status: "Open", owner: "a", due: "2026-10-21" },
+    ],
+    activity: [{ at: "2026-10-19", by: "a", text: "closed “POC” by voice" }, { at: "2026-10-01", by: "b", text: "posted an update" }],
+  };
+  const text = briefing(data, "Meridian", "2026-10-19");
+  assert.match(text, /You are in Validate/); assert.match(text, /1 of 3 main tasks is closed/); assert.match(text, /1 task is overdue: "Security review"/);
+  assert.match(text, /2 tasks are due in the next 7 days/); assert.match(text, /We have 2 open tasks; Meridian has 1/); assert.match(text, /next milestone is "Sign-off"/);
+  assert.equal(newsDays("what happened today"), 1); assert.equal(newsDays("what's new"), 7);
+  assert.equal(whatsNew(data, "2026-10-19", 7), "1 change in the last 7 days. Drew closed “POC”.");
+  assert.equal(whatsNew({ ...data, activity: [] }, "2026-10-19", 1), "Nothing has changed today.");
+});

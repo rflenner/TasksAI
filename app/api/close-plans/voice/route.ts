@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { closePlanDocuments } from "../../../../db/schema";
-import { ACTION_TYPES, addressedToSomeoneElse, calendar, checkPhaseEdit, type PhaseEdit, checkProposal, completeDraft, type Draft, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, sanitizeDraft, viewerId, waitingSide } from "../../../lib/close-plan-voice";
+import { ACTION_TYPES, addressedToSomeoneElse, briefing, calendar, checkPhaseEdit, newsDays, whatsNew, type PhaseEdit, checkProposal, completeDraft, type Draft, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, sanitizeDraft, viewerId, waitingSide } from "../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
@@ -20,7 +20,7 @@ const schema = {
   type: "object", additionalProperties: false,
   required: ["mode", "answer", "taskId", "filter", "personId", "phaseId", "actions", "newTask", "requestName", "sameAsKnownRequest", "phaseEdit"],
   properties: {
-    mode: { type: "string", enum: ["answer", "open_task", "list", "next", "act", "act_phase", "add_task", "unsupported", "wish", "unclear"] },
+    mode: { type: "string", enum: ["answer", "open_task", "list", "next", "act", "act_phase", "briefing", "news", "add_task", "unsupported", "wish", "unclear"] },
     phaseEdit: {
       type: ["object", "null"], additionalProperties: false, required: ["add", "remove", "name", "goal", "start", "end", "moveTo"],
       properties: { add: { type: "boolean" }, remove: { type: "boolean" }, name: { type: ["string", "null"] }, goal: { type: ["string", "null"] }, start: { type: ["string", "null"] }, end: { type: ["string", "null"] }, moveTo: { type: ["string", "null"] } },
@@ -67,6 +67,8 @@ Modes:
   rename (text), set_description (text, only their words),
   set_shared (flag: false = "make it internal / hide it from the customer", true = "share it with the customer"), set_milestone (flag: "mark it as a milestone" / "not a milestone any more"),
   delete_task ("delete it", "remove this task"; always asked to confirm, never combined with other actions).
+- "briefing": they want the plan in a nutshell ("give me a briefing", "brief me", "catch me up", "summary", "where do we stand", "how are we doing overall"); a question about one specific thing is an "answer" instead. Nothing else is needed; the answer is built from the plan.
+- "news": they want the latest changes ("what's new", "what changed", "any updates", "what happened since yesterday", "what did Drew do"). Nothing else is needed.
 - "act_phase": change a PHASE of the plan (not a task): rename it, move its start or end date ("change the end date of Validate to June 30", "start Negotiate next Monday"), change its description, add a new phase, or delete one. phaseId = the phase it is about (the exact id from the plan's phases; null only when adding). phaseEdit: set only what they said and leave everything else null: name (the new name, their words), goal (the new description, their words), start / end (YYYY-MM-DD from the calendar; "move the end to Friday" sets only end), add (true = a new phase: name, start and end all needed), remove (true = delete the phase; moveTo = the phase id its tasks should go to only if they named one). Phases are never changed by "act".
 - "add_task": create a task or subtask ("add a task to Validate: send the SOC 2 report", "add a subtask under the POC: book the room"). newTask: title (their words), phaseId (ONLY a phase whose name they said, else null; never guess a phase from the plan or from other tasks), parentId (ONLY when they say "subtask": the task it belongs under; otherwise null, even if a similar task exists), ownerId (personId ONLY when they named a person or said "me"; otherwise null), due (YYYY-MM-DD from the calendar, else null), description (only their own words about what the task is, else null), internal (true only when they say internal or "just for us"), done (true when they decline to give more: "skip", "that's all", "no", "nothing", "that's fine", "leave it"). The caller asks for whatever is missing. When a draftTask is given, the request is the person's ANSWER to the caller's last question about that draft: use mode "add_task", set only what they just said, leave everything else null, and do not repeat the title (use the draft's); if they decline, set done true.
 - "unsupported": they want something this assistant can't do: inviting someone or sharing the plan ("invite Olivia", "send her the link"), sending emails or messages, deleting the plan, changing access rights, exporting, scheduling a meeting, the task history, anything outside this plan. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing from what you CAN do (the modes above: answer, list, open, change status/dates/owner/coworkers/requested by of a task, post an update, add a task or subtask). Never suggest anything else. requestName: your own NEW short name for the feature they want in THIS request, 2 to 6 words, Title Case (e.g. "Task History By Voice"); never copy a known request name into requestName. sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
@@ -189,6 +191,8 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
       const question = confirmQuestion(data, checked.taskId!, checked.actions, today);
       return { mode: question ? "confirm" : "act", taskId: checked.taskId, actions: checked.actions, spokenAnswer: question || describeActions(data, checked.taskId!, checked.actions, today) };
     }
+    case "briefing": return { mode: "briefing", spokenAnswer: briefing(data, typeof data.account === "string" && data.account ? data.account : "the customer", today) };
+    case "news": return { mode: "news", spokenAnswer: whatsNew(data, today, newsDays(utterance)) };
     case "act_phase": {
       const r = checkPhaseEdit(data, p.phaseId, p.phaseEdit, utterance, today);
       if (!r.ok) return { mode: "unclear", spokenAnswer: r.reason };

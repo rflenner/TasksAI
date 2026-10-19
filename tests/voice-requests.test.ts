@@ -40,8 +40,8 @@ test("help: recognised, spoken from the same list the panel shows", () => {
   for (const u of ["What should I do next?", "Can you help Olivia with the criteria?"]) assert.equal(isHelpRequest(u), false, u);
   assert.match(HELP_SPOKEN("Cluepoints"), /what Cluepoints is waiting on/);
   const groups = capabilities("Cluepoints", "Validate", "Drew");
-  assert.deepEqual(groups.map(g => g.group), ["Ask", "Find", "Change a task", "Subtask checkboxes", "Phases", "Add", "Ideas"]);
-  assert.ok(groups[1].items.includes("What is Cluepoints waiting on?"));
+  assert.deepEqual(groups.map(g => g.group), ["Ask", "Catch up", "Find", "Change a task", "Subtask checkboxes", "Phases", "Add", "Ideas"]);
+  assert.ok(groups[2].items.includes("What is Cluepoints waiting on?"));
 });
 
 test("pickRequestName reuses a known name only when it shares words with what was said", async () => {
