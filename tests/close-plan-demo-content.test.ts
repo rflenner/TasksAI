@@ -79,3 +79,43 @@ test("old open tasks that are overdue move into the coming weeks, except one tha
   assert.deepEqual(noGenerated.reschedule.map(r => r.id), ["o2", "o3"], "with no generated overdue task the oldest existing one stays");
   assert.deepEqual((run({ tasks: old, tidy: false }) as Out & { reschedule: unknown[] }).reschedule, []);
 });
+
+type DemoPlan = { phases: Array<{ id: string; start: string; end: string }>; tasks: Array<{ id: string; due: string; status: string; milestone?: boolean; closedAt?: string; updates?: Array<{ at: string }> }>; activity: Array<{ at: string }>; demo?: { anchor: string } };
+const { anchorPlanDates } = createRequire(import.meta.url)("../public/close-plan-demo-content.js") as { anchorPlanDates: (plan: DemoPlan, today: string, o?: { position?: number }) => { shift: number; done: number; overdue: number; inProgress: number; open: number } };
+const oldPlan = (): DemoPlan => ({
+  phases: [{ id: "a", start: "2026-09-07", end: "2026-10-02" }, { id: "b", start: "2026-10-05", end: "2026-10-30" }, { id: "c", start: "2026-11-02", end: "2026-11-27" }, { id: "d", start: "2026-11-30", end: "2027-01-15" }],
+  tasks: Array.from({ length: 18 }, (_, i) => ({ id: "t" + i, due: new Date(Date.UTC(2026, 8, 10) + i * 7 * 86400000).toISOString().slice(0, 10), status: i % 2 ? "Closed" : "Open", milestone: i % 6 === 5, updates: [{ at: "2026-09-12" }] })),
+  activity: [{ at: "2026-09-12" }],
+});
+const span = (p: DemoPlan) => { const d = [...p.phases.flatMap(x => [x.start, x.end]), ...p.tasks.map(t => t.due)].sort(); return Math.round((Date.parse(d[d.length - 1]) - Date.parse(d[0])) / 86400000); };
+
+test("anchoring puts today in the middle of the tasks, keeps every distance, and sets statuses from the dates", () => {
+  const plan = oldPlan(), before = span(plan);
+  const r = anchorPlanDates(plan, "2026-10-19");
+  assert.equal(span(plan), before, "the whole timeline moved, nothing stretched");
+  const behind = plan.tasks.filter(x => x.due < "2026-10-19").length / plan.tasks.length;
+  assert.ok(behind > 0.35 && behind < 0.55, `about as much behind as ahead (${behind.toFixed(2)})`);
+  assert.ok(r.done > 0 && r.overdue >= 1 && r.overdue <= 3 && r.inProgress > 0 && r.open > 0);
+  for (const t of plan.tasks) {
+    if (t.due < "2026-10-19") assert.ok(t.status === "Closed" || t.status === "Open", "past tasks are closed or overdue");
+    else assert.notEqual(t.status, "Closed", "nothing in the future is closed");
+    assert.equal(Boolean(t.closedAt), t.status === "Closed");
+  }
+  assert.equal(plan.tasks.filter(t => t.status === "Open" && t.due < "2026-10-19").length, r.overdue);
+  assert.equal(plan.demo!.anchor, "2026-10-19");
+  assert.notEqual(plan.activity[0].at, "2026-09-12", "activity and updates move with the plan");
+});
+
+test("resetting later moves everything by the days since the anchor, and the same day changes nothing", () => {
+  const plan = oldPlan(); anchorPlanDates(plan, "2026-10-19");
+  const snapshot = JSON.stringify(plan);
+  const same = anchorPlanDates(plan, "2026-10-19");
+  assert.equal(same.shift, 0);
+  assert.equal(JSON.stringify(plan), snapshot, "idempotent on the same day");
+  const firstDue = plan.tasks[0].due;
+  const later = anchorPlanDates(plan, "2026-11-02");
+  assert.equal(later.shift, 14);
+  assert.equal(plan.tasks[0].due, new Date(Date.parse(firstDue) + 14 * 86400000).toISOString().slice(0, 10));
+  assert.equal(plan.demo!.anchor, "2026-11-02");
+  assert.ok(later.done > 0 && later.overdue >= 1 && later.inProgress + later.open > 0, "still a mix after the reset");
+});

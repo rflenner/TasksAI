@@ -129,6 +129,56 @@
     return out;
   }
 
-  const api = { planDemoContent, suggestedRoles, madeUpNames, renameInText };
+  // ---- One date for the whole plan ----------------------------------------------------------------------------------------------
+  // A demo plan hangs on one date, "today": phases, deadlines and milestones sit around it (done and overdue before, planned after), and
+  // resetting moves everything so that the same picture holds on whatever day the plan is opened. The first time, the plan's own timeline
+  // is shifted so that today sits at the 45th percentile of its task dates (about as much behind as ahead); later the shift is simply the days since the last anchor (`plan.demo.anchor`).
+  // Statuses are then set from the dates: past tasks are closed (a few stay open and overdue), the next week is in progress or open, the rest open.
+  const shiftIso = (iso, n) => typeof iso === "string" && /^\d{4}-\d{2}-\d{2}/.test(iso) ? addDays(iso.slice(0, 10), n) + iso.slice(10) : iso;
+
+  function allDates(plan) {
+    const out = [];
+    (plan.phases || []).forEach(p => { if (p.start) out.push(p.start); if (p.end) out.push(p.end); });
+    (plan.tasks || []).forEach(t => { if (t.due) out.push(t.due); });
+    return out.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  }
+
+  // Mutates `plan` (phases, tasks, activity, invitations) and returns what happened.
+  function anchorPlanDates(plan, today, options) {
+    const o = options || {}, anchor = plan.demo && plan.demo.anchor;
+    let shift;
+    if (anchor) shift = daysBetween(anchor, today);
+    else {
+      // Today goes at the 45th percentile of the task dates: about as much work behind it as ahead of it.
+      const due = (plan.tasks || []).map(t => t.due).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort(), dates = due.length ? due : allDates(plan);
+      if (!dates.length) return { shift: 0, done: 0, overdue: 0, inProgress: 0, open: 0 };
+      shift = daysBetween(dates[Math.min(dates.length - 1, Math.floor(dates.length * (o.position === undefined ? 0.45 : o.position)))], today);
+    }
+    if (shift) {
+      (plan.phases || []).forEach(p => { p.start = shiftIso(p.start, shift); p.end = shiftIso(p.end, shift); });
+      (plan.tasks || []).forEach(t => {
+        t.due = shiftIso(t.due, shift); if (t.closedAt) t.closedAt = shiftIso(t.closedAt, shift);
+        (t.dateChanges || []).forEach(c => { c.from = shiftIso(c.from, shift); c.to = shiftIso(c.to, shift); c.at = shiftIso(c.at, shift); });
+        (t.updates || []).forEach(u => { u.at = shiftIso(u.at, shift); });
+      });
+      (plan.activity || []).forEach(a => { a.at = shiftIso(a.at, shift); });
+      (plan.people || []).forEach(p => { if (p.invite && p.invite.at) p.invite.at = shiftIso(p.invite.at, shift); });
+    }
+    // Statuses from the dates.
+    const tasks = plan.tasks || [], past = tasks.filter(t => t.due && t.due < today).sort((a, b) => a.due.localeCompare(b.due));
+    const k = Math.min(3, Math.max(past.length ? 1 : 0, Math.round(past.length / 6)));
+    const overdue = new Set([0.55, 0.75, 0.9].slice(0, k).map(f => past[Math.min(past.length - 1, Math.floor(past.length * f))]));
+    let done = 0, od = 0, prog = 0, open = 0, soon = 0;
+    for (const t of tasks) {
+      if (!t.due) continue;
+      if (t.due < today) { if (overdue.has(t)) { t.status = "Open"; delete t.closedAt; od++; } else { t.status = "Closed"; t.closedAt = t.due; done++; } }
+      else if (t.due <= addDays(today, 7)) { t.status = soon++ % 2 === 0 ? "In progress" : "Open"; delete t.closedAt; t.status === "In progress" ? prog++ : open++; }
+      else { t.status = "Open"; delete t.closedAt; open++; }
+    }
+    plan.demo = { anchor: today };
+    return { shift, done, overdue: od, inProgress: prog, open };
+  }
+
+  const api = { planDemoContent, suggestedRoles, madeUpNames, renameInText, anchorPlanDates };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.closePlanDemoContent = api;
 })(typeof window !== "undefined" ? window : globalThis);
