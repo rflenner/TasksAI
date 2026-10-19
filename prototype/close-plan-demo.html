@@ -3484,6 +3484,7 @@ async function voiceAsk(callId, utterance) {
   if (!voice.pending && !voice.draft && /^\s*(next|next one|the next one|skip( this one| it)?)[\s.!?]*$/i.test(text)) { voice.feed = voice.feed.filter(i => !(i.kind === "asked" && i.text === text)); await voiceNext(callId); return; }
   if (voice.pending) {
     const pending = voice.pending; voice.pending = null;
+    if (VX_YES.test(text) && pending.phase) { const said = voiceApplyPhase(pending.phase); voiceAuditPhase(pending.phase, said, voice.applied > 0); voiceReply(callId, said); return; }
     if (VX_YES.test(text)) { voice.applied = 0; const said = voiceApply(pending); voiceAudit({ event: "confirmation", mode: "close_plan", outcome: voice.applied > 0 ? "changed" : "not_done", utterance: text, spokenAnswer: said, detail: { taskId: pending.taskId, taskTitle: (state.tasks.find(x => x.id === pending.taskId) || {}).title || "", changes: voice.applied > 0 ? [said] : [] } }); voiceReply(callId, said); return; }
     voiceAudit({ event: "confirmation", mode: "close_plan", outcome: "declined", utterance: text });
     if (VX_NO.test(text)) { voiceReply(callId, "Okay, I'll leave it."); return; }
@@ -3514,6 +3515,41 @@ function voiceAuditApplied(taskId, text, applied, utterance) {
   const t = state.tasks.find(x => x.id === taskId);
   voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: applied ? "changed" : "not_done", utterance: utterance || "", spokenAnswer: text, detail: { taskId, taskTitle: t ? t.title : "", changes: applied ? [text] : [] } });
 }
+// Phase changes by voice: the same rights and saving as the phase editor (canEditPhases), the same activity log.
+function voiceApplyPhase(e) {
+  voice.applied = 0;
+  if (!canEditPhases()) return "Only the plan owners and admins can change phases.";
+  if (e.add) {
+    const ph = { id: "ph" + (++state.seq), name: e.name, goal: e.goal || "", start: e.start, end: e.end };
+    state.phases.push(ph); log(`added phase “${ph.name}” by voice`, null); save(); setPhaseOpen([ph.id], true); render(); voice.applied = 1;
+    return `Added the phase "${ph.name}", ${fmtY(ph.start)} to ${fmtY(ph.end)}.`;
+  }
+  const ph = state.phases.find(p => p.id === e.phaseId); if (!ph) return "I couldn't find that phase any more.";
+  if (e.remove) {
+    if (state.phases.length < 2) return "A plan needs at least one phase.";
+    const to = e.moveTo && state.phases.some(p => p.id === e.moveTo && p.id !== ph.id) ? e.moveTo : neighbourOf(ph.id), moved = state.tasks.filter(t => t.phase === ph.id).length;
+    voice.applied = 1; const name = ph.name; deletePhaseNow(ph.id, moved ? to : null);
+    return `Deleted the phase "${name}"${moved ? ` and moved its ${moved} task${moved > 1 ? "s" : ""} to ${state.phases.find(p => p.id === to).name}` : ""}.`;
+  }
+  const before = { ...ph }, parts = [];
+  if (e.name && e.name !== ph.name) { ph.name = e.name; parts.push(`name`); }
+  if (e.goal) { ph.goal = e.goal; parts.push("description"); }
+  if (e.start && e.start !== ph.start) { ph.start = e.start; parts.push("start date"); }
+  if (e.end && e.end !== ph.end) { ph.end = e.end; parts.push("end date"); }
+  if (ph.end < ph.start) { Object.assign(ph, before); return `${before.name} can't end before it starts.`; }
+  if (!parts.length) return `Nothing to change on ${ph.name}.`;
+  log(`changed the ${parts.join(", ")} of phase “${ph.name}” by voice`, null); save(); setPhaseOpen([ph.id], true); render(); voice.applied = 1;
+  const said = [];
+  if (parts.includes("name")) said.push(`Renamed "${before.name}" to "${ph.name}".`);
+  if (parts.includes("start date")) said.push(`${ph.name} now starts ${fmtY(ph.start)}.`);
+  if (parts.includes("end date")) said.push(`${ph.name} now ends ${fmtY(ph.end)}.`);
+  if (parts.includes("description")) said.push(`Updated the description of ${ph.name}.`);
+  return said.join(" ");
+}
+function voiceAuditPhase(e, text, applied) {
+  const ph = state.phases.find(p => p.id === e.phaseId);
+  voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: applied ? "changed" : "not_done", spokenAnswer: text, detail: { phaseId: e.phaseId, taskTitle: "", phaseName: ph ? ph.name : (e.name || ""), changes: applied ? [text] : [] } });
+}
 function voiceHandle(res) {
   switch (res.mode) {
     case "answer": if (res.taskId) voiceShowTask(res.taskId); return res.spokenAnswer;
@@ -3525,6 +3561,8 @@ function voiceHandle(res) {
       if (res.taskId) voiceShowTask(res.taskId); else { ui.open = null; render(); }
       return res.spokenAnswer;
     case "confirm": voice.pending = { taskId: res.taskId, actions: res.actions || [] }; voiceShowTask(res.taskId); return res.spokenAnswer;
+    case "confirm_phase": voice.pending = { phase: res.phaseEdit }; return res.spokenAnswer;
+    case "act_phase": { const text = voiceApplyPhase(res.phaseEdit); voiceAuditPhase(res.phaseEdit, text, voice.applied > 0); return text; }
     case "act": { voiceShowTask(res.taskId); voice.applied = 0; const text = voiceApply({ taskId: res.taskId, actions: res.actions || [] }, res.spokenAnswer); voiceAuditApplied(res.taskId, text, voice.applied > 0); return text; }
     case "add_task": { voice.applied = 0; voice.addedId = null; const text = voiceAdd(res.newTask); voiceAuditApplied(voice.addedId, text, voice.applied > 0); return text; }
     case "ask_more": return res.spokenAnswer;

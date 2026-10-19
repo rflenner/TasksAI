@@ -200,3 +200,23 @@ test("a due date the AI made up is dropped; one that was said is kept", () => {
   const said = completeDraft(plan(), null, nt({ phaseId: "p2", ownerId: "s1", due: "2026-10-09", description: "for the board" }), "add send report to Validate, owner me, due next Friday, for the board", "2026-10-02", "s1");
   assert.equal(said.kind, "create");
 });
+
+import { checkPhaseEdit } from "../app/lib/close-plan-voice";
+test("checkPhaseEdit: rename, dates, add and delete a phase", () => {
+  const data = { phases: [{ id: "p1", name: "Discovery", start: "2026-10-01", end: "2026-10-31" }, { id: "p2", name: "Validate", start: "2026-11-01", end: "2026-11-30" }], tasks: [{ id: "t1", phase: "p2" }, { id: "t2", phase: "p2" }] };
+  const edit = (phaseId: string | null, e: Partial<{ add: boolean; remove: boolean; name: string; goal: string; start: string; end: string; moveTo: string }>, say: string) =>
+    checkPhaseEdit(data, phaseId, { add: false, remove: false, name: null, goal: null, start: null, end: null, moveTo: null, ...e }, say, "2026-10-19");
+  const rename = edit("p2", { name: "Proof of value" }, "rename Validate to Proof of value");
+  assert.ok(rename.ok && rename.edit.name === "Proof of value" && /Renamed "Validate"/.test(rename.said));
+  assert.equal(edit("p2", { name: "Made up" }, "rename Validate").ok, false);
+  const end = edit("p2", { end: "2026-12-15" }, "move the end of Validate to December 15th");
+  assert.ok(end.ok && end.edit.end === "2026-12-15" && end.edit.start === null);
+  const bad = edit("p2", { end: "2026-10-15" }, "end Validate on October 15th");
+  assert.equal(bad.ok, false);
+  assert.equal(edit("zz", { end: "2026-12-15" }, "x").ok, false);
+  const add = edit(null, { add: true, name: "Rollout", start: "2026-12-01", end: "2026-12-31" }, "add a phase Rollout from December 1st to December 31st");
+  assert.ok(add.ok && add.edit.add && add.edit.phaseId === null);
+  assert.equal(edit(null, { add: true, name: "Rollout" }, "add a phase Rollout").ok, false);
+  const del = edit("p2", { remove: true }, "delete the phase Validate");
+  assert.ok(del.ok && del.question && /Its 2 tasks move to Discovery/.test(del.question) && del.edit.moveTo === "p1");
+});

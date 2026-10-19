@@ -36,10 +36,61 @@ export type NewTask = { title: string; phaseId: string | null; parentId: string 
 // already been asked (so nobody is asked twice). Held by the page between turns.
 export type Draft = { title: string; phaseId: string | null; parentId: string | null; ownerId: string | null; due: string | null; description: string | null; internal: boolean; askedPhase: boolean; askedDetails: boolean };
 export type Proposal = {
-  mode: "answer" | "open_task" | "list" | "next" | "act" | "add_task" | "unsupported" | "wish" | "unclear";
+  mode: "answer" | "open_task" | "list" | "next" | "act" | "act_phase" | "add_task" | "unsupported" | "wish" | "unclear";
   answer: string; taskId: string | null; filter: ListFilter | null; personId: string | null; phaseId: string | null;
-  actions: VoiceAction[]; newTask: NewTask | null; requestName?: string | null;
+  actions: VoiceAction[]; newTask: NewTask | null; requestName?: string | null; phaseEdit?: PhaseEditProposal | null;
 };
+
+// A change to a phase of the plan, spoken: rename it, move its start or end date, change its description, add a
+// new phase, or delete one. Only the fields the person mentioned are set; the rest stay null.
+export type PhaseEditProposal = { add: boolean; remove: boolean; name: string | null; goal: string | null; start: string | null; end: string | null; moveTo: string | null };
+// What the page applies (same shape, checked): `phaseId` null only for a new phase.
+export type PhaseEdit = { phaseId: string | null; add: boolean; remove: boolean; name: string | null; goal: string | null; start: string | null; end: string | null; moveTo: string | null; moved: number };
+
+// Checks a spoken phase change against the plan. Names and descriptions must be the person's own words,
+// dates must be real and in order (a phase can't end before it starts), and a phase is only deleted after a
+// yes: its tasks move to a neighbouring phase (or the one named), they are never deleted.
+export function checkPhaseEdit(data: Obj, phaseId: string | null, e: PhaseEditProposal | null | undefined, utterance: string, today: string):
+  { ok: true; edit: PhaseEdit; said: string; question: string | null } | { ok: false; reason: string } {
+  if (!e) return { ok: false, reason: "I understood it was about a phase, but not what to change." };
+  const phases = arr(data.phases), tasks = arr(data.tasks);
+  const cleanDate = (v: string | null) => v && DATE.test(v) && !Number.isNaN(Date.parse(`${v}T12:00:00Z`)) ? v : null;
+  const name = e.name && e.name.trim() && grounded(e.name, utterance) ? e.name.trim().slice(0, 120) : null;
+  const goal = e.goal && e.goal.trim() && grounded(e.goal, utterance) ? e.goal.trim().slice(0, 300) : null;
+  const start = cleanDate(e.start), end = cleanDate(e.end);
+  const spokenDate = (d: string) => speakable(d, today);
+  if (e.add) {
+    if (!name) return { ok: false, reason: "What should the new phase be called?" };
+    if (phases.some(p => str(p.name).toLowerCase() === name.toLowerCase())) return { ok: false, reason: `There is already a phase called ${name}.` };
+    if (!start || !end) return { ok: false, reason: `When does ${name} start and end?` };
+    if (end < start) return { ok: false, reason: "A phase can't end before it starts." };
+    return { ok: true, question: null, said: `Added the phase "${name}", ${spokenDate(start)} to ${spokenDate(end)}.`, edit: { phaseId: null, add: true, remove: false, name, goal, start, end, moveTo: null, moved: 0 } };
+  }
+  const phase = phaseId ? phases.find(p => p.id === phaseId) : null;
+  if (!phase) return { ok: false, reason: "I couldn't tell which phase you mean. Say its name." };
+  const pname = str(phase.name);
+  if (e.remove) {
+    if (phases.length < 2) return { ok: false, reason: "A plan needs at least one phase." };
+    const count = tasks.filter(t => t.phase === phase.id).length;
+    const index = phases.findIndex(p => p.id === phase.id);
+    const target = (e.moveTo && e.moveTo !== phase.id ? phases.find(p => p.id === e.moveTo) : null) ?? phases[index - 1] ?? phases[index + 1];
+    const moveTo = count ? String(target.id) : null;
+    return {
+      ok: true, said: `Deleted the phase "${pname}"${count ? ` and moved its ${count} task${count > 1 ? "s" : ""} to ${str(target.name)}` : ""}.`,
+      question: `Delete the phase "${pname}"${count ? `? Its ${count} task${count > 1 ? "s" : ""} move to ${str(target.name)}` : ""}. This can't be undone. Say yes to confirm.`.replace("?.", "."),
+      edit: { phaseId: String(phase.id), add: false, remove: true, name: null, goal: null, start: null, end: null, moveTo, moved: count },
+    };
+  }
+  const newStart = start ?? str(phase.start), newEnd = end ?? str(phase.end);
+  if ((start || end) && newEnd < newStart) return { ok: false, reason: `${pname} can't end before it starts. It runs from ${spokenDate(newStart)} to ${spokenDate(newEnd)}.` };
+  const parts: string[] = [];
+  if (name && name !== pname) parts.push(`Renamed "${pname}" to "${name}".`);
+  if (start && start !== str(phase.start)) parts.push(`${name ?? pname} now starts ${spokenDate(start)}.`);
+  if (end && end !== str(phase.end)) parts.push(`${name ?? pname} now ends ${spokenDate(end)}.`);
+  if (goal) parts.push(`Updated the description of ${name ?? pname}.`);
+  if (!parts.length) return { ok: false, reason: `Nothing to change on ${pname}.` };
+  return { ok: true, question: null, said: parts.join(" "), edit: { phaseId: String(phase.id), add: false, remove: false, name, goal, start, end, moveTo: null, moved: 0 } };
+}
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export function speakable(date: unknown, today: string): string {
@@ -307,9 +358,10 @@ export function capabilities(customer: string, phase: string, person: string): C
     { group: "Find", items: [`What is ${customer} waiting on?`, `What are we waiting on from ${customer}?`, "Show my tasks", `What's left in ${phase}?`, "Show the internal tasks", "Next"] },
     { group: "Change a task", items: ["Open the … task", "Post an update: …", "Mark it done", "Set it to in progress", "Move it to next Friday", `Assign it to ${person}`, `Add ${person} as coworker`, `Take ${person} off as coworker`, `Move it to ${phase}`, "Rename it to …", "Change the description to …", "Make it internal", "Share it with the customer", "Mark it as a milestone", "Delete it"] },
     { group: "Subtask checkboxes", items: ["Tick off the … subtask", "Untick the … subtask"] },
+    { group: "Phases", items: [`Rename ${phase} to …`, `Move the end of ${phase} to …`, `Change the start of ${phase} to …`, `Change the description of ${phase} to …`, "Add a phase … from … to …", `Delete the phase ${phase}`] },
     { group: "Add", items: ["Add a task: …", `Add a task to ${phase}: …, owner ${person}, due Friday`, "Add a subtask to …: …"] },
     { group: "Ideas", items: ["I wish you could …"] },
   ];
 }
-export const HELP_SPOKEN = (customer: string) => `I can tell you where the plan stands and what to do next, show lists like what ${customer} is waiting on or what's overdue, open and walk through tasks, post updates, change any field of a task like status, phase, dates, owners and the description, tick off subtasks, and add tasks, asking you for the phase, owner, due date and description if you leave them out. The full list is in the panel under "What can I say?". And if you wish I could do something else, just tell me.`;
+export const HELP_SPOKEN = (customer: string) => `I can tell you where the plan stands and what to do next, change phases (rename, move the start or end date, change the description, add or delete one), show lists like what ${customer} is waiting on or what's overdue, open and walk through tasks, post updates, change any field of a task like status, phase, dates, owners and the description, tick off subtasks, and add tasks, asking you for the phase, owner, due date and description if you leave them out. The full list is in the panel under "What can I say?". And if you wish I could do something else, just tell me.`;
 export { isHelpRequest };

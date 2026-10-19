@@ -46,6 +46,7 @@ function Details({ row }: { row: VoiceAuditRecord }) {
       {changes.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs text-[#25784b]">{changes.map((line, i) => <li key={i}>{line}</li>)}</ul>}
       {row.detail.createdSubject ? <div className="mt-1 text-xs text-[#25784b]">Created: {String(row.detail.createdSubject)}</div> : null}
       {target?.to && <div className="mt-1 text-xs text-[#697181]">To {target.to} via {target.channel}: “{(target.message || "").replace(/\s+/g, " ").slice(0, 200)}”</div>}
+      {typeof row.detail.phaseName === "string" && row.detail.phaseName ? <div className="mt-1 text-xs text-[#697181]">Phase: {row.detail.phaseName}</div> : null}
       {typeof row.detail.taskTitle === "string" && row.detail.taskTitle ? <div className="mt-1 text-xs text-[#697181]">Task: {row.detail.taskTitle}</div> : null}
       {row.detail.error ? <div className="mt-1 text-xs text-[#a84235]">{String(row.detail.error)}</div> : null}
     </>
