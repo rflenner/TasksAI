@@ -1367,7 +1367,7 @@ const DOTS = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor
 const PENCIL = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
 const isCurrent = ph => TODAY >= d(ph.start) && TODAY <= d(ph.end);
 // Plan owners (either side) can rename, re-date, reorder, add and delete phases.
-function canEditPhases() { return !LINK && (me() === state.planOwners.seller || me() === state.planOwners.buyer); }
+function canEditPhases() { return !LINK && (isAdminUser() || me() === state.planOwners.seller || me() === state.planOwners.buyer); }
 
 // Do any two phases share at least one day?
 function overlapping() {
@@ -1546,7 +1546,7 @@ function phasesBlock() {
         ${!canCreate() ? "" : ui.inlineAdd === ph.id ? `<form class="card inline-new" data-inline="${ph.id}">
             <input type="checkbox" class="card-check" disabled aria-hidden="true" tabindex="-1">
             <div class="card-body"><input class="inline-title" id="inline-${ph.id}" placeholder="Task name" autocomplete="off" aria-label="Name of the new task in ${esc(ph.name)}">
-              <div class="inline-foot"><span class="hint" style="margin:0">Enter adds it and starts the next one · Esc cancels</span><span class="inline-btns"><button type="button" class="btn sm" data-inline-cancel>Cancel</button><button type="submit" class="btn sm primary">Add task</button></span></div></div>
+              <div class="inline-foot"><span class="hint" style="margin:0">Enter adds it and starts the next one · the button adds it and closes · Esc cancels</span><span class="inline-btns"><button type="button" class="btn sm" data-inline-cancel>Cancel</button><button type="submit" class="btn sm primary">Add task</button></span></div></div>
           </form>` : `<button type="button" class="add-task-btn" data-inline-open="${ph.id}"><span class="i i-plus"></span>Add a task</button>`}
       </div>`}
     </section>`;
@@ -2546,8 +2546,9 @@ function wirePage() {
   app.querySelectorAll("[data-inline-open]").forEach(b => b.onclick = () => openInlineAdd(b.dataset.inlineOpen));
   app.querySelectorAll("form[data-inline]").forEach(f => {
     const inp = f.querySelector(".inline-title");
-    f.onsubmit = e => { e.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; } addInlineTask(f.dataset.inline, v); };
-    inp.onkeydown = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); ui.inlineAdd = null; render(); } };
+    // Enter adds the task and keeps the row open for the next one; the "Add task" button adds it and closes the row.
+    f.onsubmit = e => { e.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; } const more = f._viaEnter === true; f._viaEnter = false; addInlineTask(f.dataset.inline, v, more); };
+    inp.onkeydown = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); ui.inlineAdd = null; render(); } else if (e.key === "Enter") f._viaEnter = true; };
     f.querySelector("[data-inline-cancel]").onclick = () => { ui.inlineAdd = null; render(); };
   });
   app.querySelectorAll("[data-digest]").forEach(b => b.onclick = () => { ui.digestFor = b.dataset.digest; renderDigest(); });
@@ -3741,12 +3742,12 @@ function openInlineAdd(phaseId, scroll = false) {
   const inp = document.getElementById("inline-" + phaseId);
   if (inp) { if (scroll) inp.scrollIntoView({ behavior: "smooth", block: "center" }); inp.focus({ preventScroll: scroll }); }
 }
-function addInlineTask(phaseId, title) {
+function addInlineTask(phaseId, title, keepOpen = true) {
   const id = newTaskId(), ph = state.phases.find(x => x.id === phaseId);
   state.tasks.push({ id, phase: phaseId, parent: null, title, owner: me(), due: ph.end, status: "Open", shared: true, createdBy: me(), updates: [], coworkers: [], recipients: [] });
   log(`added “${title}”`, id); save();
-  ui.justAdded = id; render();
-  document.getElementById("inline-" + phaseId)?.focus();
+  ui.justAdded = id; if (!keepOpen) ui.inlineAdd = null; render();
+  if (keepOpen) document.getElementById("inline-" + phaseId)?.focus();
   toast("Task added. Click it to set the owner and due date");
 }
 
