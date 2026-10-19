@@ -278,6 +278,12 @@ button { cursor: pointer; }
 /* Drawer (Task AI) */
 .overlay { position: fixed; inset: 0; background: #17223466; display: flex; justify-content: flex-end; z-index: 30; }
 .drawer { width: var(--drawer-w); height: 100%; overflow: auto; background: #fff; padding: 42px; position: relative; box-shadow: -12px 0 40px #17223422; padding-top: calc(42px + env(safe-area-inset-top, 0px)); }
+.bell { border: 0; background: #f1f3f6; border-radius: 50%; width: 32px; height: 32px; font-size: 15px; line-height: 1; cursor: pointer; flex: none; }
+.bell:hover { background: #e4ebf5; } .card .bell { position: absolute; right: 14px; top: 12px; opacity: 0; transition: opacity .12s; } .card:hover .bell, .card:focus-within .bell, .card .bell:focus-visible { opacity: 1; }
+.drawer > .bell { position: absolute; right: 74px; top: calc(30px + env(safe-area-inset-top, 0px)); width: 34px; height: 34px; }
+.nt-people { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; } .nt-people li { display: flex; gap: 8px; align-items: center; font-size: 13px; } .nt-people small { color: #7a8391; }
+.nt-people .off { opacity: .55; } .nt-chan { display: inline-flex; border: 1px solid #c9d3e0; border-radius: 8px; overflow: hidden; } .nt-chan button { border: 0; background: #fff; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; } .nt-chan button.on { background: #173f76; color: #fff; } .nt-chan button:disabled { opacity: .4; cursor: default; }
+.nt-msg { width: 100%; box-sizing: border-box; min-height: 90px; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid #c9d3e0; border-radius: 8px; margin-top: 10px; }
 .x { position: absolute; right: 28px; top: calc(28px + env(safe-area-inset-top, 0px)); border: 0; background: #f1f3f6; border-radius: 50%; width: 36px; height: 36px; font-size: 23px; color: #58616e; line-height: 1; }
 .drawer > label { color: var(--navy); font-size: 11px; letter-spacing: 1.5px; font-weight: 800; }
 .crumb { color: var(--hint); font-size: 12px; margin-top: 6px; }
@@ -1352,6 +1358,61 @@ function demoFillApply() {
   log(`filled the plan with demo content: ${gen.renames.length ? `${gen.renames.length} made-up name${gen.renames.length === 1 ? "" : "s"}, ` : ""}${roles} role${roles === 1 ? "" : "s"}, ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"}${gen.reschedule.length ? ` and ${gen.reschedule.length} rescheduled` : ""}`, null);
   ui.demoFill = null; save(); render(); toast(`${gen.renames.length ? gen.renames.length + " renamed, " : ""}${roles} role${roles === 1 ? "" : "s"} set and ${gen.tasks.length} task${gen.tasks.length === 1 ? "" : "s"} added`);
 }
+// ---- The bell: notify the people on a task ----
+function openNotify(taskId) {
+  const t = state.tasks.find(x => x.id === taskId); if (!t) return;
+  ui.notify = { taskId, loading: true, people: [], selected: [], channel: "", message: "", edited: false, sending: false, results: null, error: "", slack: false };
+  renderNotify();
+  fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/notify?taskId=${encodeURIComponent(taskId)}`, { credentials: "same-origin" })
+    .then(async r => { const res = await r.json().catch(() => ({})); const q = ui.notify; if (!q || q.taskId !== taskId) return; q.loading = false;
+      if (!r.ok) q.error = res.error || "The people on this task could not be loaded."; else {
+        q.people = res.people || []; q.slack = Boolean(res.slackConfigured);
+        const first = q.people.find(p => p.channels.length); q.selected = first ? [first.personId] : [];
+        q.channel = first && first.channels.includes("slack") ? "slack" : "email"; q.message = notifyDraft(t, q);
+      } renderNotify(); })
+    .catch(() => { if (ui.notify) { ui.notify.loading = false; ui.notify.error = "The people on this task could not be loaded. Check your connection."; renderNotify(); } });
+}
+function notifyDraft(t, q) {
+  const names = q.people.filter(p => q.selected.includes(p.personId)).map(p => p.name.split(" ")[0]);
+  const who = names.length === 0 ? "there" : names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `Hi ${who}, could you give me a quick update on “${t.title}”? Thank you!`;
+}
+function renderNotify() {
+  let root = document.getElementById("notify-root");
+  if (!ui.notify) { if (root) root.remove(); return; }
+  if (!root) { root = document.createElement("div"); root.id = "notify-root"; document.body.appendChild(root); }
+  const q = ui.notify, t = state.tasks.find(x => x.id === q.taskId); if (!t) { ui.notify = null; return renderNotify(); }
+  const can = p => p.channels.includes(q.channel);
+  const rows = q.people.map(p => `<li class="${can(p) ? "" : "off"}"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-nt-person="${esc(p.personId)}" ${q.selected.includes(p.personId) ? "checked" : ""} ${can(p) ? "" : "disabled"}><span><b>${esc(p.name)}</b> <small>${esc(p.role)} · ${p.side === "buyer" ? esc(B()) : "iSEEit"}${!can(p) ? ` · ${esc(p.blocked || (q.channel === "slack" ? "no Slack account (customers are reached by email)" : "can't be emailed"))}` : ""}</small></span></label></li>`).join("");
+  const sendable = q.people.filter(p => q.selected.includes(p.personId) && can(p)).length;
+  const done = q.results ? `<ul class="nt-people">${q.results.map(r => `<li>${r.sent ? "✓" : "✕"} <b>${esc(r.name)}</b> <small>${r.sent ? "sent" : esc(r.reason || "not sent")}</small></li>`).join("")}</ul>` : "";
+  root.innerHTML = `<div style="position:fixed;inset:0;background:rgba(30,40,55,.35);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh" data-nt-close>
+    <div class="sf-box" style="margin:0;max-width:560px;width:calc(100% - 32px);background:#fff;border-radius:10px" role="dialog" aria-label="Notify the people on this task" onclick="event.stopPropagation()">
+      <b>🔔 Notify the people on “${esc(t.title)}”</b>
+      ${q.loading ? "<p>Loading…</p>" : q.error ? `<p style="color:#a8402f"><b>${esc(q.error)}</b></p>` : !q.people.length ? "<p>Nobody is on this task yet. Add an owner, coworkers or requesters first.</p>" : `
+        <p style="margin:8px 0 0"><span class="nt-chan" role="group" aria-label="Send by"><button type="button" data-nt-chan="email" class="${q.channel === "email" ? "on" : ""}">Email</button><button type="button" data-nt-chan="slack" class="${q.channel === "slack" ? "on" : ""}" ${q.slack ? "" : "disabled title=\"Slack is not connected\""}>Slack</button></span></p>
+        <ul class="nt-people">${rows}</ul>
+        <textarea class="nt-msg" id="nt-msg" maxlength="1000" aria-label="Message">${esc(q.message)}</textarea>
+        ${done}`}
+      <div class="pe-actions"><button type="button" class="btn sm primary" id="nt-send" ${q.sending || !sendable || !q.message.trim() || q.loading ? "disabled" : ""}>${q.sending ? "Sending…" : `Send${sendable > 1 ? " to " + sendable : ""}`}</button><button type="button" class="btn sm" data-nt-close>${q.results ? "Close" : "Cancel"}</button></div></div></div>`;
+  root.querySelectorAll("[data-nt-close]").forEach(b => b.onclick = () => { ui.notify = null; renderNotify(); });
+  root.querySelectorAll("[data-nt-chan]").forEach(b => b.onclick = () => { q.channel = b.dataset.ntChan; q.selected = q.selected.filter(id => q.people.find(p => p.personId === id && p.channels.includes(q.channel))); if (!q.edited) q.message = notifyDraft(t, q); renderNotify(); });
+  root.querySelectorAll("[data-nt-person]").forEach(i => i.onchange = () => { const id = i.dataset.ntPerson; q.selected = i.checked ? [...q.selected, id] : q.selected.filter(x => x !== id); if (!q.edited) q.message = notifyDraft(t, q); renderNotify(); });
+  const ta = root.querySelector("#nt-msg"); if (ta) ta.oninput = () => { q.message = ta.value; q.edited = true; const b = root.querySelector("#nt-send"); if (b) b.disabled = q.sending || !sendable || !q.message.trim(); };
+  const send = root.querySelector("#nt-send"); if (send) send.onclick = async () => {
+    q.sending = true; q.error = ""; renderNotify();
+    try {
+      const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/notify`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: q.taskId, personIds: q.people.filter(p => q.selected.includes(p.personId) && can(p)).map(p => p.personId), channel: q.channel, message: q.message }) });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) q.error = res.error || "The note could not be sent."; else {
+        q.results = res.results;
+        const sent = res.results.filter(x => x.sent);
+        if (sent.length) { log(`pinged ${sent.map(x => x.name).join(", ")} via ${q.channel === "slack" ? "Slack" : "email"}: “${q.message}”`, q.taskId); save(); render(); }
+      }
+    } catch (e) { q.error = "The note could not be sent. Check your connection."; }
+    q.sending = false; renderNotify();
+  };
+}
 function sfSyncBox() {
   const q = ui.sfsync, d = q.data, list = (a, n = 8) => a.length ? `<ul>${a.slice(0, n).map(x => `<li>${esc(x)}</li>`).join("")}${a.length > n ? `<li>and ${a.length - n} more</li>` : ""}</ul>` : "";
   let body = "";
@@ -1671,6 +1732,8 @@ function wirePhases(app) {
   };
 }
 
+// The bell: write to the people on a task by Slack or email, in your own words (the same flow as the bell in Task AI).
+function bellButton(t) { return IN_APP && !LINK && !state._demo && ui.mode === "seller" ? `<button type="button" class="bell" data-bell="${t.id}" aria-label="Notify the people on “${esc(t.title)}”" title="Notify the people on this task">🔔</button>` : ""; }
 function cardHtml(t) {
   const kids = children(t.id).filter(visible);
   const kc = kids.filter(k => k.status === "Closed").length;
@@ -1699,6 +1762,7 @@ function cardHtml(t) {
         ${t.updates.length ? `<span>${t.updates.length} update${t.updates.length > 1 ? "s" : ""}</span>` : ""}
       </div>
     </div>
+    ${bellButton(t)}
   </div>`;
   const subs = open && kids.length ? `<div class="subs">${kids.filter(k => ui.filter === "all" || matches(k) || matches(t)).map(subHtml).join("")}</div>` : "";
   return card + subs;
@@ -2238,6 +2302,7 @@ function renderDrawer() {
   ].join("");
   root.innerHTML = `<div class="overlay" data-close-bg>
   <aside class="drawer" role="dialog" aria-modal="true" aria-label="Task details">
+    ${bellButton(t)}
     <button type="button" class="x" data-close aria-label="Close">×</button>
     <label>${parent ? "SUBTASK" : "ACTION ITEM"}</label>
     ${parent ? `<div class="crumb">Part of <button type="button" class="sub-toggle" data-open="${parent.id}">${esc(parent.title)}</button></div>` : ""}
@@ -2281,6 +2346,7 @@ function renderDrawer() {
       </div>` : `<button type="button" class="btn sm danger-ghost" data-deltask>Delete ${parent ? "subtask" : "task"}</button>`}</div>` : ""}
   </aside></div>`;
   root.querySelector("[data-close]").onclick = closeDrawer;
+  root.querySelectorAll("[data-bell]").forEach(b => b.onclick = e => { e.stopPropagation(); openNotify(b.dataset.bell); });
   root.querySelector("[data-close-bg]").onclick = e => { if (e.target === e.currentTarget) closeDrawer(); };
   const del = root.querySelector("[data-deltask]"); if (del) del.onclick = () => { ui.delTask = t.id; renderDrawer(); root.querySelector(".d-del")?.scrollIntoView({ block: "nearest" }); };
   const delNo = root.querySelector("[data-deltask-cancel]"); if (delNo) delNo.onclick = () => { ui.delTask = null; renderDrawer(); };
@@ -2644,6 +2710,7 @@ function wirePage() {
   app.querySelectorAll("[data-demofill-customers]").forEach(i => i.onchange = () => { ui.demoFill.customers = i.checked; render(); });
   app.querySelectorAll("[data-demofill-sellers]").forEach(i => i.onchange = () => { ui.demoFill.sellers = i.checked; render(); });
   app.querySelectorAll("[data-demofill-apply]").forEach(b => b.onclick = demoFillApply);
+  app.querySelectorAll("[data-bell]").forEach(b => b.onclick = e => { e.stopPropagation(); openNotify(b.dataset.bell); });
   app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "", sendUnlinked: !(state.sfdc && state.sfdc.syncedAt) }; render(); });
   app.querySelectorAll("[data-sfsync-close]").forEach(b => b.onclick = () => { ui.sfsync = null; render(); });
   app.querySelectorAll("[data-sfsync-preview]").forEach(b => b.onclick = () => sfSyncRun("preview"));

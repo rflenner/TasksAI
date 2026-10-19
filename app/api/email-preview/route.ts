@@ -1,4 +1,4 @@
-import { renderAddedToPlan, renderAssigned, renderInvitation } from "../../lib/close-plan-emails";
+import { renderAddedToPlan, renderAssigned, renderInvitation, renderTaskNote } from "../../lib/close-plan-emails";
 import { renderTaskDigest } from "../../lib/email";
 import { currentActor } from "../../lib/session";
 import { publicRequestOrigin } from "../../lib/request";
@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     tasks: [{ title: "Create a demo environment for Cluepoints", due: "2026-10-20", description: "Set up a demo environment so the Cluepoints team can try the close plan.", status: "In progress" }, { title: "Confirm the success criteria", due: "2026-10-12", overdue: true }] };
   if (kind === "close-plan-invitation") return html(renderInvitation(sample).html);
   if (kind === "close-plan-reminder") return html(renderInvitation({ ...sample, reminder: true }).html);
+  if (kind === "close-plan-note") return html(renderTaskNote({ firstName: "Drew", fromName: "Rizan Flenner", planTitle: "Cluepoints close plan", message: "Hi Drew, could you give me a quick update on this before Friday?\nThe customer asked about it again.", task: { title: "Create a demo environment for Cluepoints", due: "2026-10-20", description: "Set up a demo environment so the Cluepoints team can try the close plan.", status: "In progress" }, url: `${appUrl}/close-plans`, unsubscribeUrl: `${appUrl}/unsubscribe/example` }).html);
   if (kind === "close-plan-assigned") return html(renderAssigned({ firstName: "Drew", byName: "Rizan Flenner", planTitle: "Cluepoints close plan", url: `${appUrl}/close-plans`, unsubscribeUrl: `${appUrl}/unsubscribe/example`, tasks: [{ title: "Create a demo environment for Cluepoints", role: "Owner", due: "2026-10-20", description: "Set up a demo environment so the Cluepoints team can try the close plan.", status: "In progress" }, { title: "Confirm the success criteria", role: "Coworker", due: "2026-10-12", overdue: true }] }).html);
   if (kind === "close-plan-added") return html(renderAddedToPlan({ firstName: "Drew", byName: "Rizan Flenner", planTitle: "Cluepoints close plan", role: "Solutions engineer", url: `${appUrl}/close-plans`, unsubscribeUrl: `${appUrl}/unsubscribe/example` }).html);
   const email = renderTaskDigest({

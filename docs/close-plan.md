@@ -657,3 +657,13 @@ imported plan kept reverting.
   default for their side; "Replace roles that are already set" overrides) and 2-3 realistic tasks each, spread over the phases with dates inside them:
   closed, in progress and open tasks, exactly one overdue, a milestone, an internal task, status updates and requesters. Running it again adds no
   duplicates. **Made-up names:** "Give the customer's people made-up names and addresses" (on by default) replaces their names and addresses (so nobody real is ever emailed from a demo plan), drops their Sales AI/Salesforce contact ids, and swaps the old names in task titles, descriptions, status updates and the activity; "Also give the iSEEit people made-up names" renames them but keeps their addresses (those decide who can open the plan). **Hang all dates on today** (on by default, `anchorPlanDates`): phases, deadlines, milestones, status updates and activity move together by one shift so that today sits at the 45th percentile of the task dates (about as much behind as ahead), and statuses follow the dates: past tasks closed except 1-3 left open and overdue, the next week in progress or open, the rest open; the anchor date is kept in `plan.demo.anchor`. Plan options → "Reset demo dates to today" (site admins, once a plan has an anchor) repeats it with the days since the anchor, so the same picture holds on any day. **Tidy dates** (only when the above is off): open tasks that are overdue move into the coming weeks, oldest first two days apart, except one that stays overdue (so "Next up" is not a wall of red while the screen still shows what overdue looks like). For demo plans: on a plan synced with Salesforce it warns that the tasks would be created there too.
+
+### The bell: notify the people on a task (2026-10-19)
+
+A 🔔 on every task card (on hover) and in the task panel, for the iSEEit team, works like the bell in Task AI: pick people (owner, coworkers and requesters of the
+task), pick Email or Slack, edit the drafted message ("Hi Hannah and Drew, could you give me a quick update on “…”?"), send. `GET/POST
+/api/close-plans/store/:id/notify` (`app/lib/close-plan-manual-notify.ts`). Email is the Task AI note email with the task card (`renderTaskNote`;
+preview at `/email-preview`); to a customer it carries a fresh personal link and goes only to people who have been invited; Slack is for iSEEit people
+with a Slack account (found by email). Person-picked, so not held back by the weekly cap, but people marked "Don't email", unsubscribed people and
+customers who were never invited are shown greyed out with the reason. Each send is logged in the plan's activity ("pinged Drew via Slack: …") and
+in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters.
