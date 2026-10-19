@@ -1092,6 +1092,8 @@ function render() {
   if (IN_APP && state) { try { localStorage.setItem(STORE_KEY + ":current:" + (APP_ME ? APP_ME.id : ""), state.id); } catch (e) {} }
   clearTimeout(render.flash); if (ui.justAdded) render.flash = setTimeout(() => { ui.justAdded = null; document.querySelector(".just-added")?.classList.remove("just-added"); }, 1600);
   if (state) checkSetup();
+  // The browser tab is named after the close plan (and the link preview of a personal link is made on the server the same way).
+  if (IN_APP || LINK) document.title = state && state.title ? state.title : "Mutual Closeplan";
   $("#mode-seller").className = ui.mode === "seller" ? "on" : "";
   $("#mode-buyer").className = ui.mode === "buyer" ? "on" : "";
   $("#mode-buyer").textContent = `${B()} (shared link)`;
