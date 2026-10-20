@@ -801,6 +801,7 @@ button.wz-card { font: inherit; text-align: left; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
+.toast.toast-center { bottom: auto; top: 50%; transform: translate(-50%, -50%); padding: 18px 28px; font-size: 15px; border-radius: 12px; box-shadow: 0 12px 40px #17223455; text-align: center; max-width: min(520px, calc(100vw - 40px)); }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
@@ -1112,7 +1113,8 @@ function matches(t, f = ui.filter) {
   }
 }
 function log(text, taskId) { state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: me(), text, task: taskId }); state.activity = state.activity.slice(0, 40); }
-function toast(msg, ms = 2400) { const root = $("#toast-root"); root.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", ms); }
+// `where` "center" puts the message in the middle of the screen (where a popup was); the default is the bottom edge.
+function toast(msg, ms = 2400, where = "") { const root = $("#toast-root"); root.innerHTML = `<div class="toast ${where === "center" ? "toast-center" : ""}" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", ms); }
 function avatar(id, cls = "") { const p = person(id); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}</span>`; }
 
 // Render
@@ -1455,7 +1457,7 @@ function renderNotify() {
         // Everyone was reached: close the popup and say so for two seconds. If somebody was not, the popup stays open and says who and why.
         if (sent.length && sent.length === res.results.length) {
           const names = sent.map(x => x.name), who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-          ui.notify = null; renderNotify(); toast(`The message has been sent to ${who}`, 2000); return;
+          ui.notify = null; renderNotify(); toast(`The message has been sent to ${who}`, 2000, "center"); return;
         }
       }
     } catch (e) { q.error = "The note could not be sent. Check your connection."; }

@@ -666,7 +666,7 @@ task), pick Email or Slack, edit the drafted message ("Hi Hannah and Drew, could
 preview at `/email-preview`); to a customer it carries a fresh personal link and goes only to people who have been invited; Slack is for iSEEit people
 with a Slack account (found by email). Person-picked, so not held back by the weekly cap, but people marked "Don't email", unsubscribed people and
 customers who were never invited are shown greyed out with the reason. Each send is logged in the plan's activity ("pinged Drew via Slack: …") and
-in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds; if someone could not be reached the window stays open with the reason for each person.
+in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds, in the middle of the screen where the window was (`toast(msg, ms, "center")`; other messages stay at the bottom edge); if someone could not be reached the window stays open with the reason for each person.
 
 The popup is Task AI's "Notify / Remind collaborators" design: the bell icon with the orange paper plane, CHANNEL buttons (Email, Slack; only the channels somebody on the task can use),
 under the header a band (background #f5f7fa) with the task's title in large letters so it is clear which task the note is about, a PEOPLE search with a list of the people on the task who can be reached on that channel (click to add) and chips for the people picked (× removes), people who cannot be reached
