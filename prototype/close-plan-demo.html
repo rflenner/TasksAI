@@ -758,9 +758,15 @@ button.wz-card { font: inherit; text-align: left; }
 .r-brand { display: flex; align-items: center; gap: 4px; }
 .r-logo { font-size: 20px; font-weight: 800; color: #173f76; }
 .r-ai { font-size: 13px; font-weight: 800; background: #ffa614; color: #fff; padding: 3px 4px; border-radius: 4px; }
-.r-kind { margin-left: 10px; font-size: 11px; font-weight: 800; letter-spacing: 1.4px; color: #173f76; text-transform: uppercase; }
+.r-kind { margin-left: 12px; font-size: 22px; font-weight: 800; letter-spacing: 2px; color: #173f76; text-transform: uppercase; }
 .r-meta { color: #7a8492; font-size: 11.5px; }
 .r-sub-head { color: #5b6577; margin: 0; }
+.r-logo-img { display: block; border-radius: 6px; width: 44px; height: 44px; }
+.r-meta b { color: #173f76; }
+.r-owners { display: flex; flex-wrap: wrap; gap: 8px 36px; margin: 10px 0 0; }
+.r-owners small { display: block; font-size: 11px; color: #7a8492; margin-bottom: 2px; }
+.r-owners b { font-size: 14px; color: #1d2433; }
+.r-kpis small { display: block; margin-top: 4px; font-size: 11px; font-weight: 400; color: #7a8492; }
 .r-box { background: #f5f8fc; border: 1px solid #e3eaf3; border-radius: 10px; padding: 4px 18px 16px; margin-top: 20px; }
 .r-box h2 { border: 0; margin-bottom: 4px; }
 .r-box p { margin: 0 0 12px; font-size: 13px; }
@@ -792,6 +798,13 @@ button.wz-card { font: inherit; text-align: left; }
 .r-status.r-in-progress { background: #fff1d6; color: #9b5d00; }
 .r-status.r-closed { background: #e4f4eb; color: #25784b; }
 .r-ms { font-size: 10px; font-weight: 700; color: #5b3fa8; }
+.report-opts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink); }
+.report-opts > span { font-weight: 800; color: var(--navy); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+.report-opts label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; } .report-opts .ro-fixed { color: #8a93a0; cursor: default; }
+.r-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.r-people li { padding: 8px 0; border-bottom: 1px solid #eef1f5; } .r-people li small { display: block; color: #7a8492; font-size: 11.5px; margin-top: 1px; }
+.r-people .r-person-owner { background: #f6f9fd; margin: 0 -8px; padding: 9px 8px; border-radius: 6px; border-bottom-color: transparent; }
+.r-people .r-none { color: #7a8492; font-style: italic; }
 .r-owner { font-size: 9.5px; font-weight: 800; color: #fff; background: #ffa614; border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
 .r-goal { color: #5b6577; margin: 0 0 6px; }
 .r-tl { position: relative; display: grid; gap: 6px; }
@@ -2290,6 +2303,8 @@ function activityPanel() {
 // Shown as a preview first; "Print / Save as PDF" uses the browser's print dialog (vector text, real page breaks).
 // Only shared tasks are included: a task is left out when it, or its main task, is internal.
 const sharedTask = t => t.shared && (!parentOf(t) || parentOf(t).shared);
+const REPORT_PARTS = [["dates", "Key dates"], ["phases", "Phases"], ["next", "Next steps"], ["steps", "The plan, step by step"], ["people", "Who is involved"]];
+const reportOpts = (() => { const o = { dates: true, phases: true, next: true, steps: true, people: true }; try { Object.assign(o, JSON.parse(localStorage.getItem("cp-report-parts") || "{}")); } catch (e) {} return o; })();
 function reportHtml() {
   const tasks = state.tasks.filter(sharedTask);
   const today = isoOf(TODAY);
@@ -2306,7 +2321,7 @@ function reportHtml() {
   const who = ids => (ids || []).map(id => esc(person(id).name)).join(", ");
   const where = [
     current.length ? `We are in the ${current.map(p => p.name).join(" and ")} phase${current.length > 1 ? "s" : ""}.` : "",
-    `${closed} of ${tasks.length} steps are done (${tasks.length ? Math.round(closed / tasks.length * 100) : 0}%).`,
+    `${closed} of ${tasks.length} shared steps are done (${tasks.length ? Math.round(closed / tasks.length * 100) : 0}%).`,
     nextMs ? `The next milestone is ${nextMs.title} on ${fmtY(nextMs.due)}.` : "",
     sign ? `Signature is planned for ${fmtY(sign.due)}${live ? ` and go-live for ${fmtY(live.due)}` : ""}.` : "",
   ].filter(Boolean).join(" ");
@@ -2330,42 +2345,56 @@ function reportHtml() {
     return `<section class="r-phase"><div class="r-phase-head"><h3>${i + 1}. ${esc(p.name)} <span>${fmt(p.start)} – ${fmtY(p.end)}</span><em>${done}/${inPhase.length} closed</em></h3>${p.goal ? `<p class="r-goal">${esc(p.goal)}</p>` : ""}</div>
       <table class="r-table"><thead><tr><th>Status</th><th>Step</th><th>Owner</th><th>Requested by</th><th>Due</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join("");
-  const team = side => state.people.filter(p => p.side === side && !/Shared mailbox/.test(p.title || "")).map(p => `<tr><td><b>${esc(p.name)}</b>${state.planOwners[side] === p.id ? ` <span class="r-owner">Plan owner</span>` : ""}</td><td>${esc(p.title && !/Placeholder|No title/.test(p.title) ? p.title : "")}</td><td>${esc(p.role || "")}</td></tr>`).join("");
+  const team = side => {
+    const ownerId = state.planOwners[side];
+    const list = state.people.filter(p => p.side === side && !/Shared mailbox/.test(p.title || "")).sort((a, b) => (b.id === ownerId) - (a.id === ownerId));
+    return list.map(p => {
+      const title = p.title && !/Placeholder|No title/.test(p.title) ? p.title : "";
+      const detail = [title, p.role].filter(Boolean).map(esc).join(" · ");
+      return `<li class="${p.id === ownerId ? "r-person-owner" : ""}"><b>${esc(p.name)}</b>${p.id === ownerId ? ` <span class="r-owner">Plan owner</span>` : ""}${detail ? `<small>${detail}</small>` : ""}</li>`;
+    }).join("") || `<li class="r-none">Nobody added yet</li>`;
+  };
   return `<article class="report">
     <header class="r-head">
-      <div class="r-brand"><span class="r-logo">Task</span><span class="r-ai">AI</span><span class="r-kind">Close plan</span></div>
-      <div class="r-meta">Prepared for ${esc(B())} · ${fmtY(today)}</div>
+      <div class="r-brand"><img class="r-logo-img" src="/iseeit-logo.png" alt="iSEEit" width="36" height="36"><span class="r-kind">Mutual close plan</span></div>
+      <div class="r-meta">Prepared for <b>${esc(B())}</b> · ${fmtY(today)}</div>
     </header>
     <h1>${esc(state.title)}</h1>
-    <p class="r-sub-head">${esc(B())} × iSEEit · Plan owners: ${esc(sellerOwner.name)} (iSEEit)${buyerOwner ? ` and ${esc(buyerOwner.name)} (${esc(B())})` : ""}</p>
+    <div class="r-owners"><div><small>Plan owner ${esc(B())}</small><b>${buyerOwner ? esc(buyerOwner.name) : "not set"}</b></div><div><small>Plan owner iSEEit</small><b>${esc(sellerOwner.name)}</b></div></div>
 
     <section class="r-box"><h2>Where we stand</h2><p>${esc(where)}</p>
-      <div class="r-kpis"><div><span>Progress</span><b>${tasks.length ? Math.round(closed / tasks.length * 100) : 0}%</b></div><div><span>Target signature</span><b>${sign ? fmtY(sign.due) : "–"}</b></div><div><span>Target go-live</span><b>${live ? fmtY(live.due) : "–"}</b></div><div><span>Next milestone</span><b>${nextMs ? `${esc(nextMs.title)}, ${fmt(nextMs.due)}` : "–"}</b></div></div>
+      <div class="r-kpis"><div><span>Progress</span><b>${tasks.length ? Math.round(closed / tasks.length * 100) : 0}%</b><small>${closed} of ${tasks.length} shared steps</small></div><div><span>Target signature</span><b>${sign ? fmtY(sign.due) : "–"}</b></div><div><span>Target go-live</span><b>${live ? fmtY(live.due) : "–"}</b></div><div><span>Next milestone</span><b>${nextMs ? `${esc(nextMs.title)}, ${fmt(nextMs.due)}` : "–"}</b></div></div>
     </section>
 
-    ${ms.length ? `<section><h2>Key dates</h2><table class="r-table r-compact"><thead><tr><th>Milestone</th><th>Date</th><th>Status</th></tr></thead><tbody>${ms.map(t => `<tr><td>◆ ${esc(t.title)}</td><td>${fmtY(t.due)}</td><td>${statusTag(t)}</td></tr>`).join("")}</tbody></table></section>` : ""}
+    ${reportOpts.dates && ms.length ? `<section><h2>Key dates</h2><table class="r-table r-compact"><thead><tr><th>Milestone</th><th>Date</th><th>Status</th></tr></thead><tbody>${ms.map(t => `<tr><td>◆ ${esc(t.title)}</td><td>${fmtY(t.due)}</td><td>${statusTag(t)}</td></tr>`).join("")}</tbody></table></section>` : ""}
 
-    <section><h2>Phases</h2><div class="r-tl">${phaseRows}${todayMark}</div></section>
+    ${reportOpts.phases ? `<section><h2>Phases</h2><div class="r-tl">${phaseRows}${todayMark}</div></section>` : ""}
 
-    <section><h2>Next steps</h2>${next.length ? `<table class="r-table r-compact"><thead><tr><th>Step</th><th>Owner</th><th>Due</th></tr></thead><tbody>${next.map(t => `<tr><td>${esc(t.title)}${parentOf(t) ? `<div class="r-sub">in ${esc(parentOf(t).title)}</div>` : ""}</td><td>${esc(person(t.owner).name)}</td><td class="r-due">${dueTxt(t)}</td></tr>`).join("")}</tbody></table>` : `<p class="r-goal">Nothing is due in the next two weeks.</p>`}</section>
+    ${reportOpts.next ? `<section><h2>Next steps</h2>${next.length ? `<table class="r-table r-compact"><thead><tr><th>Step</th><th>Owner</th><th>Due</th></tr></thead><tbody>${next.map(t => `<tr><td>${esc(t.title)}${parentOf(t) ? `<div class="r-sub">in ${esc(parentOf(t).title)}</div>` : ""}</td><td>${esc(person(t.owner).name)}</td><td class="r-due">${dueTxt(t)}</td></tr>`).join("")}</tbody></table>` : `<p class="r-goal">Nothing is due in the next two weeks.</p>`}</section>` : ""}
 
-    <h2 class="r-break">The plan, step by step</h2>
-    ${phaseSections}
+    ${reportOpts.steps ? `<h2 class="r-break">The plan, step by step</h2>
+    ${phaseSections}` : ""}
 
-    <section class="r-team"><h2>Who is involved</h2>
-      <div class="r-cols"><div><h3>${esc(B())}</h3><table class="r-table r-compact"><tbody>${team("buyer")}</tbody></table></div><div><h3>iSEEit</h3><table class="r-table r-compact"><tbody>${team("seller")}</tbody></table></div></div>
-    </section>
-    <footer class="r-foot">Generated from Task AI on ${fmtY(today)}. This report shows the shared plan; it is a snapshot and does not update.</footer>
+    ${reportOpts.people ? `<section class="r-team"><h2>Who is involved</h2>
+      <div class="r-cols"><div><h3>${esc(B())}</h3><ul class="r-people">${team("buyer")}</ul></div><div><h3>iSEEit</h3><ul class="r-people">${team("seller")}</ul></div></div>
+    </section>` : ""}
+    <footer class="r-foot">Generated from Task AI on ${fmtY(today)}. This report shows the shared plan; steps that are internal to iSEEit are neither shown nor counted. It is a snapshot and does not update.</footer>
   </article>`;
 }
 function openReport() {
   ui.planMenu = false; render();
   const root = $("#report-root");
   root.innerHTML = `<div class="overlay em-overlay report-overlay" data-rclose-bg><div class="report-wrap">
-    <div class="report-bar"><b>${ui.mode === "seller" ? `PDF for ${esc(B())}` : "Your close plan as PDF"}</b><span class="hint" style="margin:0">${ui.mode === "seller" ? "Shared tasks only · internal tasks are left out" : "Choose “Save as PDF” in the print dialog"}</span><span style="flex:1"></span><button type="button" class="btn sm" data-rclose>Close</button><button type="button" class="btn sm primary" data-rprint>Print / Save as PDF</button></div>
+    <div class="report-bar"><b>${ui.mode === "seller" ? `PDF for ${esc(B())}` : "Your close plan as PDF"}</b><span class="hint" style="margin:0">${ui.mode === "seller" ? "Shared tasks only · internal tasks are left out" : "Choose “Save as PDF” in the print dialog"}</span><span style="flex:1"></span><button type="button" class="btn sm" data-rclose>Close</button><button type="button" class="btn sm primary" data-rprint>Print / Save as PDF</button>
+      <div class="report-opts"><span>Include</span><label class="ro-fixed"><input type="checkbox" checked disabled> Where we stand</label>${REPORT_PARTS.map(([k, name]) => `<label><input type="checkbox" data-rpart="${k}" ${reportOpts[k] ? "checked" : ""}> ${name}</label>`).join("")}</div></div>
     ${reportHtml()}
   </div></div>`;
   const close = () => { root.innerHTML = ""; };
+  root.querySelectorAll("[data-rpart]").forEach(c => c.onchange = () => {
+    reportOpts[c.dataset.rpart] = c.checked;
+    try { localStorage.setItem("cp-report-parts", JSON.stringify(reportOpts)); } catch (e) {}
+    root.querySelector(".report").outerHTML = reportHtml();
+  });
   root.querySelector("[data-rclose]").onclick = close;
   root.querySelector("[data-rclose-bg]").onclick = e => { if (e.target === e.currentTarget) close(); };
   root.querySelector("[data-rprint]").onclick = () => {
