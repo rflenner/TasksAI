@@ -73,7 +73,23 @@ button { cursor: pointer; }
 .title h1 { font-size: 34px; color: var(--dark); margin: 8px 0; line-height: 1.15; text-wrap: balance; }
 .title p { color: var(--muted); margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .title p b { color: var(--ink); }
-.sf-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 8px; border: 1px solid; }
+.title-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; } .title-top label { white-space: nowrap; } .title { position: relative; } .title-status { flex: none; position: absolute; right: 0; top: -6px; }
+.title-status { display: inline-flex; align-items: center; gap: 12px; }
+.title-status .save-state { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0; }
+.title-meta { display: flex; flex-wrap: wrap; gap: 10px 32px; margin-top: 2px; }
+.title-meta small { display: block; font-size: 11px; color: var(--hint); margin-bottom: 2px; }
+.title-meta b { font-size: 14px; color: var(--ink); font-weight: 700; }
+.icon-btn { width: 42px; padding: 0; justify-content: center; flex: none; } .icon-btn svg { flex: none; }
+.sf-cloud { position: relative; display: inline-block; width: 22px; height: 15px; flex: none; }
+.sf-cloud > svg:first-child { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sf-cloud > svg:last-child { position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; color: #fff; }
+.title-status .sf-chip.ok { background: none; border-color: transparent; color: var(--navy); } .title-status .sf-chip.ok:hover { background: #eef4fc; }
+.opp-name { font-size: 12px; font-weight: 700; color: var(--navy); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-chip.spin .sf-cloud > svg:last-child { animation: sfspin .9s linear infinite; transform-origin: 50% 50%; }
+@keyframes sfspin { to { transform: rotate(360deg); } }
+.sf-chip.warn .sf-cloud > svg:first-child, .sf-chip.bad .sf-cloud > svg:first-child { opacity: .55; }
+@media (prefers-reduced-motion: reduce) { .sf-chip.spin .sf-cloud > svg:last-child { animation: none; } }
+.sf-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 12px 3px 5px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; }
 .sf-chip.ok { background: #eaf6ef; color: #25784b; border-color: #cfe9da; } .sf-chip.warn { background: #fff4de; color: #9b5d00; border-color: #f3dca9; } .sf-chip.bad { background: #fdecea; color: #a8402f; border-color: #f1c6bf; }
 .crm-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef4fc; color: var(--navy); border: 1px solid #dce7f5; border-radius: 14px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
 .title-actions { display: flex; gap: 10px; align-items: center; flex: none; }
@@ -562,7 +578,7 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .g-fill { position: absolute; inset: 0 auto 0 0; background: #d5ecdf; }
 .g-bar.current .g-fill { background: #cfe6d9; }
 .ph-tools { position: relative; align-self: center; margin-left: 4px; }
-.ph-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 170px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 30px #17223424; padding: 5px; display: grid; }
+.ph-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 170px; width: max-content; max-width: 300px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 30px #17223424; padding: 5px; display: grid; }
 .ph-menu button { display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--ink); text-align: left; }
 .ph-menu button:hover:not(:disabled) { background: #f1f5fb; color: var(--navy); }
 .ph-menu button:disabled { color: #b7bcc4; cursor: default; }
@@ -813,7 +829,7 @@ button.wz-card { font: inherit; text-align: left; }
   .mob-logo { display: block !important; }
 }
 @media (max-width: 620px) {
-  .title { display: block; } .title h1 { font-size: 28px; } .title-actions { margin-top: 14px; flex-wrap: wrap; }
+  .title { display: block; } .title h1 { font-size: 28px; } .title-meta { gap: 10px 22px; } .title-status { position: static; } .title-top { justify-content: space-between; flex-wrap: wrap; } .title-actions { margin-top: 14px; flex-wrap: wrap; }
   .card { padding: 15px 13px; gap: 10px; } .card > .avatar { display: none; }
   .card-head { flex-wrap: wrap; } .card h3 { white-space: normal; flex-basis: 100%; } .status { margin-left: 0; }
   .card p { white-space: normal; }
@@ -1232,17 +1248,15 @@ function titleBlock() {
   const o = state.opp;
   return `<div class="title">
     <div>
-      <label>CLOSE PLAN · ${esc(B().toUpperCase())} × ISEEIT${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}${(IN_APP || LINK) && !state._demo ? ` <span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}</label>
+      <div class="title-top"><label>CLOSE PLAN${state.status === "draft" ? ` <span class="draft-pill">DRAFT</span>` : ""}${state._demo ? ` <span class="draft-pill demo-pill">DEMO · NOT SAVED</span>` : ""}</label><span class="title-status">${ui.mode === "seller" && o ? `<span class="opp-name" title="Salesforce opportunity · Sales AI · ${esc(o.stage)}${o.amount != null ? " · " + Number(o.amount).toLocaleString("en-US") : ""}">${esc(o.name)}</span>` : ""}${(IN_APP || LINK) && !state._demo ? `<span class="save-state" id="save-state">${sync.dirty[state.id] || sync.inflight[state.id] ? "Saving…" : "Saved"}</span>` : ""}${sfStatusChip()}</span></div>
       ${ui.mode === "seller" && !LINK && !state._demo && (canManage("seller") || isAdminUser()) ? `<h1><input class="plan-title" id="plan-title" value="${esc(state.title)}" maxlength="120" aria-label="Close plan name" title="Click to rename this close plan"></h1>` : `<h1>${esc(state.title)}</h1>`}
-      <p><span>Target signature <b>${sign ? fmtY(sign.due) : "–"}</b></span><span>Target go-live <b>${live ? fmtY(live.due) : "–"}</b></span><span>Plan owners <b>${esc(person(state.planOwners.seller).name)}</b> · <b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></span>
-      ${ui.mode === "seller" && o ? `<span class="crm-chip" title="From Sales AI"><span class="i i-grid" style="width:12px;height:12px"></span>Sales AI · ${esc(o.name)} · ${esc(o.stage)}${o.amount != null ? ` · ${Number(o.amount).toLocaleString("en-US")}` : ""}</span>` : ""}${sfStatusChip()}</p>
+      <div class="title-meta"><div><small>Target signature</small><b>${sign ? fmtY(sign.due) : "–"}</b></div><div><small>Target go-live</small><b>${live ? fmtY(live.due) : "–"}</b></div><div><small>Plan owner ${esc(B())}</small><b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></div><div><small>Plan owner iSEEit</small><b>${esc(person(state.planOwners.seller).name)}</b></div></div>
     </div>
     <div class="title-actions">
-      ${ui.mode === "seller" ? `<button type="button" class="btn" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : ""}
-      ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn" data-vx-title><span aria-hidden="true">🎙</span> Voice assistant</button>` : ""}
-      <button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>
+      ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn icon-btn" data-vx-title aria-label="Voice assistant" title="Voice assistant">${ico(ICO.mic, 18)}</button>` : ""}
+      ${ui.mode === "seller" ? `<button type="button" class="btn icon-btn" data-report aria-label="Download PDF" title="Download PDF">${DOWNLOAD}</button><button type="button" class="btn primary" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : `<button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>`}
       ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
-        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">⎙</span>Export PDF for ${esc(B())}</button>${IN_APP && !state._demo && APP_ME && APP_ME.role === "site_admin" ? `<button type="button" role="menuitem" data-sfplay><span class="mi">☁</span>Open Salesforce close plan</button>` : ""}${IN_APP && !state._demo && APP_ME && APP_ME.role === "site_admin" ? `<button type="button" role="menuitem" data-demofill><span class="mi">✦</span>Fill with demo content</button>${state.demo && state.demo.anchor ? `<button type="button" role="menuitem" data-demoreset><span class="mi">↻</span>Reset demo dates to today</button>` : ""}` : ""}${IN_APP && !state._demo && canDeleteThisPlan() ? `<button type="button" role="menuitem" data-sfsync><span class="mi">⇄</span>Sync with Salesforce</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">×</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
+        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">${ico(ICO.print)}</span>Export PDF for ${esc(B())}</button>${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-sfplay><span class="mi">${ico(ICO.external)}</span>Open Salesforce close plan</button>` : ""}${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-demofill><span class="mi">${ico(ICO.sparkle)}</span>Fill with demo content</button>${state.demo && state.demo.anchor ? `<button type="button" role="menuitem" data-demoreset><span class="mi">${ico(ICO.calendar)}</span>Reset demo dates to today</button>` : ""}` : ""}${(IN_APP || SFPREVIEW) && !state._demo && canDeleteThisPlan() ? `<button type="button" role="menuitem" ${sfConnected() ? "data-sfresync" : "data-sfsync"}><span class="mi">${ico(ICO.refresh)}</span>${sfConnected() ? "Sync with Salesforce" : "Connect to Salesforce…"}</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">${ico(ICO.trash)}</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
   </div>
   ${ui.deletePlan ? deletePlanBox() : ""}${ui.sfsync ? sfSyncBox() : ""}${ui.demoFill ? demoFillBox() : ""}`;
@@ -1296,21 +1310,30 @@ function renderSfImport() {
 const sfAuto = { busy: false, timer: null, last: 0, status: {} }; // status[planId] = { ok: true|false, at, message } of the last automatic sync
 // The Salesforce status of this plan, shown next to the title for plan owners and admins: syncing (and when it last worked), not
 // syncing yet (nobody has run the first sync), or the reason the last automatic sync failed. Clicking opens the sync dialog.
+const SFPREVIEW = !IN_APP && location.hash === "#sfpreview"; // static demo only: shows the Salesforce controls without a server
+function sfConnected() { return SFPREVIEW || Boolean(state && state.sfdc && state.sfdc.syncedAt); }
+const SF_CLOUD = `<svg viewBox="0 0 163 114" aria-hidden="true"><g fill="#00A1E0"><circle cx="26" cy="68" r="28"/><circle cx="41" cy="26" r="30"/><circle cx="88" cy="26" r="28"/><circle cx="128" cy="51" r="35"/><circle cx="60" cy="88" r="30"/><circle cx="96" cy="71" r="27"/><ellipse cx="90" cy="55" rx="58" ry="34"/></g></svg>`;
+function sfChipHtml(kind, label, title, attr) {
+  return `<button type="button" class="sf-chip ${kind}${sfAuto.busy ? " spin" : ""}" ${attr} title="${esc(title)}" aria-label="${esc(title)}"><span class="sf-cloud">${SF_CLOUD}${ico(ICO.refresh, 12)}</span>${esc(label)}</button>`;
+}
 function sfStatusChip() {
+  if (SFPREVIEW) return sfChipHtml("ok", "Last synced 09:37", "Sync with Salesforce now", "data-sfresync");
   if (!IN_APP || LINK || !state || state._demo || ui.mode !== "seller" || !canDeleteThisPlan()) return "";
   const linked = (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId;
   if (!linked) return "";
   const st = sfAuto.status[state.id], at = st ? new Date(st.at) : (state.sfdc && state.sfdc.syncedAt ? new Date(state.sfdc.syncedAt) : null);
   const time = at ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-  if (!(state.sfdc && state.sfdc.syncedAt)) return `<button type="button" class="sf-chip warn" data-sfsync title="This plan is linked to a Salesforce opportunity but has not been synced yet. New tasks and phases are not sent until you run the first sync.">⇄ Not syncing with Salesforce yet · Sync now</button>`;
-  if (st && !st.ok) return `<button type="button" class="sf-chip bad" data-sfsync title="${esc(st.message)}">⇄ Salesforce sync failed${time ? " at " + time : ""}: ${esc(st.message.slice(0, 90))}</button>`;
-  return `<button type="button" class="sf-chip ok" data-sfsync title="Changes are sent to Salesforce a few seconds after you save, and Salesforce is checked when you open the plan.">⇄ Synced with Salesforce${time ? " · " + time : ""}</button>`;
+  if (!sfConnected()) return sfChipHtml("warn", "Not synced yet · Connect", "This plan is linked to a Salesforce opportunity but has not been synced yet. New tasks and phases are not sent until you connect.", "data-sfsync");
+  if (sfAuto.busy) return sfChipHtml("ok", "Syncing…", "Syncing with Salesforce", "data-sfresync");
+  if (st && !st.ok) return sfChipHtml("bad", `Sync failed${time ? " at " + time : ""} · Retry`, st.message || "Salesforce could not be reached", "data-sfresync");
+  return sfChipHtml("ok", `Last synced${time ? " " + time : ""}`, "Sync with Salesforce now. Changes are also sent a few seconds after you save, and Salesforce is checked when you open the plan.", "data-sfresync");
 }
 function sfAutoEligible() { return IN_APP && state && !state._demo && !LINK && state.sfdc && state.sfdc.syncedAt && canDeleteThisPlan(); }
 function sfAutoSoon(ms = 3000) { clearTimeout(sfAuto.timer); if (sfAutoEligible()) sfAuto.timer = setTimeout(sfAutoRun, ms); }
-async function sfAutoRun() {
+async function sfAutoRun(manual) {
   if (sfAuto.busy || !sfAutoEligible() || ui.sfsync) return;
   sfAuto.busy = true;
+  if (manual) render();
   const id = state.id;
   try {
     await flushPlanSave();
@@ -1333,7 +1356,7 @@ async function sfAutoRun() {
     }
     if (res.failed && res.failed.length) toast(`Salesforce refused ${res.failed.length} change${res.failed.length > 1 ? "s" : ""}: ${res.failed[0]}`);
   } catch (e) { sfAuto.status[id] = { ok: false, at: Date.now(), message: "Salesforce could not be reached" }; if (state && state.id === id) render(); }
-  finally { sfAuto.busy = false; }
+  finally { sfAuto.busy = false; if (manual && state && state.id === id) render(); }
 }
 // Site admins: give the people on a demo plan roles and a few realistic tasks each, for screenshots and videos (public/close-plan-demo-content.js).
 function demoFillPlan() {
@@ -1550,6 +1573,16 @@ function filterBar() {
 }
 
 
+const ICO = {
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  print: '<path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+  calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'
+};
+const ico = (path, n = 16) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const DOWNLOAD = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>`;
 const DOTS = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>`;
 const PENCIL = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
@@ -2763,6 +2796,7 @@ function wirePage() {
   app.querySelectorAll("[data-demofill-apply]").forEach(b => b.onclick = demoFillApply);
   app.querySelectorAll("[data-bell]").forEach(b => b.onclick = e => { e.stopPropagation(); openNotify(b.dataset.bell); });
   app.querySelectorAll("[data-sfsync]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.sfsync = { opp: (state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId || "", sendUnlinked: !(state.sfdc && state.sfdc.syncedAt) }; render(); });
+  app.querySelectorAll("[data-sfresync]").forEach(b => b.onclick = () => { ui.planMenu = false; if (!sfAutoEligible()) { toast("Salesforce sync is not available for this plan."); return; } void sfAutoRun(true); });
   app.querySelectorAll("[data-sfsync-close]").forEach(b => b.onclick = () => { ui.sfsync = null; render(); });
   app.querySelectorAll("[data-sfsync-preview]").forEach(b => b.onclick = () => sfSyncRun("preview"));
   app.querySelectorAll("[data-sfsync-apply]").forEach(b => b.onclick = () => sfSyncRun("apply"));
