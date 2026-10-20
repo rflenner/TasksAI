@@ -4,14 +4,15 @@ import { closePlanDocuments } from "../../../../../../db/schema";
 import { sendInvitation } from "../../../../../lib/close-plan-invitations";
 import { customerPerson } from "../../../../../lib/close-plan-share";
 import { canAccessPlan, canManagePlanLinks } from "../../../../../lib/close-plan-store";
-import { requireSameOrigin } from "../../../../../lib/request";
+import { appLinkOrigin, requireSameOrigin } from "../../../../../lib/request";
 import { currentActor } from "../../../../../lib/session";
 
 export const dynamic = "force-dynamic";
 
 // "Send invitation" on a customer contact: creates their personal link and emails it (when the rules and the person allow it).
 // The link is returned either way, so it can still be copied and sent by hand. Same people as the links route: the iSEEit
-// plan owner or a Site Admin.
+// plan owner or a Site Admin. Links are built from appLinkOrigin (APP_URL, or CLOSEPLAN_URL for customers), never from
+// request.url: behind Render's proxy that is the internal https://localhost:10000.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
   const actor = await currentActor();
@@ -23,6 +24,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = await request.json().catch(() => null) as { personId?: unknown } | null;
   const personId = typeof body?.personId === "string" ? body.personId : "";
   if (!customerPerson(row.data as Record<string, unknown>, personId)) return Response.json({ error: "Save the plan with this contact first, then send the invitation" }, { status: 400 });
-  const result = await sendInvitation({ plan: { id, title: row.title, data: row.data as Record<string, unknown> }, personId, fromName: actor.name || "Your iSEEit contact", createdBy: actor.id ?? null, kind: "invitation", baseUrl: new URL(request.url).origin });
+  const result = await sendInvitation({ plan: { id, title: row.title, data: row.data as Record<string, unknown> }, personId, fromName: actor.name || "Your iSEEit contact", createdBy: actor.id ?? null, kind: "invitation", baseUrl: appLinkOrigin(request) });
   return Response.json(result, { status: 201 });
 }
