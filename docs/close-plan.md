@@ -666,6 +666,18 @@ task), pick Email or Slack, edit the drafted message ("Hi Hannah and Drew, could
 preview at `/email-preview`); to a customer it carries a fresh personal link and goes only to people who have been invited; Slack is for iSEEit people
 with a Slack account (found by email). Person-picked, so not held back by the weekly cap, but people marked "Don't email", unsubscribed people and
 customers who were never invited are shown greyed out with the reason. Each send is logged in the plan's activity ("pinged Drew via Slack: …") and
+in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters.
+
+### CLOSEPLAN_URL: the customer address (2026-10-19)
+
+`CLOSEPLAN_URL` (https://closeplan.iseeit.ai) is the address customers see; `APP_URL` stays the address Task AI uses, so Task AI's own emails and the links in
+notices to colleagues do not change (`app/lib/close-plan-urls.ts`). With it set: personal links (`/p/<token>`, also the "Copy link" button), invitation, reminder,
+assigned-task and bell emails to customers, every unsubscribe link and the link preview use it. A `/p/<token>` link opened on any other address (tasks.flenner.at,
+*.onrender.com) is redirected (308) to it, so earlier invitations keep working; nothing else is redirected, and localhost is left alone. Unset, nothing changes.
+To switch on: add `closeplan.iseeit.ai` as a custom domain on the `tasks-ai` service in Render (DNS: CNAME `closeplan` to `tasks-ai.onrender.com`), wait until it is
+verified, set `CLOSEPLAN_URL` on the web service and on the `tasks-ai-close-plan-reminders` cron job, and add
+`https://closeplan.iseeit.ai/api/integrations/salesforce/callback` to the Salesforce Connected App only if Salesforce is connected from that address (it keeps using `APP_URL`).
+
 in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds, in the middle of the screen where the window was (`toast(msg, ms, "center")`; other messages stay at the bottom edge); if someone could not be reached the window stays open with the reason for each person.
 
 The popup is Task AI's "Notify / Remind collaborators" design: the bell icon with the orange paper plane, CHANNEL buttons (Email, Slack; only the channels somebody on the task can use),

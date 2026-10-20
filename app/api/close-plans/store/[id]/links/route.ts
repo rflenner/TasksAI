@@ -4,7 +4,8 @@ import { closePlanDocuments } from "../../../../../../db/schema";
 import { createPlanLink, revokePlanLinks } from "../../../../../lib/close-plan-links";
 import { customerPerson } from "../../../../../lib/close-plan-share";
 import { canAccessPlan, canManagePlanLinks } from "../../../../../lib/close-plan-store";
-import { appLinkUrl, requireSameOrigin } from "../../../../../lib/request";
+import { customerBase } from "../../../../../lib/close-plan-urls";
+import { appLinkOrigin, requireSameOrigin } from "../../../../../lib/request";
 import { currentActor } from "../../../../../lib/session";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const personId = typeof body?.personId === "string" ? body.personId : "";
   if (!customerPerson(g.row!.data, personId)) return Response.json({ error: "Save the plan with this contact first, then create the link" }, { status: 400 });
   const { token, expiresAt } = await createPlanLink(id, personId, g.actor!.id ?? null);
-  return Response.json({ url: appLinkUrl(request, `/p/${token}`).toString(), expiresAt: expiresAt.toISOString() }, { status: 201 });
+  return Response.json({ url: new URL(`/p/${token}`, customerBase(appLinkOrigin(request))).toString(), expiresAt: expiresAt.toISOString() }, { status: 201 });
 }
 
 // Switch off every personal link of one contact.

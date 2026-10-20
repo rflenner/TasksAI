@@ -5,6 +5,7 @@
 import { renderTaskNote } from "./close-plan-emails";
 import { appBase, logEmail, slackDirect, unsubscribeUrl } from "./close-plan-invitations";
 import { createPlanLink } from "./close-plan-links";
+import { customerBase } from "./close-plan-urls";
 import { isOptedOut, normalizeEmail } from "./close-plan-notify-rules";
 import { sendWithResend } from "./email";
 
@@ -69,7 +70,7 @@ export async function sendTaskNotes(input: { plan: { id: string; title: string; 
       if (person.side === "buyer") {
         const status = (person.invite as Obj | undefined)?.status;
         if (status !== "invited" && status !== "active") { done(false, "not invited to the plan yet"); continue; }
-        url = `${appBase(input.baseUrl)}/p/${(await createPlanLink(plan.id, personId, null)).token}`;
+        url = `${customerBase(input.baseUrl)}/p/${(await createPlanLink(plan.id, personId, null)).token}`;
       }
       const mail = renderTaskNote({ firstName: first, fromName: input.fromName, planTitle: plan.title, message: input.message, task: note, url, unsubscribeUrl: unsubscribeUrl(email, input.baseUrl) });
       const r = await sendWithResend({ to: email, subject: mail.subject, html: mail.html, text: mail.text }).catch(error => ({ sent: false, reason: error instanceof Error ? error.message : "could not send" }));
