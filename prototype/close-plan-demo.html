@@ -40,6 +40,26 @@ button { cursor: pointer; }
 .side nav button:hover { background: #f3f6fa; }
 .side nav .active { background: #edf3fb; color: var(--navy); font-weight: 700; }
 .side nav em { margin-left: auto; background: #e4eaf1; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-style: normal; }
+.att-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #eef1f5; }
+.att-row:first-of-type { border-top: 0; }
+.att-ic { flex: none; background: #fdecec; color: #b3261e; font-size: 10px; font-weight: 800; border-radius: 5px; padding: 5px 6px; letter-spacing: .04em; }
+.att-main { flex: 1; min-width: 0; }
+.att-main small { display: block; color: #7a8492; font-size: 11.5px; margin-top: 1px; }
+.att-name { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--navy); cursor: pointer; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.att-name:hover { text-decoration: underline; }
+.att-act { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.att-act a { color: var(--navy); font-weight: 600; text-decoration: none; }
+.att-act button { background: none; border: 0; color: #7a8492; cursor: pointer; font: inherit; font-size: 12px; padding: 2px 4px; }
+.att-act button.danger { color: #b3261e; font-weight: 700; }
+.att-up { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.pv-overlay { position: fixed; inset: 0; background: rgba(16, 28, 45, .62); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 18px; }
+.pv { background: #fff; border-radius: 12px; width: min(980px, 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.pv-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #e3e8ee; font-size: 13px; }
+.pv-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--navy); }
+.pv-bar button, .pv-bar a { border: 1px solid #c9d3e0; background: #fff; border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 12.5px; cursor: pointer; color: #2b3445; text-decoration: none; }
+.pv-body { flex: 1; overflow: auto; background: #e9edf2; padding: 14px; }
+.pv-body canvas { display: block; margin: 0 auto 12px; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.2); max-width: none; }
+.pv-msg { text-align: center; color: #5b6677; margin: 40px 0; }
 .nav-children { display: grid; gap: 3px; margin: -2px 0 7px 34px; padding: 4px 0 5px 12px; border-left: 1px solid #dbe3ed; }
 .side nav .nav-children button { padding: 7px 8px; border-radius: 6px; color: #747d89; font-size: 12px; justify-content: space-between; gap: 7px; }
 .side nav .nav-children button.current { background: #eef4fc; color: var(--navy); font-weight: 700; }
@@ -2492,6 +2512,117 @@ function openReport() {
   };
 }
 
+// ---------- PDF attachments on tasks (app/lib/close-plan-attachments.ts) ----------
+// Files live in their own table, not in the plan, so uploads never collide with a save. Each side sees what it may:
+// the iSEEit team every file, a customer the files marked shared on shared tasks. Names open a viewer (PDF.js draws the
+// pages on canvases from the bytes, so the browser's own PDF plugin and any script inside a file never run).
+const attBase = () => LINK ? `/api/close-plans/shared/${encodeURIComponent(LINK_TOKEN)}/attachments` : `/api/close-plans/store/${encodeURIComponent(state.id)}/attachments`;
+const attOn = () => state && !state._demo && (IN_APP || LINK);
+const fmtSize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+function loadAtts(force) {
+  if (!attOn()) return;
+  const cur = ui.atts;
+  if (!force && cur && cur.planId === state.id && Date.now() - cur.at < 60000) return;
+  const mine = { planId: state.id, at: Date.now(), list: cur && cur.planId === state.id ? cur.list : null };
+  ui.atts = mine;
+  fetch(attBase(), { credentials: "same-origin", cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+    if (ui.atts !== mine || !d) return;
+    const changed = JSON.stringify(mine.list) !== JSON.stringify(d.attachments);
+    mine.list = d.attachments;
+    if (changed && ui.open) renderDrawer();
+  }).catch(() => {});
+}
+function attachmentsSection(t) {
+  if (!attOn()) return "";
+  loadAtts();
+  const list = ui.atts && ui.atts.planId === state.id && ui.atts.list ? ui.atts.list.filter(a => a.taskId === t.id) : null;
+  if (!list) return "";
+  const up = canUpdate(t);
+  if (!list.length && !up) return "";
+  const rows = list.map(a => `<div class="att-row"><span class="att-ic">PDF</span>
+    <div class="att-main"><button type="button" class="att-name" data-att-view="${esc(a.id)}" title="${esc(a.name)}">${esc(a.name)}</button><small>${fmtSize(a.size)} · ${esc(a.byName)} · ${fmtY(a.at)}${ui.mode === "seller" && !a.shared ? ` · <span class="internal">Internal</span>` : ""}</small></div>
+    <div class="att-act"><a href="${attBase()}/${encodeURIComponent(a.id)}" download>Download</a>${a.canRemove ? (ui.attDel === a.id ? `<button type="button" class="danger" data-att-del-yes="${esc(a.id)}">Remove?</button><button type="button" data-att-del-no>Keep</button>` : `<button type="button" data-att-del="${esc(a.id)}">Remove</button>`) : ""}</div></div>`).join("");
+  return `<div class="section d-atts"><h3>Attachments ${list.length ? `<small>${list.length}</small>` : ""}</h3>${rows}
+    ${up ? `<div class="att-up"><label class="btn sm"><input type="file" id="att-file" accept="application/pdf,.pdf" hidden>Attach a PDF</label>${ui.mode === "seller" && t.shared ? `<label class="switch"><input type="checkbox" id="att-shared" checked>Visible to ${esc(B())}</label>` : ""}<small style="color:#7a8492">PDF only, up to 10 MB</small></div>` : ""}</div>`;
+}
+function wireAttachments(root, t) {
+  root.querySelectorAll("[data-att-view]").forEach(b => b.onclick = () => { const a = (ui.atts.list || []).find(x => x.id === b.dataset.attView); if (a) openPdfViewer(a); });
+  root.querySelectorAll("[data-att-del]").forEach(b => b.onclick = () => { ui.attDel = b.dataset.attDel; renderDrawer(); });
+  root.querySelectorAll("[data-att-del-no]").forEach(b => b.onclick = () => { ui.attDel = null; renderDrawer(); });
+  root.querySelectorAll("[data-att-del-yes]").forEach(b => b.onclick = async () => {
+    const a = (ui.atts.list || []).find(x => x.id === b.dataset.attDelYes); ui.attDel = null;
+    const r = await fetch(`${attBase()}/${encodeURIComponent(b.dataset.attDelYes)}`, { method: "DELETE", credentials: "same-origin" });
+    if (!r.ok) { toast((await r.json().catch(() => ({}))).error || "The file could not be removed."); renderDrawer(); return; }
+    ui.atts.list = ui.atts.list.filter(x => x.id !== b.dataset.attDelYes);
+    if (a) { log(`removed the file “${a.name}” from “${t.title}”`, t.id); save(); }
+    render();
+  });
+  const input = $("#att-file");
+  if (input) input.onchange = async () => {
+    const f = input.files[0]; if (!f) return;
+    if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf") { toast("Only PDF files can be attached."); input.value = ""; return; }
+    if (f.size > 10 * 1048576) { toast("The file is larger than 10 MB."); input.value = ""; return; }
+    const fd = new FormData(); fd.append("file", f); fd.append("taskId", t.id);
+    const sh = $("#att-shared"); fd.append("shared", sh && !sh.checked ? "false" : "true");
+    toast("Uploading…", 8000);
+    try {
+      const r = await fetch(attBase(), { method: "POST", credentials: "same-origin", body: fd });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(res.error || "The file could not be uploaded."); input.value = ""; return; }
+      ui.atts.list = [...(ui.atts.list || []), res.attachment];
+      log(`attached the file “${res.attachment.name}” to “${t.title}”`, t.id); save(); render();
+      toast("File attached");
+    } catch (e) { toast("The file could not be uploaded. Check your connection."); input.value = ""; }
+  };
+}
+let pdfJsLoading = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return pdfJsLoading || (pdfJsLoading = new Promise((ok, fail) => {
+    const s = document.createElement("script"); s.src = "/pdfjs/pdf.min.js";
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.js"; ok(window.pdfjsLib); };
+    s.onerror = () => { pdfJsLoading = null; fail(new Error("viewer")); };
+    document.head.appendChild(s);
+  }));
+}
+async function openPdfViewer(a) {
+  const url = `${attBase()}/${encodeURIComponent(a.id)}`;
+  const host = document.createElement("div"); host.className = "pv-overlay";
+  host.innerHTML = `<div class="pv" role="dialog" aria-modal="true" aria-label="${esc(a.name)}"><div class="pv-bar"><b>${esc(a.name)}</b><span class="pv-pg" aria-live="polite"></span>
+    <button type="button" data-pv-out aria-label="Zoom out">−</button><button type="button" data-pv-in aria-label="Zoom in">+</button><a href="${url}" download>Download</a><button type="button" data-pv-close>Close</button></div>
+    <div class="pv-body"><p class="pv-msg">Loading…</p></div></div>`;
+  document.body.appendChild(host);
+  const body = host.querySelector(".pv-body"), pg = host.querySelector(".pv-pg");
+  let zoom = 1, token = 0, doc = null;
+  const close = () => { token++; document.removeEventListener("keydown", onKey, true); host.remove(); if (doc) doc.destroy(); };
+  const onKey = e => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  document.addEventListener("keydown", onKey, true);
+  host.onclick = e => { if (e.target === host) close(); };
+  host.querySelector("[data-pv-close]").onclick = close;
+  async function draw() {
+    const mine = ++token; body.innerHTML = "";
+    const pages = Math.min(doc.numPages, 300), width = Math.max(240, body.clientWidth - 28);
+    for (let i = 1; i <= pages; i++) {
+      if (mine !== token) return;
+      const page = await doc.getPage(i), base = page.getViewport({ scale: 1 }), scale = (width / base.width) * zoom, vp = page.getViewport({ scale }), dpr = window.devicePixelRatio || 1;
+      const c = document.createElement("canvas"); c.width = Math.floor(vp.width * dpr); c.height = Math.floor(vp.height * dpr); c.style.width = `${Math.floor(vp.width)}px`; c.style.height = `${Math.floor(vp.height)}px`;
+      c.setAttribute("aria-label", `Page ${i} of ${doc.numPages}`); body.appendChild(c);
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
+      pg.textContent = `${doc.numPages} page${doc.numPages === 1 ? "" : "s"}`;
+    }
+  }
+  host.querySelector("[data-pv-in]").onclick = () => { zoom = Math.min(3, zoom + 0.25); draw(); };
+  host.querySelector("[data-pv-out]").onclick = () => { zoom = Math.max(0.5, zoom - 0.25); draw(); };
+  try {
+    const lib = await loadPdfJs();
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("file");
+    doc = await lib.getDocument({ data: new Uint8Array(await res.arrayBuffer()), isEvalSupported: false, enableXfa: false }).promise;
+    if (!host.isConnected) { doc.destroy(); return; }
+    await draw();
+  } catch (e) { if (host.isConnected) body.innerHTML = `<p class="pv-msg">This file can't be shown here. Use Download to open it.</p>`; }
+}
+
 function renderDrawer() {
   if (ui.manage) { renderManage(); return; }
   const root = $("#drawer-root");
@@ -2542,6 +2673,7 @@ function renderDrawer() {
       ${ui.mode === "seller" ? `<div class="d-switches"><label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "checked" : ""}>Shared with ${esc(B())}</label><label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Milestone</label>${t.milestone ? `<label class="switch">Counts as <select id="d-key" aria-label="Counts as a target date"><option value="">—</option><option value="sign" ${t.key === "sign" ? "selected" : ""}>Target signature</option><option value="live" ${t.key === "live" ? "selected" : ""}>Target go-live</option></select></label>` : ""}</div>` : ""}
     </div>
 
+    ${attachmentsSection(t)}
     ${ui.mode === "seller" ? notifySection(t) : ""}
     <div class="section updates"><h3>Status updates</h3>
       ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><p>${esc(u.text)}</p></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
@@ -2585,6 +2717,7 @@ function renderDrawer() {
 
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
+  wireAttachments(root, t);
   if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
 // People fields (Owner, Coworkers, Requested by): chips in an input-like box. "+ Add" / "Change" opens a small

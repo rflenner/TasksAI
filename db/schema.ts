@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
 export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
@@ -433,3 +433,21 @@ export const closePlanRoleSettings = pgTable("close_plan_role_settings", {
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+// PDF files attached to tasks on a Close Plan. Migration 0031.
+export const closePlanAttachments = pgTable("close_plan_attachments", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => closePlanDocuments.id, { onDelete: "cascade" }),
+  taskId: text("task_id").notNull(),
+  name: text("name").notNull(),
+  size: integer("size").notNull(),
+  contentType: text("content_type").notNull().default("application/pdf"),
+  shared: boolean("shared").notNull().default(true),
+  uploadedBy: text("uploaded_by").notNull(),
+  uploadedByName: text("uploaded_by_name").notNull(),
+  uploadedBySide: text("uploaded_by_side").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  data: bytea("data").notNull(),
+}, table => [index("close_plan_attachments_plan_idx").on(table.planId, table.taskId)]);
