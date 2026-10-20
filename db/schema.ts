@@ -425,3 +425,11 @@ export const closePlanPhotos = pgTable("close_plan_photos", {
   dataBase64: text("data_base64").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [primaryKey({ columns: [table.planId, table.personId] })]);
+
+// The roles people can have on a Close Plan (one row, edited under Admin → Close Plan roles). Migration 0030.
+export const closePlanRoleSettings = pgTable("close_plan_role_settings", {
+  id: text("id").primaryKey().default("default"),
+  roles: jsonb("roles").notNull(),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
