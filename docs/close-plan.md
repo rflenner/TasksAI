@@ -660,7 +660,7 @@ imported plan kept reverting.
 
 ### The bell: notify the people on a task (2026-10-19)
 
-A 🔔 on every task card (on hover) and in the task panel, for the iSEEit team, works like the bell in Task AI: pick people (owner, coworkers and requesters of the
+A bell on every task card and in the task panel (the same bell icon as in Task AI), for the iSEEit team, works like the bell in Task AI: pick people (owner, coworkers and requesters of the
 task), pick Email or Slack, edit the drafted message ("Hi Hannah and Drew, could you give me a quick update on “…”?"), send. `GET/POST
 /api/close-plans/store/:id/notify` (`app/lib/close-plan-manual-notify.ts`). Email is the Task AI note email with the task card (`renderTaskNote`;
 preview at `/email-preview`); to a customer it carries a fresh personal link and goes only to people who have been invited; Slack is for iSEEit people
@@ -677,3 +677,9 @@ assigned-task and bell emails to customers, every unsubscribe link and the link 
 To switch on: add `closeplan.iseeit.ai` as a custom domain on the `tasks-ai` service in Render (DNS: CNAME `closeplan` to `tasks-ai.onrender.com`), wait until it is
 verified, set `CLOSEPLAN_URL` on the web service and on the `tasks-ai-close-plan-reminders` cron job, and add
 `https://closeplan.iseeit.ai/api/integrations/salesforce/callback` to the Salesforce Connected App only if Salesforce is connected from that address (it keeps using `APP_URL`).
+
+in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds, in the middle of the screen where the window was (`toast(msg, ms, "center")`; other messages stay at the bottom edge); if someone could not be reached the window stays open with the reason for each person.
+
+The popup is Task AI's "Notify / Remind collaborators" design: the bell icon with the orange paper plane, CHANNEL buttons (Email, Slack; only the channels somebody on the task can use),
+under the header a band (background #f5f7fa) with the task's title in large letters so it is clear which task the note is about, a PEOPLE search with a list of the people on the task who can be reached on that channel (click to add) and chips for the people picked (× removes), people who cannot be reached
+shown as grey hints with the reason ("not invited to the plan yet", "asked not to get emails"), a MESSAGE with a 0/1000 counter, and Cancel / Send message. Escape closes it.
