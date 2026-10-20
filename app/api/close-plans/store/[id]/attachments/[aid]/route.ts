@@ -1,3 +1,4 @@
+import { logAccess, taskTitleOf } from "../../../../../../lib/close-plan-access-log";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../../db";
 import { closePlanDocuments } from "../../../../../../../db/schema";
@@ -21,8 +22,9 @@ async function authorize(params: Params["params"]) {
 }
 
 // Download one file (always as a download, never shown in the browser).
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const a = await authorize(params); if ("response" in a) return a.response;
+  void logAccess({ event: new URL(request.url).searchParams.get("view") ? "file_viewed" : "file_downloaded", side: "seller", via: "app", userId: a.actor.id, personName: a.actor.name, plan: { id: a.row.id, title: a.row.title }, task: { id: a.file.taskId, title: taskTitleOf(a.row.data as Record<string, unknown>, a.file.taskId) }, detail: a.file.name, dedupeMinutes: 1 });
   return pdfResponse(a.file);
 }
 
@@ -32,5 +34,6 @@ export async function DELETE(request: Request, { params }: Params) {
   const a = await authorize(params); if ("response" in a) return a.response;
   if (a.file.uploadedBy !== `u:${a.actor.id}` && !canDeletePlan(a.actor, a.row.data as Record<string, unknown>)) return Response.json({ error: "Only who added the file, the plan owner and admins can remove it" }, { status: 403 });
   await removeAttachment(a.row.id, a.file.id);
+  void logAccess({ event: "file_removed", side: "seller", via: "app", userId: a.actor.id, personName: a.actor.name, plan: { id: a.row.id, title: a.row.title }, task: { id: a.file.taskId, title: taskTitleOf(a.row.data as Record<string, unknown>, a.file.taskId) }, detail: a.file.name });
   return Response.json({ ok: true });
 }

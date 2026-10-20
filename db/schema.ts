@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigserial, boolean, customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
 export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
@@ -451,3 +451,20 @@ export const closePlanAttachments = pgTable("close_plan_attachments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   data: bytea("data").notNull(),
 }, table => [index("close_plan_attachments_plan_idx").on(table.planId, table.taskId)]);
+
+// Who logged in or opened a Close Plan, what they viewed and changed (admin only). Migration 0032.
+export const closePlanAccessLog = pgTable("close_plan_access_log", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  planId: text("plan_id"),
+  planTitle: text("plan_title"),
+  userId: integer("user_id"),
+  personId: text("person_id"),
+  personName: text("person_name").notNull(),
+  side: text("side").notNull(),
+  via: text("via").notNull(),
+  event: text("event").notNull(),
+  taskId: text("task_id"),
+  taskTitle: text("task_title"),
+  detail: text("detail"),
+}, table => [index("close_plan_access_log_at_idx").on(table.at), index("close_plan_access_log_plan_idx").on(table.planId, table.at), index("close_plan_access_log_user_idx").on(table.userId, table.at)]);

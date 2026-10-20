@@ -703,3 +703,12 @@ Anyone who can post on a task can attach PDF files to it, in the task drawer (**
 - **Who can add and remove:** adding follows the task rights for updates (a customer needs to be able to post on the task). Everyone can remove their own files; plan owners and admins any file.
 - Each upload and removal is written to the plan's activity.
 - Next step (not built): extract the text of the files for the LLM export, with the same internal/shared filter.
+
+## Activity log and "Last seen"
+
+**Admin → Close Plan activity** (`/close-plan-activity`, site admins only) lists who signed in or opened a plan, what they looked at and what they changed, for the iSEEit team (signed in) and for customers (personal link). Filters: plan, person, what, period. Times show in the viewer's time zone.
+
+- **What is logged:** sign-in to Task AI; opening a plan; opening a task; viewing or downloading a file; adding or removing a file; changes saved (a short summary such as “Security review”: status Open → Closed, due 2026-11-05; posted an update). The server writes the entries itself (login, link visit, files, saves); the page only reports which plan or task was opened. Repeated opens of the same plan or task within 30 / 10 minutes count once.
+- **Storage:** table `close_plan_access_log` (migration 0032), logic in `app/lib/close-plan-access-log.ts` (`describeChanges` is unit-tested). Plan and task titles are copied in, so history stays readable if a plan is deleted. Entries older than a year are removed. No IP addresses are stored. Logging never blocks or fails the action that caused it.
+- **Access:** `GET /api/close-plans/access-log` is for site admins only; nobody else, including plan owners and customers, can read the log.
+- **Last seen:** the People tab shows a small "Last seen: date, time" under each person's status, and "Never seen" if they never were, for the plan owner and admins (`GET /api/close-plans/store/:id/last-seen`). The iSEEit team is seen by their latest Task AI activity, customers by the last use of their personal link.

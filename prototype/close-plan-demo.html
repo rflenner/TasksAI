@@ -526,6 +526,8 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .ptoggle .i { width: 15px; height: 15px; }
 .ptoggle[aria-expanded="true"] .chev { transform: rotate(-90deg); }
 .ptoggle .chev { transform: rotate(90deg); transition: transform .15s; }
+.pstat { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.lastseen { color: #7a8492; font-size: 10.5px; white-space: nowrap; }
 .spill { flex: none; font-size: 10px; font-weight: 700; border-radius: 12px; padding: 4px 8px; white-space: nowrap; }
 .spill.active { background: #e4f4eb; color: var(--green); }
 .spill.invited { background: #eef4fc; color: var(--navy); }
@@ -1390,6 +1392,7 @@ function render() {
   if (LINK) { ui.mode = "buyer"; const bar = document.querySelector(".demo-bar"); if (bar) bar.style.display = "none"; }
   else if (!state && !ui.wizard) ui.mode = "seller";
   if (IN_APP && state) { try { localStorage.setItem(STORE_KEY + ":current:" + (APP_ME ? APP_ME.id : ""), state.id); } catch (e) {} }
+  if (IN_APP && !LINK && state && !ui.loading && !ui.wizard && ui.trackedPlan !== state.id) { ui.trackedPlan = state.id; track("plan_opened"); }
   clearTimeout(render.flash); if (ui.justAdded) render.flash = setTimeout(() => { ui.justAdded = null; document.querySelector(".just-added")?.classList.remove("just-added"); }, 1600);
   if (state) checkSetup();
   // The browser tab is named after the close plan (and the link preview of a personal link is made on the server the same way).
@@ -2264,7 +2267,7 @@ function personRow(p, maxTotal) {
       </div>
       <div class="prow-roles"><span>Owner <b>${st.owner}</b></span><span>Coworker <b>${st.coworker}</b></span><span>Requested <b>${st.recipient}</b></span></div>
       <div class="prow-acts">
-        ${owner ? `<span class="spill ${inv.cls}">${esc(inv.text)}</span><button type="button" class="gear" data-manage="${p.id}" aria-label="Manage ${esc(p.name)}" title="Manage ${esc(p.name)}">${GEAR}</button>` : ""}
+        ${owner ? `<div class="pstat"><span class="spill ${inv.cls}">${esc(inv.text)}</span>${seenLine(p)}</div><button type="button" class="gear" data-manage="${p.id}" aria-label="Manage ${esc(p.name)}" title="Manage ${esc(p.name)}">${GEAR}</button>` : ""}
       </div>
     </div>
     ${st.total ? `<button type="button" class="ptoggle" data-showtasks="${p.id}" aria-expanded="${open}"><span class="i i-chev chev"></span>${open ? "Hide tasks" : `Show ${st.total} task${st.total === 1 ? "" : "s"}`}</button>` : ""}
@@ -2637,6 +2640,36 @@ function openReport() {
   };
 }
 
+// ---------- Access log signals and "Last seen" (app/lib/close-plan-access-log.ts) ----------
+// The server logs logins, link visits, files and saves itself; the page only reports which plan or task was opened.
+// Admins read the log under Admin → Close Plan activity.
+const trackOn = () => state && !state._demo && (IN_APP || LINK);
+function track(event, taskId) {
+  if (!trackOn()) return;
+  const url = LINK ? `/api/close-plans/shared/${encodeURIComponent(LINK_TOKEN)}/events` : `/api/close-plans/store/${encodeURIComponent(state.id)}/events`;
+  try { fetch(url, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ event, taskId }), keepalive: true }).catch(() => {}); } catch (e) {}
+}
+// "Last seen" under a person's status, for the plan owner and admins: the team by their latest activity in Task AI, customers by their last visit on the link.
+function loadSeen(force) {
+  if (LINK || !IN_APP || !state || state._demo) return;
+  const cur = ui.seen;
+  if (!force && cur && cur.planId === state.id && Date.now() - cur.at < 60000) return;
+  const mine = { planId: state.id, at: Date.now(), map: cur && cur.planId === state.id ? cur.map : null };
+  ui.seen = mine;
+  fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/last-seen`, { credentials: "same-origin", cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+    if (ui.seen !== mine || !d) return;
+    const changed = JSON.stringify(mine.map) !== JSON.stringify(d.seen);
+    mine.map = d.seen; if (changed && ui.tab === "people") render();
+  }).catch(() => {});
+}
+const fmtSeen = iso => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+function seenLine(p) {
+  loadSeen();
+  const map = ui.seen && ui.seen.planId === state.id ? ui.seen.map : null;
+  if (!map || !(p.id in map)) return "";
+  return `<small class="lastseen">${map[p.id] ? `Last seen: ${esc(fmtSeen(map[p.id]))}` : "Never seen"}</small>`;
+}
+
 // ---------- PDF attachments on tasks (app/lib/close-plan-attachments.ts) ----------
 // Files live in their own table, not in the plan, so uploads never collide with a save. Each side sees what it may:
 // the iSEEit team every file, a customer the files marked shared on shared tasks. Names open a viewer (PDF.js draws the
@@ -2740,7 +2773,7 @@ async function openPdfViewer(a) {
   host.querySelector("[data-pv-out]").onclick = () => { zoom = Math.max(0.5, zoom - 0.25); draw(); };
   try {
     const lib = await loadPdfJs();
-    const res = await fetch(url, { credentials: "same-origin" });
+    const res = await fetch(`${url}?view=1`, { credentials: "same-origin" });
     if (!res.ok) throw new Error("file");
     doc = await lib.getDocument({ data: new Uint8Array(await res.arrayBuffer()), isEvalSupported: false, enableXfa: false }).promise;
     if (!host.isConnected) { doc.destroy(); return; }
@@ -2752,7 +2785,8 @@ function renderDrawer() {
   if (ui.manage) { renderManage(); return; }
   const root = $("#drawer-root");
   const t = ui.open && state.tasks.find(x => x.id === ui.open);
-  if (!t || !visible(t)) { root.innerHTML = ""; return; }
+  if (!t || !visible(t)) { root.innerHTML = ""; ui.tracked = null; return; }
+  if (ui.tracked !== t.id) { ui.tracked = t.id; track("task_opened", t.id); }
   const ph = state.phases.find(p => p.id === t.phase);
   const parent = parentOf(t);
   const edit = canEdit(t);
