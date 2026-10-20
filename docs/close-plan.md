@@ -660,10 +660,14 @@ imported plan kept reverting.
 
 ### The bell: notify the people on a task (2026-10-19)
 
-A 🔔 on every task card (on hover) and in the task panel, for the iSEEit team, works like the bell in Task AI: pick people (owner, coworkers and requesters of the
+A bell on every task card and in the task panel (the same bell icon as in Task AI), for the iSEEit team, works like the bell in Task AI: pick people (owner, coworkers and requesters of the
 task), pick Email or Slack, edit the drafted message ("Hi Hannah and Drew, could you give me a quick update on “…”?"), send. `GET/POST
 /api/close-plans/store/:id/notify` (`app/lib/close-plan-manual-notify.ts`). Email is the Task AI note email with the task card (`renderTaskNote`;
 preview at `/email-preview`); to a customer it carries a fresh personal link and goes only to people who have been invited; Slack is for iSEEit people
 with a Slack account (found by email). Person-picked, so not held back by the weekly cap, but people marked "Don't email", unsubscribed people and
 customers who were never invited are shown greyed out with the reason. Each send is logged in the plan's activity ("pinged Drew via Slack: …") and
 in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds; if someone could not be reached the window stays open with the reason for each person.
+
+The popup is Task AI's "Notify / Remind collaborators" design: the bell icon with the orange paper plane, CHANNEL buttons (Email, Slack; only the channels somebody on the task can use),
+a PEOPLE search with a list of the people on the task who can be reached on that channel (click to add) and chips for the people picked (× removes), people who cannot be reached
+shown as grey hints with the reason ("not invited to the plan yet", "asked not to get emails"), a MESSAGE with a 0/1000 counter, and Cancel / Send message. Escape closes it.
