@@ -8,6 +8,8 @@
 // changes come back as a list of tasks plus new activity entries that
 // applyCustomerChanges checks one by one against their access rights.
 
+import { sanitizeRichHtml } from "./rich-text";
+
 type Obj = Record<string, unknown>;
 export type Access = { level: "view" | "own" | "all"; create: boolean };
 export type CustomerChanges = { tasks?: unknown; deleted?: unknown; activity?: unknown };
@@ -68,7 +70,7 @@ const validDue = (v: unknown) => v === null || v === "" || (typeof v === "string
 function appended(stored: unknown, incoming: unknown, personId: string, text: "text" | null): Obj[] {
   const before = arr(stored).length;
   return arr(incoming).slice(before).filter(e => e.by === personId).map(e => text
-    ? { by: personId, at: str(e.at, 10), text: str(e.text, MAX_UPDATE), ...(e.viaEmail ? { viaEmail: true } : {}) }
+    ? { by: personId, at: str(e.at, 10), text: str(e.text, MAX_UPDATE), ...(typeof e.html === "string" && sanitizeRichHtml(e.html, MAX_UPDATE) ? { html: sanitizeRichHtml(e.html, MAX_UPDATE) } : {}), ...(e.viaEmail ? { viaEmail: true } : {}) }
     : { by: personId, at: str(e.at, 10), from: str(e.from, 10), to: str(e.to, 10) })
     .filter(e => text ? (e as Obj).text : true);
 }
@@ -108,6 +110,7 @@ export function applyCustomerChanges(data: Obj, personId: string, changes: Custo
       if (t.status !== was) t.closedAt = t.status === "Closed" ? (was === "Closed" ? t.closedAt : today) : null;
       set("title", edit && typeof x.title === "string" && x.title.trim() !== "", str(x.title, MAX_TITLE));
       set("desc", edit && typeof x.desc === "string", str(x.desc, MAX_TEXT));
+      set("descHtml", edit && typeof x.descHtml === "string", sanitizeRichHtml(x.descHtml, MAX_TEXT));
       set("due", edit && validDue(x.due), x.due || null);
       set("owner", edit && validPerson(x.owner), x.owner);
       set("coworkers", edit && validPeople(x.coworkers), x.coworkers);
@@ -129,6 +132,7 @@ export function applyCustomerChanges(data: Obj, personId: string, changes: Custo
     tasks.push({
       id, phase: parent ? parent.phase : x.phase, parent: parent ? parent.id : null, title: str(x.title, MAX_TITLE),
       desc: typeof x.desc === "string" ? str(x.desc, MAX_TEXT) : undefined,
+      descHtml: typeof x.descHtml === "string" && x.descHtml ? sanitizeRichHtml(x.descHtml, MAX_TEXT) || undefined : undefined,
       owner: validPerson(x.owner) ? x.owner : personId, due: validDue(x.due) ? x.due || null : null, status,
       closedAt: status === "Closed" ? today : null, shared: true, createdBy: personId,
       coworkers: validPeople(x.coworkers) ? x.coworkers : [], recipients: validPeople(x.recipients) ? x.recipients : [],
