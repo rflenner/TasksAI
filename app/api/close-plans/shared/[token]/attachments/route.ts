@@ -1,3 +1,4 @@
+import { logAccess, taskTitleOf } from "../../../../../lib/close-plan-access-log";
 import { addAttachment, customerMayAttach, customerSees, listAttachments, readUploadForm } from "../../../../../lib/close-plan-attachments";
 import { resolvePlanLink } from "../../../../../lib/close-plan-links";
 import { customerPerson } from "../../../../../lib/close-plan-share";
@@ -28,5 +29,6 @@ export async function POST(request: Request, { params }: Params) {
   if (!customerMayAttach(data, personId, form.taskId)) return Response.json({ error: "You can't attach files to that task." }, { status: 403 });
   const result = await addAttachment(resolved.row.id, form.taskId, form.file, true, { key: `p:${personId}`, name: String(person.name || "Customer"), side: "buyer" });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+  void logAccess({ event: "file_added", side: "buyer", via: "link", personId, personName: String(person.name || "Customer"), plan: { id: resolved.row.id, title: resolved.row.title }, task: { id: form.taskId, title: taskTitleOf(data, form.taskId) }, detail: result.meta.name });
   return Response.json({ attachment: result.meta }, { status: 201 });
 }

@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { closePlanDocuments } from "../../../../../db/schema";
 import { resolvePlanLink, touchPlanLink } from "../../../../lib/close-plan-links";
-import { applyCustomerChanges, customerView, markOpened } from "../../../../lib/close-plan-share";
+import { describeChanges, logAccess } from "../../../../lib/close-plan-access-log";
+import { applyCustomerChanges, customerPerson, customerView, markOpened } from "../../../../lib/close-plan-share";
 import { requireSameOrigin } from "../../../../lib/request";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     if (saved) row = saved;
   }
   await touchPlanLink(link.id);
+  const who = customerPerson(row.data as Record<string, unknown>, link.personId);
+  if (who) void logAccess({ event: "plan_opened", side: "buyer", via: "link", personId: link.personId, personName: String(who.name || "Customer"), plan: { id: row.id, title: row.title }, dedupeMinutes: 30 });
   return Response.json({ me: link.personId, version: row.version, plan: customerView(row.data, link.personId) }, { headers: { "cache-control": "no-store" } });
 }
 
@@ -46,6 +49,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       .where(and(eq(closePlanDocuments.id, row.id), eq(closePlanDocuments.version, row.version))).returning();
     if (!saved) continue;
     await touchPlanLink(link.id);
+    const changed = applied ? describeChanges(row.data as Record<string, unknown>, data) : null, who = customerPerson(data, link.personId);
+    if (changed && who) void logAccess({ event: "changes_saved", side: "buyer", via: "link", personId: link.personId, personName: String(who.name || "Customer"), plan: { id: row.id, title: row.title }, task: changed.taskId ? { id: changed.taskId, title: changed.taskTitle } : null, detail: changed.detail });
     return Response.json({ version: saved.version, applied, ignored, plan: customerView(saved.data, link.personId) });
   }
   return Response.json({ error: "The plan is busy. Please try again." }, { status: 409 });

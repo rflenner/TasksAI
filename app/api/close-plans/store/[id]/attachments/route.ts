@@ -1,3 +1,4 @@
+import { logAccess, taskTitleOf } from "../../../../../lib/close-plan-access-log";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
@@ -35,5 +36,6 @@ export async function POST(request: Request, { params }: Params) {
   if (!taskById(row.data as Record<string, unknown>, form.taskId)) return Response.json({ error: "That task is not on this plan" }, { status: 404 });
   const result = await addAttachment(row.id, form.taskId, form.file, form.shared, { key: `u:${actor.id}`, name: actor.name, side: "seller" });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+  void logAccess({ event: "file_added", side: "seller", via: "app", userId: actor.id, personName: actor.name, plan: { id: row.id, title: row.title }, task: { id: form.taskId, title: taskTitleOf(row.data as Record<string, unknown>, form.taskId) }, detail: result.meta.name });
   return Response.json({ attachment: result.meta }, { status: 201 });
 }

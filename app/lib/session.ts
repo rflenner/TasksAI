@@ -1,5 +1,6 @@
 import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { logAccess } from "./close-plan-access-log";
 import { getDb } from "../../db";
 import { sessions, users } from "../../db/schema";
 import type { Actor } from "./permissions";
@@ -10,6 +11,7 @@ const MAX_AGE = 30 * 24 * 60 * 60;
 export async function createSession(userId: number) {
   const id = randomToken(), expiresAt = new Date(Date.now() + MAX_AGE * 1000);
   await getDb().insert(sessions).values({ idHash: sha256(id), userId, expiresAt });
+  void getDb().select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1).then(([u]) => logAccess({ event: "login", side: "seller", via: "app", userId, personName: u?.name || "Unknown", dedupeMinutes: 1 }));
   return { value: signedValue(id), expiresAt };
 }
 export async function setSessionCookie(value: string, expiresAt: Date) { (await cookies()).set(SESSION_COOKIE, value, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires: expiresAt }); }
