@@ -1084,7 +1084,7 @@ function matches(t, f = ui.filter) {
   }
 }
 function log(text, taskId) { state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: me(), text, task: taskId }); state.activity = state.activity.slice(0, 40); }
-function toast(msg) { const root = $("#toast-root"); root.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", 2400); }
+function toast(msg, ms = 2400) { const root = $("#toast-root"); root.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", ms); }
 function avatar(id, cls = "") { const p = person(id); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}</span>`; }
 
 // Render
@@ -1408,6 +1408,11 @@ function renderNotify() {
         q.results = res.results;
         const sent = res.results.filter(x => x.sent);
         if (sent.length) { log(`pinged ${sent.map(x => x.name).join(", ")} via ${q.channel === "slack" ? "Slack" : "email"}: “${q.message}”`, q.taskId); save(); render(); }
+        // Everything went out: close the window and say so for two seconds. If somebody could not be reached the window stays open, with the reason.
+        if (sent.length && sent.length === res.results.length) {
+          const names = sent.map(x => x.name), who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+          ui.notify = null; renderNotify(); toast(`The message has been sent to ${who}`, 2000); return;
+        }
       }
     } catch (e) { q.error = "The note could not be sent. Check your connection."; }
     q.sending = false; renderNotify();

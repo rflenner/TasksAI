@@ -666,4 +666,4 @@ task), pick Email or Slack, edit the drafted message ("Hi Hannah and Drew, could
 preview at `/email-preview`); to a customer it carries a fresh personal link and goes only to people who have been invited; Slack is for iSEEit people
 with a Slack account (found by email). Person-picked, so not held back by the weekly cap, but people marked "Don't email", unsubscribed people and
 customers who were never invited are shown greyed out with the reason. Each send is logged in the plan's activity ("pinged Drew via Slack: …") and
-in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters.
+in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds; if someone could not be reached the window stays open with the reason for each person.
