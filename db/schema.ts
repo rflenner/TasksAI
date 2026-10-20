@@ -411,13 +411,15 @@ export const closePlanEmailLog = pgTable("close_plan_email_log", {
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [index("close_plan_email_log_plan_idx").on(table.planId, table.personId, table.kind, table.sentAt), index("close_plan_email_log_email_idx").on(table.email, table.sentAt)]);
 
-// Contact photos shown on a plan, copied from Salesforce: the newest
-// "Profile_Picture.jpg" Attachment on the Contact, the file the iSEEit org
-// chart shows (app/lib/close-plan-photos.ts). Kept per plan and person so
-// customer links can show them without Salesforce access. Migration 0028.
+// Photos of the people on a plan: uploaded in Closeplan, or copied from
+// Salesforce (the org chart's "Profile_Picture.jpg") or Sales AI
+// (app/lib/close-plan-photos.ts). Kept per plan and person so customer links
+// can show them without Salesforce access. Migration 0028.
 export const closePlanPhotos = pgTable("close_plan_photos", {
   planId: text("plan_id").notNull().references(() => closePlanDocuments.id, { onDelete: "cascade" }),
   personId: text("person_id").notNull(),
+  // "upload" (set in Closeplan, never replaced by a sync), "salesforce" or "salesai". Migration 0029.
+  source: text("source").notNull().default("salesforce"),
   sourceId: text("source_id").notNull(),
   contentType: text("content_type").notNull(),
   dataBase64: text("data_base64").notNull(),

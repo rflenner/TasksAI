@@ -53,8 +53,8 @@ export function customerView(data: Obj, personId: string): Obj | null {
   const shown = tasks.filter(t => isShared(t, tasks));
   const ids = new Set(shown.map(t => t.id));
   const people = arr(data.people).map(p => {
-    const { id, name, title, role, side, access, invite, email, photo } = p;
-    return { id, name, title, role, side, access, invite: invite ? { status: (invite as Obj).status } : undefined, ...(side === "buyer" ? { email } : {}), ...(photo ? { photo } : {}) };
+    const { id, name, title, role, side, access, invite, email, photo, photoSource } = p;
+    return { id, name, title, role, side, access, invite: invite ? { status: (invite as Obj).status } : undefined, ...(side === "buyer" ? { email } : {}), ...(photo ? { photo, photoSource } : {}) };
   });
   const activity = arr(data.activity).filter(a => !a.task || ids.has(a.task));
   return { id: data.id, title: data.title, account: data.account, status: data.status, planOwners: data.planOwners, phases: arr(data.phases), tasks: shown, people, activity };
