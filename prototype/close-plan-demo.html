@@ -130,10 +130,12 @@ button { cursor: pointer; }
 .avatar { width: 38px; height: 38px; border-radius: 50%; background: #e7eef8; color: var(--navy); display: inline-grid; place-items: center; font-weight: 700; flex: none; }
 .avatar { position: relative; overflow: hidden; }
 .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-.ph-btn { position: relative; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; flex: none; }
-.ph-btn .ph-cam { position: absolute; right: -2px; bottom: -2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1px solid var(--line); color: var(--navy); font-size: 11px; display: grid; place-items: center; opacity: 0; transition: opacity .15s; }
-.ph-btn:hover .ph-cam, .ph-btn:focus-visible .ph-cam { opacity: 1; }
-.ph-rm { font-size: inherit; }
+.pphoto { position: relative; flex: none; }
+.pphoto-btn { position: relative; display: block; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; }
+.pphoto-edit { position: absolute; right: -2px; bottom: -2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1px solid var(--line); color: var(--navy); font-size: 11px; display: grid; place-items: center; opacity: 0; transition: opacity .15s; }
+.pphoto-btn:hover .pphoto-edit, .pphoto-btn:focus-visible .pphoto-edit, .pphoto.open .pphoto-edit { opacity: 1; }
+.pphoto .ph-menu { left: 0; right: auto; }
+.pphoto-src { margin: 4px 10px 2px; font-size: 12px; color: var(--muted); }
 .group-title .avatar { width: 35px; height: 35px; font-size: 13px; }
 .group.current .group-title .avatar { background: var(--navy); color: #fff; }
 .group.complete .group-title .avatar { background: #e4f4eb; color: var(--green); }
@@ -392,7 +394,7 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .notify-list .role { font-size: 10px; font-weight: 700; color: var(--navy); background: #eef4fc; border-radius: 10px; padding: 2px 7px; margin-left: 4px; }
 .notify-list small { display: block; color: var(--muted); margin-top: 2px; }
 .notify-list small.off { color: #a84235; }
-.po { white-space: nowrap; display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .4px; background: var(--orange); color: #fff; border-radius: 999px; padding: 2px 6px; vertical-align: 2px; margin-left: 4px; }
+.po { white-space: nowrap; display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .4px; background: #e6ecf4; color: #4f6584; border: 1px solid #d3dce8; border-radius: 999px; padding: 2px 6px; vertical-align: 2px; margin-left: 4px; }
 .person small.muted { color: var(--hint); font-style: italic; }
 .po-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .po-row select { border: 1px solid var(--field); border-radius: 8px; padding: 7px 8px; background: #fff; font-size: 12.5px; font-weight: 400; width: 100%; min-width: 0; }
@@ -476,9 +478,12 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .ptotal b { display: block; font-size: 22px; color: var(--navy); line-height: 1; font-variant-numeric: tabular-nums; }
 .ptotal span { font-size: 10.5px; color: var(--muted); }
 .sbar-track { height: 10px; border-radius: 6px; background: #f0f3f7; }
+.pbars[data-showtasks] { cursor: pointer; border-radius: 6px; }
+.pbars[data-showtasks]:hover .sbar-track { box-shadow: 0 0 0 2px #e3eaf4; }
+.pbars[data-showtasks]:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
 .sbar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; gap: 2px; }
 .sbar i, .slegend i { display: block; }
-.s-over { background: #d0612a; } .s-week { background: #f0a43a; } .s-open { background: #9db6d8; } .s-closed { background: var(--green); }
+.s-over { background: #d0612a; } .s-week { background: rgba(240, 164, 58, .8); } .s-open { background: #9db6d8; } .s-closed { background: var(--green); }
 .slegend { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-size: 11.5px; color: #6f7680; font-variant-numeric: tabular-nums; }
 .slegend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .slegend .hot { color: #c0501f; font-weight: 700; }
@@ -1178,6 +1183,14 @@ function photoAdopt(res) {
   store.plans = store.plans.map(p => p.id === fresh.id ? fresh : p);
   if (state && state.id === fresh.id) { state = fresh; render(); }
 }
+// The photo on a People row: clicking it opens a small menu, "Upload new photo" and, for an uploaded photo,
+// "Delete photo". A photo from Salesforce or Sales AI can't be deleted here (the next sync would bring it back),
+// so the menu says where it came from instead.
+function photoControl(p) {
+  const open = ui.photoMenu === p.id;
+  const from = p.photo && p.photoSource !== "upload" ? `<p class="pphoto-src">Photo from ${p.photoSource === "salesai" ? "Sales AI" : "Salesforce"}</p>` : "";
+  return `<div class="pphoto ${open ? "open" : ""}"><button type="button" class="pphoto-btn" data-photo-menu="${p.id}" aria-haspopup="menu" aria-expanded="${open}" title="Edit photo" aria-label="Edit the photo of ${esc(p.name)}">${avatar(p.id)}<span class="pphoto-edit" aria-hidden="true">✎</span></button>${open ? `<div class="ph-menu" role="menu">${from}<button type="button" role="menuitem" data-photo="${p.id}"><span class="mi">⤒</span>Upload new photo</button>${p.photoSource === "upload" ? `<button type="button" role="menuitem" class="danger-item" data-photo-rm="${p.id}"><span class="mi">✕</span>Delete photo</button>` : ""}</div>` : ""}</div>`;
+}
 function photoPick(id) {
   if (photoBusy()) return;
   let input = document.getElementById("photo-input");
@@ -1535,7 +1548,7 @@ function renderNotify() {
       <div class="notify-field"><label>CHANNEL</label>${!channels.length ? `<p class="hint">Nobody on this task can be notified yet.</p>` : `<div class="notify-channel-row">${channels.map(ch => `<button type="button" class="notify-channel-btn ${q.channel === ch ? "active" : ""}" data-nt-chan="${ch}"><span class="i i-${ch === "slack" ? "slack" : "mail"}"></span>${ch === "slack" ? "Slack" : "Email"}</button>`).join("")}</div>`}</div>
       ${channels.length ? `<div class="notify-field"><label>PEOPLE</label>
         <input class="notify-people-search" id="nt-search" value="${esc(q.search)}" placeholder="Add people" autocomplete="off">
-        ${matches.length ? `<div class="notify-people-results">${matches.map(p => `<button type="button" class="notify-people-result" data-nt-add="${esc(p.personId)}"><span class="avatar">${esc(initials(p.name))}</span><span>${esc(p.name)}</span><small>${esc(sub(p))}</small></button>`).join("")}</div>` : ""}
+        ${matches.length ? `<div class="notify-people-results">${matches.map(p => `<button type="button" class="notify-people-result" data-nt-add="${esc(p.personId)}">${state.people.some(x => x.id === p.personId) ? avatar(p.personId) : `<span class="avatar">${esc(initials(p.name))}</span>`}<span>${esc(p.name)}</span><small>${esc(sub(p))}</small></button>`).join("")}</div>` : ""}
         ${hint.length ? `<div class="notify-unreachable">${hint.map(p => `<div><span>${esc(p.name)} · ${esc(why(p))}</span></div>`).join("")}</div>` : ""}
         ${chosen.length ? `<div class="notify-chips">${chosen.map(p => `<span class="chip"><span>${esc(p.name)}</span><button type="button" aria-label="Remove ${esc(p.name)}" data-nt-remove="${esc(p.personId)}">×</button></span>`).join("")}</div>` : ""}
       </div>
@@ -2083,10 +2096,10 @@ function personRow(p, maxTotal) {
   const width = maxTotal ? Math.max(st.total / maxTotal * 100, st.total ? 6 : 0) : 0;
   return `<article class="prow ${open ? "open" : ""}">
     <div class="prow-main">
-      <div class="prow-who">${canPhoto(p) ? `<button type="button" class="ph-btn" data-photo="${p.id}" title="Change photo" aria-label="Change the photo of ${esc(p.name)}">${avatar(p.id)}<span class="ph-cam" aria-hidden="true">✎</span></button>` : avatar(p.id)}<div class="pid"><b>${esc(p.name)}${isOwner ? ` <span class="po">PLAN OWNER</span>` : ""}</b><small>${esc(p.title)}${p.role ? ` · <span class="prole">${esc(p.role)}</span>` : ""}${canPhoto(p) && p.photoSource === "upload" ? ` · <button type="button" class="linkish ph-rm" data-photo-rm="${p.id}">Remove photo</button>` : ""}</small></div></div>
+      <div class="prow-who">${canPhoto(p) ? photoControl(p) : avatar(p.id)}<div class="pid"><b>${esc(p.name)}${isOwner ? ` <span class="po">PLAN OWNER</span>` : ""}</b><small>${esc(p.title)}${p.role ? ` · <span class="prole">${esc(p.role)}</span>` : ""}</small></div></div>
       <div class="prow-stats">
         <div class="ptotal"><b>${st.total}</b><span>item${st.total === 1 ? "" : "s"}</span></div>
-        <div class="pbars">
+        <div class="pbars" ${st.total ? `data-showtasks="${p.id}" role="button" tabindex="0" aria-expanded="${open}" title="${open ? "Hide" : "Show"} ${esc(p.name)}'s tasks"` : ""}>
           <div class="sbar-track"><div class="sbar" style="width:${width}%">${seg(st.overdue, "s-over", "overdue")}${seg(st.dueWeek, "s-week", "due this week")}${seg(st.open, "s-open", "open")}${seg(st.closed, "s-closed", "closed")}</div></div>
           <div class="slegend">${st.overdue ? `<span class="hot"><i class="s-over"></i>${st.overdue} overdue</span>` : ""}${st.dueWeek ? `<span><i class="s-week"></i>${st.dueWeek} due this week</span>` : ""}<span><i class="s-open"></i>${st.open} open</span><span><i class="s-closed"></i>${st.closed} closed</span></div>
         </div>
@@ -2579,9 +2592,10 @@ function pickerList(t, key, q) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const hit = (name, extra) => words.every(w => `${name} ${extra}`.toLowerCase().includes(w));
   const taken = new Set(key === "owner" ? [t.owner] : [t.owner, ...(t.coworkers || []), ...(t.recipients || [])]);
-  const row = (val, name, sub, side) => `<button type="button" class="pf-opt" role="option" data-pf-pick="${esc(val)}"><span class="avatar av-sm ${side === "buyer" ? "buyer" : ""}">${esc(initials(name))}</span><span class="pf-name">${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></button>`;
+  // People already on the plan get avatar() (their photo when there is one); people not on it yet only have initials.
+  const row = (val, name, sub, side, personId) => `<button type="button" class="pf-opt" role="option" data-pf-pick="${esc(val)}">${personId ? avatar(personId, "av-sm") : `<span class="avatar av-sm ${side === "buyer" ? "buyer" : ""}">${esc(initials(name))}</span>`}<span class="pf-name">${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></button>`;
   const group = (label, items) => items.length ? `<div class="pf-group">${esc(label)}</div>${items.join("")}` : "";
-  const side = sd => state.people.filter(p => p.side === sd && !taken.has(p.id) && hit(p.name, `${p.title} ${p.email || ""} ${p.role || ""}`)).map(p => row(p.id, p.name, p.role || p.title, sd));
+  const side = sd => state.people.filter(p => p.side === sd && !taken.has(p.id) && hit(p.name, `${p.title} ${p.email || ""} ${p.role || ""}`)).map(p => row(p.id, p.name, p.role || p.title, sd, p.id));
   const others = (canAddPeople("seller") || canAddPeople("buyer")) ? notOnPlan().filter(o => hit(o.name, `${o.email || ""} ${o.title || ""}`)).map(o => row("add:" + o.key, o.name, o.email || o.title, "seller")) : [];
   // The customer's contacts from Sales AI (their account's contacts) who aren't on the plan yet; picking one adds them to the plan too.
   const po = ui.peopleOpts && ui.peopleOpts.planId === state.id ? ui.peopleOpts : null;
@@ -2942,9 +2956,12 @@ function wirePage() {
   app.querySelectorAll("[data-invite]").forEach(b => b.onclick = () => { ui.inviteFor = b.dataset.invite; renderInvite(); });
 
   app.querySelectorAll("[data-showtasks]").forEach(b => b.onclick = () => { const id = b.dataset.showtasks; ui.peopleOpen.has(id) ? ui.peopleOpen.delete(id) : ui.peopleOpen.add(id); render(); });
+  // The bar on a People row opens the person's tasks too (same as "Show tasks"); Enter or Space when it has focus.
+  app.querySelectorAll(".pbars[data-showtasks]").forEach(b => b.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); b.click(); } });
   app.querySelectorAll("[data-manage]").forEach(b => b.onclick = () => { ui.manage = b.dataset.manage; ui.removing = null; renderManage(); });
-  app.querySelectorAll("[data-photo]").forEach(b => b.onclick = () => photoPick(b.dataset.photo));
-  app.querySelectorAll("[data-photo-rm]").forEach(b => b.onclick = () => photoRemove(b.dataset.photoRm));
+  app.querySelectorAll("[data-photo-menu]").forEach(b => b.onclick = () => { ui.photoMenu = ui.photoMenu === b.dataset.photoMenu ? null : b.dataset.photoMenu; render(); });
+  app.querySelectorAll("[data-photo]").forEach(b => b.onclick = () => { ui.photoMenu = null; render(); photoPick(b.dataset.photo); });
+  app.querySelectorAll("[data-photo-rm]").forEach(b => b.onclick = () => { ui.photoMenu = null; render(); photoRemove(b.dataset.photoRm); });
   app.querySelectorAll("[data-opentask]").forEach(b => b.onclick = () => { ui.open = b.dataset.opentask; render(); });
   const viewer = $("#viewer"); if (viewer) viewer.onchange = e => { ui.viewer = e.target.value; render(); };
   const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || state.phases[0]; if (cur) openInlineAdd(cur.id, true); };
@@ -4264,8 +4281,9 @@ $("#reset").onclick = () => { store = freshStore(); state = store.plans[0]; ui.w
 document.addEventListener("click", e => {
   if ((ui.phaseMenu || ui.planMenu) && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; ui.planMenu = false; render(); }
   if (ui.picker && !e.target.closest(".pfield")) { ui.picker = null; render(); }
+  if (ui.photoMenu && !e.target.closest(".pphoto")) { ui.photoMenu = null; render(); }
 });
-document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.notify) { ui.notify = null; renderNotify(); return; } if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
+document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.photoMenu) { ui.photoMenu = null; render(); return; } if (ui.notify) { ui.notify = null; renderNotify(); return; } if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 if (state) ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();
 if (LINK) { store = { plans: [], current: null }; state = null; ui.loading = true; render(); bootFromLink(); }
