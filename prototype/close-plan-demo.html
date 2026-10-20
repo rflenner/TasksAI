@@ -290,6 +290,9 @@ button { cursor: pointer; }
 .notify-modal-header { display: flex; gap: 14px; align-items: flex-start; padding-right: 30px; margin-bottom: 24px; }
 .notify-modal-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: none; } .notify-modal-icon .i { width: 42px; height: 42px; }
 .notify-modal-header h2 { margin: 0; font-size: 19px; color: var(--dark); } .notify-modal-header p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.notify-task { background: #f5f7fa; border-radius: 12px; padding: 14px 18px 16px; margin: -6px 0 22px; }
+.notify-task label { display: block; font-size: 11px; font-weight: 700; color: #737b87; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+.notify-task b { display: block; font-size: 21px; line-height: 1.3; font-weight: 800; color: var(--dark); overflow-wrap: anywhere; }
 .notify-field { margin-bottom: 20px; } .notify-field > label { display: block; font-size: 11px; font-weight: 700; color: #737b87; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
 .notify-channel-row { display: flex; gap: 6px; }
 .notify-channel-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #d9dee5; background: white; color: #5d6470; font-size: 13px; font-weight: 700; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-family: inherit; }
@@ -1419,7 +1422,8 @@ function renderNotify() {
   root.innerHTML = `<div class="notify-modal-overlay" data-nt-close>
     <div class="notify-modal" role="dialog" aria-modal="true" aria-label="Notify / Remind collaborators" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()">
       <button type="button" class="notify-modal-close" aria-label="Close" data-nt-close>×</button>
-      <div class="notify-modal-header"><span class="notify-modal-icon"><span class="i i-bell"></span></span><div><h2>Notify / Remind collaborators</h2><p>Send a message about “${esc(t.title)}”</p></div></div>
+      <div class="notify-modal-header"><span class="notify-modal-icon"><span class="i i-bell"></span></span><div><h2>Notify / Remind collaborators</h2><p>Send a message about this task</p></div></div>
+      <div class="notify-task"><label>TASK</label><b>${esc(t.title)}</b></div>
       ${q.loading ? `<p class="hint">Loading…</p>` : q.error && !q.people.length ? `<p class="notify-result err">${esc(q.error)}</p>` : `
       <div class="notify-field"><label>CHANNEL</label>${!channels.length ? `<p class="hint">Nobody on this task can be notified yet.</p>` : `<div class="notify-channel-row">${channels.map(ch => `<button type="button" class="notify-channel-btn ${q.channel === ch ? "active" : ""}" data-nt-chan="${ch}"><span class="i i-${ch === "slack" ? "slack" : "mail"}"></span>${ch === "slack" ? "Slack" : "Email"}</button>`).join("")}</div>`}</div>
       ${channels.length ? `<div class="notify-field"><label>PEOPLE</label>

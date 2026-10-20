@@ -669,5 +669,5 @@ customers who were never invited are shown greyed out with the reason. Each send
 in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characters. When everyone was reached the window closes and a toast says "The message has been sent to <names>" for two seconds; if someone could not be reached the window stays open with the reason for each person.
 
 The popup is Task AI's "Notify / Remind collaborators" design: the bell icon with the orange paper plane, CHANNEL buttons (Email, Slack; only the channels somebody on the task can use),
-a PEOPLE search with a list of the people on the task who can be reached on that channel (click to add) and chips for the people picked (× removes), people who cannot be reached
+under the header a band (background #f5f7fa) with the task's title in large letters so it is clear which task the note is about, a PEOPLE search with a list of the people on the task who can be reached on that channel (click to add) and chips for the people picked (× removes), people who cannot be reached
 shown as grey hints with the reason ("not invited to the plan yet", "asked not to get emails"), a MESSAGE with a 0/1000 counter, and Cancel / Send message. Escape closes it.
