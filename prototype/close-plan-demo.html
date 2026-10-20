@@ -278,12 +278,40 @@ button { cursor: pointer; }
 /* Drawer (Task AI) */
 .overlay { position: fixed; inset: 0; background: #17223466; display: flex; justify-content: flex-end; z-index: 30; }
 .drawer { width: var(--drawer-w); height: 100%; overflow: auto; background: #fff; padding: 42px; position: relative; box-shadow: -12px 0 40px #17223422; padding-top: calc(42px + env(safe-area-inset-top, 0px)); }
-.bell { border: 0; background: #f1f3f6; border-radius: 50%; width: 32px; height: 32px; font-size: 15px; line-height: 1; cursor: pointer; flex: none; }
-.bell:hover { background: #e4ebf5; } .card .bell { position: absolute; right: 14px; top: 12px; opacity: 0; transition: opacity .12s; } .card:hover .bell, .card:focus-within .bell, .card .bell:focus-visible { opacity: 1; }
-.drawer > .bell { position: absolute; right: 74px; top: calc(30px + env(safe-area-inset-top, 0px)); width: 34px; height: 34px; }
-.nt-people { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; } .nt-people li { display: flex; gap: 8px; align-items: center; font-size: 13px; } .nt-people small { color: #7a8391; }
-.nt-people .off { opacity: .55; } .nt-chan { display: inline-flex; border: 1px solid #c9d3e0; border-radius: 8px; overflow: hidden; } .nt-chan button { border: 0; background: #fff; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; } .nt-chan button.on { background: #173f76; color: #fff; } .nt-chan button:disabled { opacity: .4; cursor: default; }
-.nt-msg { width: 100%; box-sizing: border-box; min-height: 90px; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid #c9d3e0; border-radius: 8px; margin-top: 10px; }
+/* The bell and its popup: the same design as Task AI's "Notify / Remind collaborators". */
+.i-bell{background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23173f76%22%20d%3D%22M10.5%202.3a1.5%201.5%200%200%200-1.5%201.5v.3A5.6%205.6%200%200%200%204.9%209.6v2.7c0%20.5-.16%201-.45%201.4L3.2%2015.3a1%201%200%200%200%20.8%201.6h12.9a1%201%200%200%200%20.8-1.6l-1.25-1.6a2.5%202.5%200%200%201-.45-1.4V9.6A5.6%205.6%200%200%200%2012%204.1V3.8a1.5%201.5%200%200%200-1.5-1.5z%22/%3E%3Cellipse%20cx%3D%2210.3%22%20cy%3D%2218.6%22%20rx%3D%221.7%22%20ry%3D%221.5%22%20fill%3D%22%23173f76%22/%3E%3Ccircle%20cx%3D%2217.6%22%20cy%3D%2216.8%22%20r%3D%225.6%22%20fill%3D%22%23fff%22/%3E%3Ccircle%20cx%3D%2217.6%22%20cy%3D%2216.8%22%20r%3D%224.9%22%20fill%3D%22%23ffa614%22/%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M14.9%2017l6-2.8-1.5%206-1.4-1.8-1.3%201.1v-1.6z%22/%3E%3C/svg%3E") center/contain no-repeat}
+.i-slack{background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%2336C5F0%22%20d%3D%22M9.3%2015.2a1.9%201.9%200%201%201-1.9-1.9h1.9v1.9zM10.3%2015.2a1.9%201.9%200%201%201%203.8%200v4.7a1.9%201.9%200%201%201-3.8%200v-4.7z%22/%3E%3Cpath%20fill%3D%22%232EB67D%22%20d%3D%22M8.4%209.6a1.9%201.9%200%201%201%201.9-1.9v1.9H8.4zM8.4%2010.6a1.9%201.9%200%201%201%200%203.8H3.7a1.9%201.9%200%201%201%200-3.8h4.7z%22/%3E%3Cpath%20fill%3D%22%23ECB22E%22%20d%3D%22M14%208.7a1.9%201.9%200%201%201%201.9%201.9H14V8.7zM13%208.7a1.9%201.9%200%201%201-3.8%200V4a1.9%201.9%200%201%201%203.8%200v4.7z%22/%3E%3Cpath%20fill%3D%22%23E01E5A%22%20d%3D%22M15.6%2014.3a1.9%201.9%200%201%201-1.9%201.9v-1.9h1.9zM15.6%2013.3a1.9%201.9%200%201%201%200-3.8h4.7a1.9%201.9%200%201%201%200%203.8h-4.7z%22/%3E%3C/svg%3E") center/contain no-repeat}
+.card-notify { border: 1px solid transparent; background: none; color: #9299a3; padding: 5px; border-radius: 50%; cursor: pointer; display: inline-grid; place-items: center; flex: none; }
+.card-notify .i { width: 20px; height: 20px; } .card-notify:hover { background: #eef3fa; border-color: #d9e3f0; color: var(--navy); }
+.card > .card-notify { position: absolute; right: 12px; top: 10px; } .drawer > .card-notify { position: absolute; right: 74px; top: calc(28px + env(safe-area-inset-top, 0px)); padding: 6px; } .drawer > .card-notify .i { width: 22px; height: 22px; }
+.notify-modal-overlay { position: fixed; inset: 0; background: #17223466; display: flex; align-items: center; justify-content: center; z-index: 70; padding: 20px; }
+.notify-modal { width: 100%; max-width: 520px; max-height: min(680px, 90vh); overflow-y: auto; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px #17223440; padding: 30px 32px; position: relative; }
+.notify-modal-close { position: absolute; right: 20px; top: 20px; border: 0; background: #f1f3f6; border-radius: 50%; width: 32px; height: 32px; font-size: 19px; color: #58616e; cursor: pointer; }
+.notify-modal-header { display: flex; gap: 14px; align-items: flex-start; padding-right: 30px; margin-bottom: 24px; }
+.notify-modal-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: none; } .notify-modal-icon .i { width: 42px; height: 42px; }
+.notify-modal-header h2 { margin: 0; font-size: 19px; color: var(--dark); } .notify-modal-header p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.notify-task { background: #f5f7fa; border-radius: 12px; padding: 14px 18px 16px; margin: -6px 0 22px; }
+.notify-task label { display: block; font-size: 11px; font-weight: 700; color: #737b87; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+.notify-task b { display: block; font-size: 21px; line-height: 1.3; font-weight: 800; color: var(--dark); overflow-wrap: anywhere; }
+.notify-field { margin-bottom: 20px; } .notify-field > label { display: block; font-size: 11px; font-weight: 700; color: #737b87; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+.notify-channel-row { display: flex; gap: 6px; }
+.notify-channel-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #d9dee5; background: white; color: #5d6470; font-size: 13px; font-weight: 700; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-family: inherit; }
+.notify-channel-btn .i { width: 16px; height: 16px; flex: none; } .notify-channel-btn.active { background: var(--navy); border-color: var(--navy); color: white; }
+.notify-people-search { width: 100%; box-sizing: border-box; border: 1px solid #d9dee5; border-radius: 8px; padding: 10px 12px; font: 14px Arial, Helvetica, sans-serif; color: var(--ink); background: white; }
+.notify-people-results { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; max-height: 160px; overflow-y: auto; }
+.notify-people-result { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; padding: 9px 10px; cursor: pointer; text-align: left; font: 13px Arial, Helvetica, sans-serif; color: var(--ink); } .notify-people-result:hover { background: #eef3fa; }
+.notify-people-result small { color: #9299a3; margin-left: auto; font-size: 11.5px; } .notify-people-result .avatar { width: 24px; height: 24px; font-size: 10px; }
+.notify-unreachable { margin-top: 6px; } .notify-unreachable div { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12.5px; color: #9299a3; }
+.notify-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.notify-chips .chip { display: inline-flex; align-items: center; gap: 6px; background: #eef3fa; color: var(--navy); border: 1px solid #c9dbf2; border-radius: 999px; padding: 4px 6px 4px 10px; font: 600 12.5px Arial, Helvetica, sans-serif; white-space: nowrap; }
+.notify-chips .chip button { border: 0; background: #d7e4f6; color: var(--navy); width: 16px; height: 16px; border-radius: 50%; line-height: 1; font-size: 11px; cursor: pointer; padding: 0; }
+.notify-message { width: 100%; box-sizing: border-box; min-height: 120px; resize: vertical; border: 1px solid #d9dee5; border-radius: 8px; padding: 12px; font: 13.5px Arial, Helvetica, sans-serif; line-height: 1.6; color: var(--ink); background: white; }
+.notify-char-count { text-align: right; font-size: 11px; color: #9299a3; margin-top: 4px; }
+.notify-result { margin-bottom: 16px; padding: 10px 12px; border-left: 3px solid var(--orange); border-radius: 0 6px 6px 0; background: #fff7e8; font-size: 12.5px; color: #4a5160; }
+.notify-result.ok { border-color: #2f9e58; background: #e9f7ee; color: #1e6b3b; } .notify-result.partial { border-color: #c98a12; background: #fff1d6; color: #8a5c05; } .notify-result.err { border-color: #c0503e; background: #fdece9; color: #9c3626; }
+.notify-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.notify-cancel { height: 42px; border: 1px solid #d7dce3; background: white; border-radius: 8px; padding: 0 18px; font: 700 14px Arial, Helvetica, sans-serif; color: var(--navy); cursor: pointer; }
+.notify-send { height: 42px; padding: 0 20px; border: 1px solid var(--navy); background: var(--navy); color: white; border-radius: 8px; font: 700 14px Arial, Helvetica, sans-serif; cursor: pointer; } .notify-send:disabled { opacity: .45; cursor: default; }
 .x { position: absolute; right: 28px; top: calc(28px + env(safe-area-inset-top, 0px)); border: 0; background: #f1f3f6; border-radius: 50%; width: 36px; height: 36px; font-size: 23px; color: #58616e; line-height: 1; }
 .drawer > label { color: var(--navy); font-size: 11px; letter-spacing: 1.5px; font-weight: 800; }
 .crumb { color: var(--hint); font-size: 12px; margin-top: 6px; }
@@ -773,6 +801,7 @@ button.wz-card { font: inherit; text-align: left; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
+.toast.toast-center { bottom: auto; top: 50%; transform: translate(-50%, -50%); padding: 18px 28px; font-size: 15px; border-radius: 12px; box-shadow: 0 12px 40px #17223455; text-align: center; max-width: min(520px, calc(100vw - 40px)); }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
@@ -1084,7 +1113,8 @@ function matches(t, f = ui.filter) {
   }
 }
 function log(text, taskId) { state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: me(), text, task: taskId }); state.activity = state.activity.slice(0, 40); }
-function toast(msg) { const root = $("#toast-root"); root.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", 2400); }
+// `where` "center" puts the message in the middle of the screen (where a popup was); the default is the bottom edge.
+function toast(msg, ms = 2400, where = "") { const root = $("#toast-root"); root.innerHTML = `<div class="toast ${where === "center" ? "toast-center" : ""}" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", ms); }
 function avatar(id, cls = "") { const p = person(id); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}</span>`; }
 
 // Render
@@ -1361,7 +1391,7 @@ function demoFillApply() {
 // ---- The bell: notify the people on a task ----
 function openNotify(taskId) {
   const t = state.tasks.find(x => x.id === taskId); if (!t) return;
-  ui.notify = { taskId, loading: true, people: [], selected: [], channel: "", message: "", edited: false, sending: false, results: null, error: "", slack: false };
+  ui.notify = { taskId, loading: true, people: [], selected: [], channel: "", search: "", message: "", edited: false, sending: false, result: null, error: "", slack: false };
   renderNotify();
   fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/notify?taskId=${encodeURIComponent(taskId)}`, { credentials: "same-origin" })
     .then(async r => { const res = await r.json().catch(() => ({})); const q = ui.notify; if (!q || q.taskId !== taskId) return; q.loading = false;
@@ -1382,32 +1412,53 @@ function renderNotify() {
   if (!ui.notify) { if (root) root.remove(); return; }
   if (!root) { root = document.createElement("div"); root.id = "notify-root"; document.body.appendChild(root); }
   const q = ui.notify, t = state.tasks.find(x => x.id === q.taskId); if (!t) { ui.notify = null; return renderNotify(); }
-  const can = p => p.channels.includes(q.channel);
-  const rows = q.people.map(p => `<li class="${can(p) ? "" : "off"}"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-nt-person="${esc(p.personId)}" ${q.selected.includes(p.personId) ? "checked" : ""} ${can(p) ? "" : "disabled"}><span><b>${esc(p.name)}</b> <small>${esc(p.role)} · ${p.side === "buyer" ? esc(B()) : "iSEEit"}${!can(p) ? ` · ${esc(p.blocked || (q.channel === "slack" ? "no Slack account (customers are reached by email)" : "can't be emailed"))}` : ""}</small></span></label></li>`).join("");
-  const sendable = q.people.filter(p => q.selected.includes(p.personId) && can(p)).length;
-  const done = q.results ? `<ul class="nt-people">${q.results.map(r => `<li>${r.sent ? "✓" : "✕"} <b>${esc(r.name)}</b> <small>${r.sent ? "sent" : esc(r.reason || "not sent")}</small></li>`).join("")}</ul>` : "";
-  root.innerHTML = `<div style="position:fixed;inset:0;background:rgba(30,40,55,.35);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh" data-nt-close>
-    <div class="sf-box" style="margin:0;max-width:560px;width:calc(100% - 32px);background:#fff;border-radius:10px" role="dialog" aria-label="Notify the people on this task" onclick="event.stopPropagation()">
-      <b>🔔 Notify the people on “${esc(t.title)}”</b>
-      ${q.loading ? "<p>Loading…</p>" : q.error ? `<p style="color:#a8402f"><b>${esc(q.error)}</b></p>` : !q.people.length ? "<p>Nobody is on this task yet. Add an owner, coworkers or requesters first.</p>" : `
-        <p style="margin:8px 0 0"><span class="nt-chan" role="group" aria-label="Send by"><button type="button" data-nt-chan="email" class="${q.channel === "email" ? "on" : ""}">Email</button><button type="button" data-nt-chan="slack" class="${q.channel === "slack" ? "on" : ""}" ${q.slack ? "" : "disabled title=\"Slack is not connected\""}>Slack</button></span></p>
-        <ul class="nt-people">${rows}</ul>
-        <textarea class="nt-msg" id="nt-msg" maxlength="1000" aria-label="Message">${esc(q.message)}</textarea>
-        ${done}`}
-      <div class="pe-actions"><button type="button" class="btn sm primary" id="nt-send" ${q.sending || !sendable || !q.message.trim() || q.loading ? "disabled" : ""}>${q.sending ? "Sending…" : `Send${sendable > 1 ? " to " + sendable : ""}`}</button><button type="button" class="btn sm" data-nt-close>${q.results ? "Close" : "Cancel"}</button></div></div></div>`;
+  const channels = ["email", "slack"].filter(ch => q.people.some(p => p.channels.includes(ch)));
+  const can = p => p.channels.includes(q.channel), picked = p => q.selected.includes(p.personId);
+  const chosen = q.people.filter(picked), needle = q.search.trim().toLowerCase();
+  const matches = q.people.filter(p => can(p) && !picked(p) && (!needle || p.name.toLowerCase().includes(needle)));
+  const sub = p => `${p.role} · ${p.side === "buyer" ? B() : "iSEEit"}`;
+  const why = p => p.blocked || (p.channels.length ? (q.channel === "slack" ? "customers are reached by email" : "is reached by Slack only") : "can't be reached");
+  const hint = q.people.filter(p => !can(p) && (!needle || p.name.toLowerCase().includes(needle)));
+  const r = q.result, ok = r && r.sent > 0 && r.sent === r.total;
+  const resultText = !r ? "" : r.sent > 0 ? `Sent to ${r.sent} of ${r.total}: ${r.results.filter(x => !x.sent).map(x => `${x.name} (${x.reason || "failed"})`).join(", ")}` : `Could not send: ${(r.results.map(x => x.reason).filter(Boolean)[0]) || "please try again"}`;
+  root.innerHTML = `<div class="notify-modal-overlay" data-nt-close>
+    <div class="notify-modal" role="dialog" aria-modal="true" aria-label="Notify / Remind collaborators" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()">
+      <button type="button" class="notify-modal-close" aria-label="Close" data-nt-close>×</button>
+      <div class="notify-modal-header"><span class="notify-modal-icon"><span class="i i-bell"></span></span><div><h2>Notify / Remind collaborators</h2><p>Send a message about this task</p></div></div>
+      <div class="notify-task"><label>TASK</label><b>${esc(t.title)}</b></div>
+      ${q.loading ? `<p class="hint">Loading…</p>` : q.error && !q.people.length ? `<p class="notify-result err">${esc(q.error)}</p>` : `
+      <div class="notify-field"><label>CHANNEL</label>${!channels.length ? `<p class="hint">Nobody on this task can be notified yet.</p>` : `<div class="notify-channel-row">${channels.map(ch => `<button type="button" class="notify-channel-btn ${q.channel === ch ? "active" : ""}" data-nt-chan="${ch}"><span class="i i-${ch === "slack" ? "slack" : "mail"}"></span>${ch === "slack" ? "Slack" : "Email"}</button>`).join("")}</div>`}</div>
+      ${channels.length ? `<div class="notify-field"><label>PEOPLE</label>
+        <input class="notify-people-search" id="nt-search" value="${esc(q.search)}" placeholder="Add people" autocomplete="off">
+        ${matches.length ? `<div class="notify-people-results">${matches.map(p => `<button type="button" class="notify-people-result" data-nt-add="${esc(p.personId)}"><span class="avatar">${esc(initials(p.name))}</span><span>${esc(p.name)}</span><small>${esc(sub(p))}</small></button>`).join("")}</div>` : ""}
+        ${hint.length ? `<div class="notify-unreachable">${hint.map(p => `<div><span>${esc(p.name)} · ${esc(why(p))}</span></div>`).join("")}</div>` : ""}
+        ${chosen.length ? `<div class="notify-chips">${chosen.map(p => `<span class="chip"><span>${esc(p.name)}</span><button type="button" aria-label="Remove ${esc(p.name)}" data-nt-remove="${esc(p.personId)}">×</button></span>`).join("")}</div>` : ""}
+      </div>
+      <div class="notify-field"><label>MESSAGE</label><textarea class="notify-message" id="nt-msg" maxlength="1000">${esc(q.message)}</textarea><div class="notify-char-count">${q.message.length}/1000</div></div>` : ""}
+      ${q.error ? `<div class="notify-result err">${esc(q.error)}</div>` : ""}${r ? `<div class="notify-result ${ok ? "ok" : r.sent > 0 ? "partial" : "err"}">${esc(resultText)}</div>` : ""}
+      <div class="notify-modal-actions"><button type="button" class="notify-cancel" data-nt-close>Cancel</button><button type="button" class="notify-send" id="nt-send" ${q.sending || !chosen.filter(can).length || !q.channel || !q.message.trim() ? "disabled" : ""}>${q.sending ? "Sending…" : "Send message"}</button></div>`}
+    </div></div>`;
+  const redraw = keepFocus => { const el0 = keepFocus && document.getElementById(keepFocus), pos = el0 ? el0.selectionStart : null; renderNotify(); if (keepFocus) { const el = document.getElementById(keepFocus); if (el) { el.focus(); try { el.setSelectionRange(pos ?? el.value.length, pos ?? el.value.length); } catch (e) {} } } };
   root.querySelectorAll("[data-nt-close]").forEach(b => b.onclick = () => { ui.notify = null; renderNotify(); });
-  root.querySelectorAll("[data-nt-chan]").forEach(b => b.onclick = () => { q.channel = b.dataset.ntChan; q.selected = q.selected.filter(id => q.people.find(p => p.personId === id && p.channels.includes(q.channel))); if (!q.edited) q.message = notifyDraft(t, q); renderNotify(); });
-  root.querySelectorAll("[data-nt-person]").forEach(i => i.onchange = () => { const id = i.dataset.ntPerson; q.selected = i.checked ? [...q.selected, id] : q.selected.filter(x => x !== id); if (!q.edited) q.message = notifyDraft(t, q); renderNotify(); });
-  const ta = root.querySelector("#nt-msg"); if (ta) ta.oninput = () => { q.message = ta.value; q.edited = true; const b = root.querySelector("#nt-send"); if (b) b.disabled = q.sending || !sendable || !q.message.trim(); };
+  root.querySelectorAll("[data-nt-chan]").forEach(b => b.onclick = () => { q.channel = b.dataset.ntChan; q.selected = q.selected.filter(id => q.people.find(p => p.personId === id && p.channels.includes(q.channel))); if (!q.selected.length) { const only = q.people.filter(p => p.channels.includes(q.channel)); if (only.length === 1) q.selected = [only[0].personId]; } if (!q.edited) q.message = notifyDraft(t, q); redraw(); });
+  const search = root.querySelector("#nt-search"); if (search) search.oninput = () => { q.search = search.value; redraw("nt-search"); };
+  root.querySelectorAll("[data-nt-add]").forEach(b => b.onclick = () => { q.selected = [...q.selected, b.dataset.ntAdd]; q.search = ""; if (!q.edited) q.message = notifyDraft(t, q); redraw("nt-search"); });
+  root.querySelectorAll("[data-nt-remove]").forEach(b => b.onclick = () => { q.selected = q.selected.filter(id => id !== b.dataset.ntRemove); if (!q.edited) q.message = notifyDraft(t, q); redraw(); });
+  const ta = root.querySelector("#nt-msg"); if (ta) ta.oninput = () => { q.message = ta.value; q.edited = true; const c = root.querySelector(".notify-char-count"); if (c) c.textContent = `${q.message.length}/1000`; const b = root.querySelector("#nt-send"); if (b) b.disabled = q.sending || !chosen.filter(can).length || !q.channel || !q.message.trim(); };
   const send = root.querySelector("#nt-send"); if (send) send.onclick = async () => {
-    q.sending = true; q.error = ""; renderNotify();
+    q.sending = true; q.error = ""; q.result = null; renderNotify();
     try {
-      const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/notify`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: q.taskId, personIds: q.people.filter(p => q.selected.includes(p.personId) && can(p)).map(p => p.personId), channel: q.channel, message: q.message }) });
-      const res = await r.json().catch(() => ({}));
-      if (!r.ok) q.error = res.error || "The note could not be sent."; else {
-        q.results = res.results;
+      const resp = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/notify`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: q.taskId, personIds: chosen.filter(can).map(p => p.personId), channel: q.channel, message: q.message }) });
+      const res = await resp.json().catch(() => ({}));
+      if (!resp.ok) q.error = res.error || "The note could not be sent."; else {
         const sent = res.results.filter(x => x.sent);
+        q.result = { sent: sent.length, total: res.results.length, results: res.results };
         if (sent.length) { log(`pinged ${sent.map(x => x.name).join(", ")} via ${q.channel === "slack" ? "Slack" : "email"}: “${q.message}”`, q.taskId); save(); render(); }
+        // Everyone was reached: close the popup and say so for two seconds. If somebody was not, the popup stays open and says who and why.
+        if (sent.length && sent.length === res.results.length) {
+          const names = sent.map(x => x.name), who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+          ui.notify = null; renderNotify(); toast(`The message has been sent to ${who}`, 2000, "center"); return;
+        }
       }
     } catch (e) { q.error = "The note could not be sent. Check your connection."; }
     q.sending = false; renderNotify();
@@ -1733,7 +1784,7 @@ function wirePhases(app) {
 }
 
 // The bell: write to the people on a task by Slack or email, in your own words (the same flow as the bell in Task AI).
-function bellButton(t) { return IN_APP && !LINK && !state._demo && ui.mode === "seller" ? `<button type="button" class="bell" data-bell="${t.id}" aria-label="Notify the people on “${esc(t.title)}”" title="Notify the people on this task">🔔</button>` : ""; }
+function bellButton(t) { return IN_APP && !LINK && !state._demo && ui.mode === "seller" ? `<button type="button" class="card-notify" data-bell="${t.id}" title="Notify / Remind collaborators" aria-label="Notify / Remind collaborators"><span class="i i-bell"></span></button>` : ""; }
 function cardHtml(t) {
   const kids = children(t.id).filter(visible);
   const kc = kids.filter(k => k.status === "Closed").length;
@@ -4080,7 +4131,7 @@ document.addEventListener("click", e => {
   if ((ui.phaseMenu || ui.planMenu) && !e.target.closest(".ph-tools")) { ui.phaseMenu = null; ui.planMenu = false; render(); }
   if (ui.picker && !e.target.closest(".pfield")) { ui.picker = null; render(); }
 });
-document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
+document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.notify) { ui.notify = null; renderNotify(); return; } if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 if (state) ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();
 if (LINK) { store = { plans: [], current: null }; state = null; ui.loading = true; render(); bootFromLink(); }
