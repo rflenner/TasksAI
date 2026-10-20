@@ -188,10 +188,10 @@ export class SalesforceNotConnectedError extends Error {
 // refresh of exactly the token that failed (Sales AI's
 // salesforceApiWrapper does the same). `path` is relative to
 // /services/data/<version>.
-export async function salesforceApi<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+async function salesforceFetch(path: string, init: { method?: string; body?: unknown; accept?: string } = {}): Promise<Response> {
   const call = (auth: { accessToken: string; instanceUrl: string }) => fetch(`https://${instanceHost(auth.instanceUrl)}/services/data/${SALESFORCE_API_VERSION}${path}`, {
     method: init.method || "GET",
-    headers: { authorization: `Bearer ${auth.accessToken}`, "content-type": "application/json", accept: "application/json" },
+    headers: { authorization: `Bearer ${auth.accessToken}`, "content-type": "application/json", accept: init.accept || "application/json" },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     signal: AbortSignal.timeout(SALESFORCE_TIMEOUT_MS),
   });
@@ -204,6 +204,18 @@ export async function salesforceApi<T>(path: string, init: { method?: string; bo
     if (!auth) throw new SalesforceNotConnectedError();
     response = await call(auth);
   }
+  return response;
+}
+
+// A file body (e.g. /sobjects/Attachment/<id>/Body), as bytes plus its content type.
+export async function salesforceDownload(path: string): Promise<{ bytes: Buffer; contentType: string }> {
+  const response = await salesforceFetch(path, { accept: "*/*" });
+  if (!response.ok) throw new Error(`Salesforce download failed (${response.status})`);
+  return { bytes: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type") || "application/octet-stream" };
+}
+
+export async function salesforceApi<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const response = await salesforceFetch(path, init);
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => null);
   if (!response.ok) {

@@ -128,6 +128,8 @@ button { cursor: pointer; }
 .group { margin-top: 28px; }
 .group-title { display: flex; gap: 11px; align-items: center; margin: 0 0 12px 5px; }
 .avatar { width: 38px; height: 38px; border-radius: 50%; background: #e7eef8; color: var(--navy); display: inline-grid; place-items: center; font-weight: 700; flex: none; }
+.avatar { position: relative; overflow: hidden; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .group-title .avatar { width: 35px; height: 35px; font-size: 13px; }
 .group.current .group-title .avatar { background: var(--navy); color: #fff; }
 .group.complete .group-title .avatar { background: #e4f4eb; color: var(--green); }
@@ -1131,7 +1133,15 @@ function matches(t, f = ui.filter) {
 function log(text, taskId) { state.activity.unshift({ at: new Date().toISOString().slice(0, 10), by: me(), text, task: taskId }); state.activity = state.activity.slice(0, 40); }
 // `where` "center" puts the message in the middle of the screen (where a popup was); the default is the bottom edge.
 function toast(msg, ms = 2400, where = "") { const root = $("#toast-root"); root.innerHTML = `<div class="toast ${where === "center" ? "toast-center" : ""}" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => root.innerHTML = "", ms); }
-function avatar(id, cls = "") { const p = person(id); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}</span>`; }
+// A contact's photo, copied from Salesforce (app/lib/close-plan-photos.ts), sits over the initials; ?v= is the
+// Salesforce file Id, so a new photo gets a new URL. If it can't load, the initials stay.
+function photoUrl(p) {
+  if (!p || !p.photo || !p.id || !state || state._demo) return "";
+  const q = `${encodeURIComponent(p.id)}?v=${encodeURIComponent(p.photo)}`;
+  if (LINK) return `/api/close-plans/shared/${encodeURIComponent(LINK_TOKEN)}/photos/${q}`;
+  return IN_APP ? `/api/close-plans/store/${encodeURIComponent(state.id)}/photos/${q}` : "";
+}
+function avatar(id, cls = "") { const p = person(id), src = photoUrl(p); return `<span class="avatar ${p.side === "buyer" ? "buyer" : ""} ${cls}" title="${esc(p.name)} · ${p.side === "buyer" ? B() : "iSEEit"}">${esc(initials(p.name))}${src ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`; }
 
 // Render
 // Text boxes grow with their content up to 20 lines, then scroll.

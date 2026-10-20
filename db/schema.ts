@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
 export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
@@ -410,3 +410,16 @@ export const closePlanEmailLog = pgTable("close_plan_email_log", {
   taskId: text("task_id"),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [index("close_plan_email_log_plan_idx").on(table.planId, table.personId, table.kind, table.sentAt), index("close_plan_email_log_email_idx").on(table.email, table.sentAt)]);
+
+// Contact photos shown on a plan, copied from Salesforce: the newest
+// "Profile_Picture.jpg" Attachment on the Contact, the file the iSEEit org
+// chart shows (app/lib/close-plan-photos.ts). Kept per plan and person so
+// customer links can show them without Salesforce access. Migration 0028.
+export const closePlanPhotos = pgTable("close_plan_photos", {
+  planId: text("plan_id").notNull().references(() => closePlanDocuments.id, { onDelete: "cascade" }),
+  personId: text("person_id").notNull(),
+  sourceId: text("source_id").notNull(),
+  contentType: text("content_type").notNull(),
+  dataBase64: text("data_base64").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [primaryKey({ columns: [table.planId, table.personId] })]);
