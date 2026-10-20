@@ -7,6 +7,7 @@ import { appBase } from "../../../../../lib/close-plan-invitations";
 import { isOpportunityId } from "../../../../../lib/salesforce-opportunity-search";
 import { isSalesforceId } from "../../../../../lib/salesforce-checkpoints";
 import { canAccessPlan, canDeletePlan, memberEmails } from "../../../../../lib/close-plan-store";
+import { refreshPlanPhotos } from "../../../../../lib/close-plan-photos";
 import { requireSameOrigin } from "../../../../../lib/request";
 import { SalesforceNotConnectedError, salesforceApi } from "../../../../../lib/salesforce";
 import { currentActor } from "../../../../../lib/session";
@@ -61,6 +62,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     try { stillInSalesforce = new Set((await query<{ Id: string }>(`SELECT Id FROM iseeit__TO_DO__c WHERE Id IN (${missing.map(m => `'${m}'`).join(",")})`)).map(r => r.Id)); }
     catch (error) { console.error("Close Plan checkpoint existence check failed:", error instanceof Error ? error.message : error); }
   }
+  // Contact photos (the iSEEit org chart's Profile_Picture.jpg) follow Salesforce on every applied sync; set on `data` before syncPlan copies it.
+  const photosChanged = body.mode === "apply" ? await refreshPlanPhotos(id, data) : false;
   const outcome = syncPlan(data, phases, rows, { sendUnlinked: body.sendUnlinked === true, stillInSalesforce });
   const summary = { opportunityId, pulled: outcome.pulled, pushed: outcome.pushed, conflicts: outcome.conflicts, skipped: outcome.skipped, unlinked: outcome.unlinked };
   if (body.mode !== "apply") return Response.json({ applied: false, ...summary });
@@ -98,7 +101,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const next = commit(outcome, opportunityId, { updated, created, createdPhases, deleted });
   // An automatic sync that changed nothing must not bump the version (it would make every open page's next save conflict).
   const stable = (d: SyncPlan) => JSON.stringify({ ...d, sfdc: { ...d.sfdc, syncedAt: null } });
-  if (!first && !failed.length && stable(next) === stable(data)) return Response.json({ applied: true, unchanged: true, ...summary, written: { updated: 0, created: 0 }, failed });
+  if (!first && !failed.length && !photosChanged && stable(next) === stable(data)) return Response.json({ applied: true, unchanged: true, ...summary, written: { updated: 0, created: 0 }, failed });
   const [saved] = await getDb().update(closePlanDocuments)
     .set({ data: next, memberEmails: memberEmails(next), version: row.version + 1, updatedBy: actor.id, updatedAt: new Date() })
     .where(and(eq(closePlanDocuments.id, id), eq(closePlanDocuments.version, row.version), isNull(closePlanDocuments.deletedAt))).returning();
