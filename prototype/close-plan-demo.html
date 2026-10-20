@@ -452,7 +452,7 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .ap-row input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--navy); margin: 0; }
 .ap-row b { display: block; color: var(--ink); font-size: 13.5px; }
 .ap-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
-.ap-row input[type=text], .ap-role { border: 1px solid var(--field); border-radius: 7px; padding: 7px 9px; font-size: 13px; background: #fff; width: 100%; }
+.ap-row input[type=text], .ap-role, select.ap-role { border: 1px solid var(--field); border-radius: 7px; padding: 7px 9px; font-size: 13px; background: #fff; width: 100%; }
 .ap-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ap-foot .hint { margin: 0; flex: 1; min-width: 200px; }
 .ap-note { background: #fff7e8; border: 1px solid #fde2b0; color: #6b4a00; border-radius: 8px; padding: 8px 11px; font-size: 12.5px; margin: 0 0 8px; }
@@ -1259,7 +1259,7 @@ function sellerShell() {
         <button type="button" data-applink="/"><span class="i i-people"></span>People</button>
         <button type="button" class="active"><span class="i i-star"></span>Close plans<em class="nav-new">NEW</em></button>
         <div class="nav-children">
-          ${store.plans.map(pl => `<button type="button" class="${state && pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span>${esc(pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
+          ${store.plans.map(pl => `<button type="button" class="${state && pl.id === state.id && !ui.wizard ? "current" : ""}" data-plan="${pl.id}"><span title="${esc(pl.title || pl.account)}">${esc(pl.title || pl.account)}${pl.status === "draft" ? " · draft" : ""}</span><em>${pl.tasks.filter(t => t.status !== "Closed").length}</em></button>`).join("")}
           ${!APP_ME || APP_ME.canCreate ? `<button type="button" class="${ui.wizard ? "current" : ""}" data-newplan><span>+ New close plan</span></button>` : ""}
           ${IN_APP && APP_ME && APP_ME.canCreate && !(state && state._demo) ? `<button type="button" data-sfimport><span>⇩ Import from Salesforce</span></button>` : ""}
         </div>
@@ -1991,7 +1991,21 @@ function teamSection(side) {
 // come from /api/close-plans/store/:id/people-options, which is allowed for the plan owner (the new-plan guide's
 // own lookups are admin-only), so a plan owner who isn't an administrator can add people too.
 const ROLE_ORDER = { buyer: ["sponsor", "lead", "tech", "security", "procurement", "legal", "users"], seller: ["ae", "se", "cs", "pm", "design", "dev"] };
-const roleLabels = side => (ROLE_ORDER[side] || []).map(k => ROLES[k].label);
+// The role list is defined by Site Admins (Admin → Close Plan roles) and fetched at boot; until then (or in the stand-alone demo) the built-in names apply.
+let ROLE_LIST = null;
+const roleLabels = side => ROLE_LIST ? ROLE_LIST.filter(r => r.side === side).map(r => r.name) : (ROLE_ORDER[side] || []).map(k => ROLES[k].label);
+function applyRoleList(list) {
+  ROLE_LIST = list;
+  list.forEach(r => { if (r.key && ROLES[r.key]) ROLES[r.key].label = r.name; });
+}
+async function loadRoleList() {
+  try { const r = await fetch("/api/close-plans/roles", { credentials: "same-origin" }); if (r.ok) applyRoleList((await r.json()).roles || []); } catch (e) {}
+}
+// A role picker. A person whose role is no longer in the list keeps it, marked as such, so nothing is lost silently.
+function roleSelect(attrs, side, current) {
+  const names = roleLabels(side), cur = (current || "").trim(), stale = cur && !names.includes(cur);
+  return `<select ${attrs}><option value="">No role</option>${names.map(n => `<option value="${esc(n)}"${n === cur ? " selected" : ""}>${esc(n)}</option>`).join("")}${stale ? `<option value="${esc(cur)}" selected>${esc(cur)} (not in the role list)</option>` : ""}</select>`;
+}
 // A role suggested from a job title, using the same patterns the new-plan guide uses (most specific first).
 function suggestRole(title) {
   // Only strong matches: the first pattern of the technical and project roles (their second patterns, like
@@ -2021,12 +2035,11 @@ function loadPeopleOptions(force) {
     .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor || ui.picker) render(); } });
 }
 const onPlan = c => state.people.some(p => (c.email && p.email && p.email.toLowerCase() === c.email.toLowerCase()) || p.name.toLowerCase() === c.name.toLowerCase());
-function rolesDatalist(side) { return `<datalist id="roles-${side}">${roleLabels(side).map(r => `<option value="${esc(r)}"></option>`).join("")}</datalist>`; }
 function apRow(c, i, side, role) {
   return `<label class="ap-row" data-q="${esc((c.name + " " + (c.email || "") + " " + (c.title || "") + " " + (c.company || "")).toLowerCase())}">
     <input type="checkbox" data-ap-i="${i}" aria-label="Add ${esc(c.name)}">
     <div><b>${esc(c.name)}</b><small>${esc([c.title || c.company, c.email].filter(Boolean).join(" · ") || "No email")}</small></div>
-    <input type="text" class="ap-role" data-ap-role="${i}" list="roles-${side}" value="${esc(role)}" placeholder="Role on this plan" aria-label="Role of ${esc(c.name)}">
+    ${roleSelect(`class="ap-role" data-ap-role="${i}" aria-label="Role of ${esc(c.name)}"`, side, role)}
   </label>`;
 }
 function addPersonForm(side) {
@@ -2042,7 +2055,7 @@ function addPersonForm(side) {
       <label class="field">Name<input id="ap-name" required placeholder="First and last name"></label>
       <label class="field">Email<input id="ap-email" type="email" placeholder="name@${esc(state.domain || "company.com")}"></label>
       <label class="field">Title<input id="ap-title" placeholder="Job title"></label>
-      <label class="field">Role on this plan<input id="ap-role" list="roles-buyer" placeholder="e.g. IT security"></label>
+      <label class="field">Role on this plan${roleSelect('id="ap-role"', "buyer", "")}</label>
       <button class="btn primary" type="submit">Add to ${esc(B())} team</button>
       <p class="hint" style="grid-column:1/-1;margin:0">They're added to the plan only; Sales AI isn't changed.</p></form>`;
   } else if (!o || o.loading) {
@@ -2059,7 +2072,7 @@ function addPersonForm(side) {
       <div class="ap-foot"><button class="btn primary" type="submit" id="ap-add" disabled>Add selected</button><p class="hint">${side === "seller" ? "Only active Task AI users can join the iSEEit team. They can edit every task by default." : tab === "sales" ? `${list.length - free.length ? `${list.length - free.length} already on the plan. ` : ""}Pick one or more and give each a role. The role is a suggestion from the job title.` : "A Task AI user on the customer side (for example a partner). They see only the shared tasks, like any other contact."}</p></div></form>`
       : `<p class="hint" style="margin:0">${tab === "sales" ? "All contacts from Sales AI are already on this plan." : "Every active Task AI user is already on this plan."}</p>`}`;
   }
-  return `<div class="ap-panel">${rolesDatalist(side)}${tabs}${body}</div>`;
+  return `<div class="ap-panel">${tabs}${body}</div>`;
 }
 
 const GEAR = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
@@ -2145,7 +2158,7 @@ function renderManage() {
 
     <div class="two" style="margin-top:22px">
       <label class="field">Email<input id="m-email" type="email" value="${esc(p.email || "")}" placeholder="${buyer ? `name@${esc(state.domain || "company.com")}` : "name@iseeit.com"}" ${buyer ? "" : "disabled"}></label>
-      <label class="field">Role on this plan<input id="m-role" list="roles-${p.side}" value="${esc(p.role || "")}" placeholder="Pick a role or type your own">${rolesDatalist(p.side)}</label>
+      <label class="field">Role on this plan${roleSelect('id="m-role"', p.side, p.role)}</label>
     </div>
     ${p.merged ? `<p class="hint" style="margin:8px 0 0">Merged from ${p.merged} Sales AI contact records.</p>` : ""}
 
@@ -3604,7 +3617,7 @@ async function fetchStore() {
 }
 async function bootFromServer() {
   try {
-    const data = await fetchStore();
+    const [data] = await Promise.all([fetchStore(), loadRoleList()]);
     APP_ME = data.me;
     store = { plans: data.plans.map(p => fromServerData(p.data, p.version)), current: null };
     let last = null; try { last = localStorage.getItem(STORE_KEY + ":current:" + APP_ME.id); } catch (e) {}

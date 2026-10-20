@@ -683,3 +683,12 @@ in `close_plan_email_log` (kind `manual_notify`). Up to 10 people, 1000 characte
 The popup is Task AI's "Notify / Remind collaborators" design: the bell icon with the orange paper plane, CHANNEL buttons (Email, Slack; only the channels somebody on the task can use),
 under the header a band (background #f5f7fa) with the task's title in large letters so it is clear which task the note is about, a PEOPLE search with a list of the people on the task who can be reached on that channel (click to add) and chips for the people picked (× removes), people who cannot be reached
 shown as grey hints with the reason ("not invited to the plan yet", "asked not to get emails"), a MESSAGE with a 0/1000 counter, and Cancel / Send message. Escape closes it.
+
+## Roles
+
+The roles a person can have on a plan (Executive sponsor, Account lead, …) are defined by Site Admins under **Admin → Close Plan roles** (`/close-plan-roles`), one list for the customer side and one for the iSEEit side. Stored in `close_plan_role_settings` (migration 0030), logic in `app/lib/close-plan-roles.ts`, API `GET/PUT /api/close-plans/roles`.
+
+- **Built-in roles** (the 13 the new-plan wizard and templates know by key) can be renamed and reordered but not removed. Any other role can be added, renamed, reordered and removed. Names are unique per side, up to 60 characters.
+- **Assigning:** a person's role is picked from the list in *Manage person*, in the add-people panel and in the New contact form. A person whose role is no longer in the list keeps it, shown as "(not in the role list)".
+- **Renaming** a role rewrites it on every person who has it, in every plan (a new plan version, so open pages merge it). The admin page asks first and shows how many people are affected. **Removing** a role leaves it on the people who have it.
+- The plan page fetches the list at start; the wizard's role names follow the renamed built-ins. The stand-alone demo uses the default names.
