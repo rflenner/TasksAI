@@ -692,3 +692,14 @@ The roles a person can have on a plan (Executive sponsor, Account lead, …) are
 - **Assigning:** a person's role is picked from the list in *Manage person*, in the add-people panel and in the New contact form. A person whose role is no longer in the list keeps it, shown as "(not in the role list)".
 - **Renaming** a role rewrites it on every person who has it, in every plan (a new plan version, so open pages merge it). The admin page asks first and shows how many people are affected. **Removing** a role leaves it on the people who have it.
 - The plan page fetches the list at start; the wizard's role names follow the renamed built-ins. The stand-alone demo uses the default names.
+
+## PDF attachments on tasks
+
+Anyone who can post on a task can attach PDF files to it, in the task drawer (**Attachments**): the iSEEit team when signed in, customers on their personal link. Clicking a file name opens it in a viewer; **Download** saves it.
+
+- **Storage:** table `close_plan_attachments` (migration 0031, file bytes in Postgres, removed with the plan), outside the plan JSON so an upload never collides with a plan save. Logic in `app/lib/close-plan-attachments.ts`; APIs `/api/close-plans/store/:id/attachments[/:aid]` (team) and `/api/close-plans/shared/:token/attachments[/:aid]` (customers).
+- **Safety:** only real PDFs (the file must start with `%PDF-`, the name and claimed type are not trusted), up to 10 MB, 20 files per task. Downloads are served with a fixed type, `nosniff` and a locked-down CSP, always as an attachment. The viewer draws pages with PDF.js (self-hosted, pinned 3.11.174, in `public/pdfjs/`, Apache-2.0) from the file bytes, so the browser's own PDF plugin and anything inside the file never run. There is no virus scan yet.
+- **Who sees what:** the team sees every file. A customer sees only files marked shared on tasks shared with them. The team chooses "Visible to <customer>" per upload on shared tasks (files on internal tasks are never shown to customers); a customer's own files are always shared.
+- **Who can add and remove:** adding follows the task rights for updates (a customer needs to be able to post on the task). Everyone can remove their own files; plan owners and admins any file.
+- Each upload and removal is written to the plan's activity.
+- Next step (not built): extract the text of the files for the LLM export, with the same internal/shared filter.
