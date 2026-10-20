@@ -362,6 +362,15 @@ button { cursor: pointer; }
 .update small { color: var(--hint); font-weight: 400; }
 .update p { margin: 5px 0; color: #5f6772; white-space: pre-wrap; overflow-wrap: break-word; }
 .drawer textarea { width: 100%; min-height: 86px; resize: vertical; margin-top: 6px; }
+.rte { border: 1px solid var(--field, #d7dce3); border-radius: 10px; background: #fff; margin-top: 6px; } .rte:focus-within { border-color: var(--navy); box-shadow: 0 0 0 3px #173f7618; }
+.rte { overflow: hidden; }
+.rte-bar { display: none; gap: 2px; padding: 5px 6px; background: #eef4fc; border-bottom: 1px solid #dce7f5; } .rte:focus-within .rte-bar { display: flex; }
+.rte-btn { border: 0; background: none; min-width: 30px; height: 28px; padding: 0 7px; border-radius: 6px; color: #4a5565; font-size: 13px; cursor: pointer; } .rte-btn:hover { background: #dce7f5; color: var(--navy); }
+.rte-body { min-height: 70px; padding: 10px 12px; outline: none; line-height: 1.5; font-size: 14px; color: var(--ink); font-weight: 400; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
+.rte-body:empty:before { content: attr(data-ph); color: #9aa4b2; }
+.rt-view p { margin: 0 0 6px; } .rt-view p:last-child { margin-bottom: 0; } .rt-view ul, .rt-view ol { margin: 4px 0 6px; padding-left: 22px; } .rt-view a { color: var(--navy); text-decoration: underline; } .rt-view strong { font-weight: 700; }
+.upd-body { margin: 5px 0; color: #5f6772; overflow-wrap: anywhere; }
+div.rt-view:not(.rte-body) { font-size: 14px; color: var(--ink); line-height: 1.5; }
 textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .drawer textarea.d-title { min-height: 0; margin-top: 0; resize: none; line-height: 1.25; font-family: inherit; display: block; }
 .sub-status { margin-left: 0; }
@@ -1166,6 +1175,122 @@ function growBox(el) {
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth), max) + "px";
   el.style.overflowY = el.scrollHeight + 1 > max ? "auto" : "hidden";
+}
+
+// ---- Rich text: task descriptions and status updates ----
+// The editor stores a cleaned HTML copy (descHtml / an update's html) beside the plain text (desc / text). Everything that
+// reads the plain text (Salesforce, emails, voice, the digest) keeps working; the HTML is only shown while it still matches
+// the plain text, so a description changed elsewhere (e.g. pulled from Salesforce) simply shows as plain text.
+const RT_SKIP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "HEAD", "TITLE", "META"]);
+function rtSafeHref(h) { h = (h || "").trim(); return /^(https?:\/\/|mailto:)/i.test(h) && !/[\s<>"'`]/.test(h) ? h : ""; }
+function rtWalk(node) {
+  let out = "";
+  node.childNodes.forEach(c => {
+    if (c.nodeType === 3) { out += esc(c.nodeValue.replace(/ /g, " ")); return; }
+    if (c.nodeType !== 1 || RT_SKIP.has(c.tagName)) return;
+    const tag = c.tagName, style = c.getAttribute("style") || "";
+    let inner = rtWalk(c);
+    const bold = tag === "STRONG" || (tag === "B" && !/font-weight:\s*(normal|400)/i.test(style)) || /font-weight:\s*(bold|[6-9]00)/i.test(style);
+    const ital = tag === "EM" || tag === "I" || /font-style:\s*italic/i.test(style);
+    if (/^H[1-6]$/.test(tag)) { out += inner.trim() ? `<p><strong>${inner}</strong></p>` : ""; return; }
+    if (tag === "BR") { out += "<br>"; return; }
+    if (tag === "UL" || tag === "OL") { const k = tag.toLowerCase(); out += inner.includes("<li>") ? `<${k}>${inner}</${k}>` : inner; return; }
+    if (tag === "LI") { out += `<li>${inner.replace(/<\/?p>/g, " ").trim()}</li>`; return; }
+    if (tag === "A") { const h = rtSafeHref(c.getAttribute("href")); inner = h ? `<a href="${esc(h)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : inner; }
+    if (bold && tag !== "A") inner = `<strong>${inner}</strong>`;
+    if (ital && tag !== "A") inner = `<em>${inner}</em>`;
+    if (tag === "P" || tag === "DIV" || tag === "BLOCKQUOTE" || tag === "PRE" || tag === "TR") { out += /<(p|ul|ol)>/.test(inner) ? inner : (inner.trim() ? `<p>${inner}</p>` : ""); return; }
+    out += inner;
+  });
+  return out;
+}
+function rtClean(html) {
+  const body = new DOMParser().parseFromString(`<body>${html || ""}</body>`, "text/html").body;
+  return rtWalk(body).replace(/(<br>\s*){3,}/g, "<br><br>").replace(/<p>(\s|<br>)*<\/p>/g, "").trim().slice(0, 20000);
+}
+function rtHasFormat(html) { return /<(strong|em|ul|ol|a)\b/.test(html || ""); }
+function rtPlain(html) {
+  const body = new DOMParser().parseFromString(`<body>${html || ""}</body>`, "text/html").body;
+  const walk = (n, ctx) => {
+    let out = "", i = 0;
+    n.childNodes.forEach(c => {
+      if (c.nodeType === 3) { out += c.nodeValue; return; }
+      if (c.nodeType !== 1) return;
+      const t = c.tagName;
+      if (t === "BR") out += "\n";
+      else if (t === "P") out += walk(c, ctx) + "\n";
+      else if (t === "UL" || t === "OL") out += walk(c, t) + (n === body ? "" : "");
+      else if (t === "LI") { i++; const idx = [...c.parentNode.children].indexOf(c) + 1; out += (c.parentNode.tagName === "OL" ? idx + ". " : "- ") + walk(c, ctx).trim() + "\n"; }
+      else if (t === "A") { const h = c.getAttribute("href") || "", txt = walk(c, ctx); out += h && txt.trim() !== h ? `${txt} (${h})` : txt; }
+      else out += walk(c, ctx);
+    });
+    return out;
+  };
+  return walk(body, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+// What to show for a stored (html, plain) pair: the HTML while it still matches the plain text, else the plain text.
+function richOf(html, plain) {
+  plain = plain || "";
+  if (html) { const clean = rtClean(html); if (rtPlain(clean) === plain.trim()) return clean; }
+  return `<span style="white-space:pre-wrap">${esc(plain)}</span>`;
+}
+const RT_MD = /(^|\n)\s*([-*+]|\d+[.)]|#{1,6})\s+\S|\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)/;
+function rtInline(t) {
+  return esc(t).replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (m, a, u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${a}</a>`)
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "<strong>$2</strong>").replace(/(^|[^*\w])\*(?=\S)([^*\n]*?\S)\*(?!\w)/g, "$1<em>$2</em>").replace(/`([^`\n]+)`/g, "$1");
+}
+function rtFromMarkdown(text) {
+  const out = []; let list = null, para = [];
+  const flushPara = () => { if (para.length) { out.push(`<p>${para.map(rtInline).join("<br>")}</p>`); para = []; } };
+  const flushList = () => { if (list) { out.push(`<${list.k}>${list.items.map(x => `<li>${rtInline(x)}</li>`).join("")}</${list.k}>`); list = null; } };
+  text.replace(/\r/g, "").split("\n").forEach(line => {
+    let m;
+    if (!line.trim()) { flushPara(); flushList(); return; }
+    if ((m = /^\s*#{1,6}\s+(.*)$/.exec(line))) { flushPara(); flushList(); out.push(`<p><strong>${rtInline(m[1])}</strong></p>`); return; }
+    if ((m = /^\s*([-*+])\s+(.*)$/.exec(line))) { flushPara(); if (!list || list.k !== "ul") { flushList(); list = { k: "ul", items: [] }; } list.items.push(m[2]); return; }
+    if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(line))) { flushPara(); if (!list || list.k !== "ol") { flushList(); list = { k: "ol", items: [] }; } list.items.push(m[1]); return; }
+    flushList(); para.push(line.trim());
+  });
+  flushPara(); flushList();
+  return out.join("");
+}
+function rteField(id, html, plain, { edit = true, label = "", placeholder = "" } = {}) {
+  const body = richOf(html, plain);
+  if (!edit) return `<div class="rt-view" id="${id}">${body || ""}</div>`;
+  const btn = (cmd, title, face) => `<button type="button" class="rte-btn" data-rte-cmd="${cmd}" title="${title}" aria-label="${title}">${face}</button>`;
+  return `<div class="rte" data-rte="${id}"><div class="rte-bar" role="toolbar" aria-label="Formatting">${btn("bold", "Bold (Ctrl+B)", "<b>B</b>")}${btn("italic", "Italic (Ctrl+I)", "<i>I</i>")}${btn("insertUnorderedList", "Bulleted list", "• ―")}${btn("insertOrderedList", "Numbered list", "1.")}${btn("link", "Link (Ctrl+K)", "🔗")}${btn("removeFormat", "Clear formatting", "Tx")}</div>
+    <div class="rte-body rt-view" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${esc(label)}" data-ph="${esc(placeholder)}">${plain || html ? body : ""}</div></div>`;
+}
+function rteValue(id) { const html = rtClean(document.getElementById(id).innerHTML), plain = rtPlain(html); return { html: rtHasFormat(html) ? html : "", plain }; }
+function wireRte(root, onBlurCommit) {
+  root.querySelectorAll("[data-rte]").forEach(box => {
+    if (box.dataset.rteWired) return; box.dataset.rteWired = "1";
+    const body = box.querySelector(".rte-body");
+    const link = () => {
+      const sel = window.getSelection(); const saved = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      const raw = window.prompt("Link address (https://…)", "https://"); if (raw === null) return;
+      const url = rtSafeHref(/^(https?:|mailto:)/i.test(raw.trim()) ? raw : "https://" + raw.trim());
+      if (!url) { toast("That is not a valid web or email address."); return; }
+      body.focus(); if (saved) { sel.removeAllRanges(); sel.addRange(saved); }
+      if (sel.isCollapsed) document.execCommand("insertHTML", false, `<a href="${esc(url)}">${esc(url)}</a>`); else document.execCommand("createLink", false, url);
+    };
+    box.querySelectorAll("[data-rte-cmd]").forEach(b => {
+      b.onmousedown = e => e.preventDefault();
+      b.onclick = () => { body.focus(); if (b.dataset.rteCmd === "link") link(); else document.execCommand(b.dataset.rteCmd, false, null); };
+    });
+    body.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); link(); } });
+    body.addEventListener("paste", e => {
+      const cd = e.clipboardData; if (!cd) return;
+      const html = cd.getData("text/html"), text = cd.getData("text/plain");
+      let ins = "";
+      if (html && /<(p|div|ul|ol|li|b|strong|i|em|a|h[1-6]|br)\b/i.test(html)) ins = rtClean(html);
+      else if (text && RT_MD.test(text)) ins = rtFromMarkdown(text);
+      else return; // plain text: let the browser paste it
+      e.preventDefault();
+      document.execCommand("insertHTML", false, ins);
+    });
+    if (onBlurCommit) box.addEventListener("focusout", e => { if (e.relatedTarget && box.contains(e.relatedTarget)) return; onBlurCommit(body); });
+  });
 }
 function growAll(root = document) { root.querySelectorAll("textarea[data-grow]").forEach(el => { growBox(el); if (!el.dataset.growWired) { el.dataset.growWired = "1"; el.addEventListener("input", () => growBox(el)); } }); }
 
@@ -2338,7 +2463,7 @@ function reportHtml() {
     if (!tops.length) return "";
     const rows = tops.map(t => {
       const subs = tasks.filter(k => k.parent === t.id);
-      return `<tr class="r-task"><td>${statusTag(t)}</td><td><b>${esc(t.title)}</b>${t.milestone ? ` <span class="r-ms">◆ Milestone</span>` : ""}${t.desc ? `<div class="r-desc">${esc(t.desc)}</div>` : ""}</td><td>${esc(person(t.owner).name)}${(t.coworkers || []).length ? `<div class="r-sub">with ${who(t.coworkers)}</div>` : ""}</td><td>${(t.recipients || []).length ? who(t.recipients) : "–"}</td><td class="r-due">${dueTxt(t)}</td></tr>`
+      return `<tr class="r-task"><td>${statusTag(t)}</td><td><b>${esc(t.title)}</b>${t.milestone ? ` <span class="r-ms">◆ Milestone</span>` : ""}${t.desc ? `<div class="r-desc rt-view">${richOf(t.descHtml, t.desc)}</div>` : ""}</td><td>${esc(person(t.owner).name)}${(t.coworkers || []).length ? `<div class="r-sub">with ${who(t.coworkers)}</div>` : ""}</td><td>${(t.recipients || []).length ? who(t.recipients) : "–"}</td><td class="r-due">${dueTxt(t)}</td></tr>`
         + subs.map(k => `<tr class="r-subtask"><td>${statusTag(k)}</td><td>↳ ${esc(k.title)}</td><td>${esc(person(k.owner).name)}</td><td></td><td class="r-due">${dueTxt(k)}</td></tr>`).join("");
     }).join("");
     const inPhase = tasks.filter(k => k.phase === p.id), done = inPhase.filter(k => k.status === "Closed").length;
@@ -2439,7 +2564,7 @@ function renderDrawer() {
       <label class="field">Due date<input type="date" id="d-due" value="${esc(t.due || "")}" ${edit ? "" : "disabled"}></label>
     </div>
 
-    <label class="field d-sec-label">DESCRIPTION<textarea id="d-desc" data-grow ${edit ? "" : "disabled"} style="min-height:70px;margin:0" placeholder="What needs to happen and why">${esc(t.desc || "")}</textarea></label>
+    <div class="field d-sec-label"><span id="d-desc-label">DESCRIPTION</span>${rteField("d-desc", t.descHtml, t.desc, { edit, label: "Description", placeholder: "What needs to happen and why" })}</div>
     ${edit ? `<p class="save-hint">Changes save when you leave this field</p>` : ""}
 
     ${!parent && (kids.length || canCreate()) ? `<div class="section d-subs"><h3>Subtasks ${kids.length ? `<small>${kids.filter(k => k.status === "Closed").length} of ${kids.length} closed</small>` : ""}</h3>
@@ -2459,8 +2584,8 @@ function renderDrawer() {
 
     ${ui.mode === "seller" ? notifySection(t) : ""}
     <div class="section updates"><h3>Status updates</h3>
-      ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><p>${esc(u.text)}</p></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
-      ${canUpdate(t) ? `<form id="d-upd"><textarea id="d-updtext" data-grow placeholder="Share progress, a blocker, or a decision…" aria-label="Update"></textarea><div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
+      ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><div class="upd-body rt-view">${richOf(u.html, u.text)}</div></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
+      ${canUpdate(t) ? `<form id="d-upd">${rteField("d-updtext", "", "", { label: "Update", placeholder: "Share progress, a blocker, or a decision…" })}<div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
     </div>
     ${canDelete(t) ? `<div class="section d-del">${ui.delTask === t.id ? `<div class="del-box confirm" role="alertdialog" aria-label="Confirm deleting this ${parent ? "subtask" : "task"}">
         <b>Delete “${esc(t.title)}”?</b>
@@ -2481,7 +2606,13 @@ function renderDrawer() {
   if (ui.focusTitle) { ui.focusTitle = false; setTimeout(() => { title.focus(); title.select(); }, 30); }
   title.onchange = () => { const v = title.value.replace(/\s+/g, " ").trim(); if (v && v !== t.title) { log(`renamed “${t.title}” to “${v}”`, t.id); t.title = v; save(); render(); } };
   $("#d-status").onchange = e => setStatus(t, e.target.value);
-  $("#d-desc").onchange = e => { t.desc = e.target.value.trim(); log(`edited the description of “${t.title}”`, t.id); save(); render(); };
+  wireRte(root, body => {
+    if (!edit || body.id !== "d-desc") return;
+    const v = rteValue("d-desc");
+    if (v.plain === (t.desc || "").trim() && v.html === (t.descHtml || "")) return;
+    t.desc = v.plain; if (v.html) t.descHtml = v.html; else delete t.descHtml;
+    log(`edited the description of “${t.title}”`, t.id); save(); render();
+  });
   wirePicker(root, t);
   $("#d-due").onchange = e => {
     const from = t.due, to = e.target.value;
@@ -2500,7 +2631,7 @@ function renderDrawer() {
 
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
-  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = $("#d-updtext").value.trim(); if (!v) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
+  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = rteValue("d-updtext"); if (!v.plain) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v.plain, ...(v.html ? { html: v.html } : {}) }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
 // People fields (Owner, Coworkers, Requested by): chips in an input-like box. "+ Add" / "Change" opens a small
 // panel with a search box; results are grouped by team, and plan owners also see Task AI users not yet on the plan.
