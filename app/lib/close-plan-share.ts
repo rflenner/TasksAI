@@ -52,7 +52,7 @@ export const canUpdateTask = (t: Obj, id: string, a: Access) => a.level !== "vie
 export function customerView(data: Obj, personId: string): Obj | null {
   if (!customerPerson(data, personId)) return null;
   const tasks = arr(data.tasks);
-  const shown = tasks.filter(t => isShared(t, tasks));
+  const shown = tasks.filter(t => isShared(t, tasks)).map(t => Array.isArray(t.updates) ? { ...t, updates: arr(t.updates).filter(u => !u.removed) } : t);
   const ids = new Set(shown.map(t => t.id));
   const people = arr(data.people).map(p => {
     const { id, name, title, role, side, access, invite, email, photo, photoSource } = p;
@@ -68,7 +68,7 @@ const validDue = (v: unknown) => v === null || v === "" || (typeof v === "string
 // New entries a customer appends to a list (status updates, date changes): only what goes beyond the stored list,
 // only entries in their own name, with the text cut to size.
 function appended(stored: unknown, incoming: unknown, personId: string, text: "text" | null): Obj[] {
-  const before = arr(stored).length;
+  const before = arr(stored).filter(e => !e.removed).length;
   return arr(incoming).slice(before).filter(e => e.by === personId).map(e => text
     ? { by: personId, at: str(e.at, 10), text: str(e.text, MAX_UPDATE), ...(typeof e.html === "string" && sanitizeRichHtml(e.html, MAX_UPDATE) ? { html: sanitizeRichHtml(e.html, MAX_UPDATE) } : {}), ...(e.viaEmail ? { viaEmail: true } : {}) }
     : { by: personId, at: str(e.at, 10), from: str(e.from, 10), to: str(e.to, 10) })

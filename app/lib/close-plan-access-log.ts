@@ -48,7 +48,9 @@ export function changeEntries(prev: Obj, next: Obj): ChangeSummary[] {
       else if (f === "due") what.push(t.due ? `due date → ${cut(t.due, 10)}` : "due date removed");
       else what.push(label);
     }
-    if (arr(t.updates).length > arr(old.updates).length) what.push("posted a status update");
+    const live = (v: unknown) => arr(v).filter(u => !u.removed).length;
+    if (live(t.updates) > live(old.updates)) what.push("posted a status update");
+    else if (live(t.updates) < live(old.updates)) what.push("removed a status update");
     if (what.length) entry(t, what.join(", "));
   }
   const nextIds = new Set(nextTasks.map(t => t.id));

@@ -419,6 +419,10 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .notify-box .notify-list small { color: #7a8391; }
 .notify-box .notify-list .role { background: #e4ebf5; font-weight: 600; }
 .notify-box .hint { font-size: 12px; margin-bottom: 0; }
+.update { display: flex; gap: 10px; align-items: flex-start; }
+.upd-act { flex: none; }
+.upd-act button { background: none; border: 0; color: #7a8492; cursor: pointer; font: inherit; font-size: 12px; padding: 2px 4px; }
+.upd-act button.danger { color: #b3261e; font-weight: 700; }
 .fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
 .fold > summary::-webkit-details-marker { display: none; }
 .fold > summary h3 { margin: 0; flex: 1; }
@@ -2097,7 +2101,7 @@ function cardHtml(t) {
   const kc = kids.filter(k => k.status === "Closed").length;
   const open = ui.expanded.has(t.id) || (ui.filter !== "all" && kids.some(k => matches(k)));
   const owner = person(t.owner);
-  const last = t.updates[t.updates.length - 1];
+  const last = liveUpdates(t).slice(-1)[0];
   const desc = t.desc || (last ? `${person(last.by).name.split(" ")[0]}: ${last.text}` : "");
   const card = `<div class="card ${t.status === "Closed" ? "done" : ""} ${ui.open === t.id ? "active" : ""} ${ui.justAdded === t.id ? "just-added" : ""}" role="button" tabindex="0" data-open="${t.id}">
     ${canReorder() ? `<button type="button" class="grip" data-grip="${t.id}" aria-label="Move “${esc(t.title)}”: drag, or use the up and down arrow keys" title="Drag to reorder">⠿</button>` : ""}
@@ -2117,7 +2121,7 @@ function cardHtml(t) {
         ${kids.length ? `<button type="button" class="sub-toggle" data-exp="${t.id}" aria-expanded="${open}"><span class="i i-chev chev"></span>${kc}/${kids.length} subtasks</button>` : ""}
         ${t.milestone ? `<span class="flag mile"><span class="i i-star"></span>Milestone</span>` : ""}
         ${ui.mode === "seller" && !t.shared ? `<span class="flag">Internal · hidden from ${esc(B())}</span>` : ""}
-        ${t.updates.length ? `<span>${t.updates.length} update${t.updates.length > 1 ? "s" : ""}</span>` : ""}
+        ${liveUpdates(t).length ? `<span>${liveUpdates(t).length} update${liveUpdates(t).length > 1 ? "s" : ""}</span>` : ""}
       </div>
     </div>
     ${bellButton(t)}
@@ -2814,6 +2818,21 @@ async function openPdfViewer(a) {
   } catch (e) { if (host.isConnected) body.innerHTML = `<p class="pv-msg">This file can't be shown here. Use Download to open it.</p>`; }
 }
 
+// A removed status update stays in the plan, marked removed (so the saved order and the customers' saves stay consistent), and is no longer shown.
+const liveUpdates = t => (t.updates || []).filter(u => !u.removed);
+// Who may remove an update: whoever wrote it, the plan owner and admins. Customers on a link cannot.
+const updCanRemove = u => !LINK && !state._demo && (u.by === me() || canDeleteThisPlan());
+function wireUpdateRemove(root, t) {
+  root.querySelectorAll("[data-upd-del]").forEach(b => b.onclick = () => { ui.updDel = `${t.id}:${b.dataset.updDel}`; renderDrawer(); });
+  root.querySelectorAll("[data-upd-del-no]").forEach(b => b.onclick = () => { ui.updDel = null; renderDrawer(); });
+  root.querySelectorAll("[data-upd-del-yes]").forEach(b => b.onclick = () => {
+    const u = t.updates[Number(b.dataset.updDelYes)]; ui.updDel = null;
+    if (!u || u.removed || !updCanRemove(u)) return;
+    u.removed = true;
+    log(`removed a status update by ${person(u.by).name} on “${t.title}”`, t.id); save(); render(); toast("Update removed");
+  });
+}
+
 function renderDrawer() {
   if (ui.manage) { renderManage(); return; }
   const root = $("#drawer-root");
@@ -2867,7 +2886,7 @@ function renderDrawer() {
 
     ${attachmentsSection(t)}
     <div class="section updates"><h3>Status updates</h3>
-      ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><div class="upd-body rt-view">${richOf(u.html, u.text)}</div></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
+      ${t.updates.map((u, i) => [u, i]).filter(([u]) => !u.removed).reverse().map(([u, i]) => `<div class="update">${avatar(u.by)}<div style="flex:1;min-width:0"><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><div class="upd-body rt-view">${richOf(u.html, u.text)}</div></div>${updCanRemove(u) ? (ui.updDel === `${t.id}:${i}` ? `<div class="upd-act"><button type="button" class="danger" data-upd-del-yes="${i}">Remove?</button><button type="button" data-upd-del-no>Keep</button></div>` : `<div class="upd-act"><button type="button" data-upd-del="${i}" aria-label="Remove this update">Remove</button></div>`) : ""}</div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
       ${canUpdate(t) ? `<form id="d-upd">${rteField("d-updtext", "", "", { label: "Update", placeholder: "Share progress, a blocker, or a decision…" })}<div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
     </div>
     ${ui.mode === "seller" ? notifySection(t) + historySection(t) : ""}
@@ -2917,6 +2936,7 @@ function renderDrawer() {
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
   wireAttachments(root, t);
   wireFolds(root, t);
+  wireUpdateRemove(root, t);
   if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = rteValue("d-updtext"); if (!v.plain) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v.plain, ...(v.html ? { html: v.html } : {}) }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
 // People fields (Owner, Coworkers, Requested by): chips in an input-like box. "+ Add" / "Change" opens a small
