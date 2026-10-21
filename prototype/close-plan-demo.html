@@ -355,6 +355,27 @@ button { cursor: pointer; }
 .notify-char-count { text-align: right; font-size: 11px; color: #9299a3; margin-top: 4px; }
 .notify-result { margin-bottom: 16px; padding: 10px 12px; border-left: 3px solid var(--orange); border-radius: 0 6px 6px 0; background: #fff7e8; font-size: 12.5px; color: #4a5160; }
 .notify-result.ok { border-color: #2f9e58; background: #e9f7ee; color: #1e6b3b; } .notify-result.partial { border-color: #c98a12; background: #fff1d6; color: #8a5c05; } .notify-result.err { border-color: #c0503e; background: #fdece9; color: #9c3626; }
+.notify-modal.inv-modal { padding-top: 0; }
+.inv-modal .notify-modal-header { background: #f5f7fa; margin: 0 -32px 24px; padding: 28px 62px 22px 32px; border-bottom: 1px solid #e8edf3; border-radius: 16px 16px 0 0; }
+.notify-people-result .inv-main small { margin-left: 0; font-size: 12.5px; }
+.notify-people-result > small { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.inv-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid #eef1f5; cursor: pointer; }
+.inv-row:first-child { border-top: 0; }
+.inv-row:hover { background: #f8fafc; }
+.inv-row input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--navy); margin: 0; flex: none; }
+.inv-row .avatar { flex: none; }
+.inv-main { min-width: 0; flex: 1; display: grid; gap: 1px; }
+.inv-main b { color: var(--dark); font-size: 14px; }
+.inv-main small { color: #7a8492; font-size: 12.5px; line-height: 1.35; }
+.inv-mail { flex: none; font-size: 13px; color: #4a5160; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-mail-input { flex: none; width: 46%; border: 1px solid #d9dee5; border-radius: 8px; padding: 7px 10px; font: 13px Arial, Helvetica, sans-serif; }
+.inv-row.off { cursor: default; } .inv-row.off:hover { background: none; }
+.inv-add { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; padding: 14px; background: #f6f8fb; border-radius: 10px; }
+.inv-add .full { grid-column: 1 / -1; }
+.inv-add input { border: 1px solid #d9dee5; border-radius: 8px; padding: 10px 12px; font: 14px Arial, Helvetica, sans-serif; background: #fff; width: 100%; box-sizing: border-box; }
+.inv-link { border: 0; background: none; color: var(--navy); font-weight: 700; font-size: 13.5px; padding: 12px 0 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.inv-note { margin: 0; color: #7a8492; font-size: 12.5px; }
 .notify-modal-actions { display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: -30px; background: #fff; padding: 14px 0 30px; margin: 0 0 -30px; border-top: 1px solid #eef1f5; }
 .notify-cancel { height: 42px; border: 1px solid #d7dce3; background: white; border-radius: 8px; padding: 0 18px; font: 700 14px Arial, Helvetica, sans-serif; color: var(--navy); cursor: pointer; }
 .notify-send { height: 42px; padding: 0 20px; border: 1px solid var(--navy); background: var(--navy); color: white; border-radius: 8px; font: 700 14px Arial, Helvetica, sans-serif; cursor: pointer; } .notify-send:disabled { opacity: .45; cursor: default; }
@@ -2229,7 +2250,7 @@ function loadPeopleOptions(force) {
   fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/people-options`, { credentials: "same-origin" })
     .then(async r => { const data = await r.json().catch(() => ({})); if (ui.peopleOpts !== mine) return; if (!r.ok) mine.err = data.error || "The list of people could not be loaded."; else Object.assign(mine, { users: data.users || [], contacts: data.contacts || [], contactsStatus: data.contactsStatus || "ok" }); })
     .catch(() => { if (ui.peopleOpts === mine) mine.err = "The list of people could not be loaded. Check your connection."; })
-    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor || ui.picker) render(); } });
+    .finally(() => { if (ui.peopleOpts === mine) { mine.loading = false; if (ui.addFor || ui.picker) render(); if (ui.shareAll) renderShareAll(); } });
 }
 const onPlan = c => state.people.some(p => (c.email && p.email && p.email.toLowerCase() === c.email.toLowerCase()) || p.name.toLowerCase() === c.name.toLowerCase());
 function apRow(c, i, side, role) {
@@ -2485,6 +2506,88 @@ function renderInvite() {
     return;
   }
   $("#inv-send").onclick = () => { const again = p.invite?.status === "invited"; p.invite = { status: "invited", at: new Date().toISOString().slice(0, 10) }; log(`${again ? "re-sent the invitation to" : "invited"} ${p.name}`, null); save(); close(); render(); toast(`Invitation sent to ${p.name}`); };
+}
+
+// "Share with <customer>": invite the customer contacts who have not been invited yet, several at once, and add new ones.
+function saResults(q) {
+  const o = ui.peopleOpts && ui.peopleOpts.planId === state.id ? ui.peopleOpts : null;
+  const manual = `<p class="inv-note" style="margin-top:10px">Can't find them? <button type="button" class="inv-link" data-sa-manual style="padding:0;display:inline">+ Add manually</button></p>`;
+  const needle = (q.search || "").trim().toLowerCase();
+  if (q.adding) return "";
+  if (!o || o.loading) return `<p class="inv-note" style="margin-top:8px">Loading contacts from Salesforce…</p>`;
+  if (o.err) return `<p class="inv-note" style="margin-top:8px">${esc(o.err)}</p>${manual}`;
+  if (o.contactsStatus === "no_account") return `<p class="inv-note" style="margin-top:8px">This plan isn't linked to a Salesforce account, so there is nothing to search.</p>${manual}`;
+  if (o.contactsStatus === "unavailable") return `<p class="inv-note" style="margin-top:8px">Salesforce isn't reachable right now. Try again in a minute.</p>${manual}`;
+  if (!needle) return "";
+  const free = o.contacts.filter(c => !onPlan(c) && [c.name, c.email, c.title].some(x => (x || "").toLowerCase().includes(needle)));
+  if (!free.length) return `<p class="inv-note" style="margin-top:8px">No matching contact in Salesforce.</p>${manual}`;
+  return `<div class="notify-people-results" style="max-height:200px">${free.slice(0, 20).map(c => `<button type="button" class="notify-people-result" data-sa-sf="${o.contacts.indexOf(c)}"><span class="inv-main" style="text-align:left"><b style="font-size:13.5px">${esc(c.name)}</b><small>${esc(c.title || "No title")}</small></span><small style="margin-left:auto">${esc(c.email || "no email")}</small></button>`).join("")}</div>${manual}`;
+}
+function renderShareAll() {
+  let root = document.getElementById("shareall-root");
+  if (!ui.shareAll) { if (root) root.remove(); return; }
+  if (!root) { root = document.createElement("div"); root.id = "shareall-root"; document.body.appendChild(root); }
+  const q = ui.shareAll;
+  const todo = state.people.filter(p => p.side === "buyer" && (!p.invite || p.invite.status === "none")).sort((a, b) => (b.id === state.planOwners.buyer) - (a.id === state.planOwners.buyer));
+  q.picked = q.picked.filter(id => todo.some(p => p.id === id) && person(id).email);
+  const n = q.picked.length, canAdd = canAddPeople("buyer");
+  const row = p => `<label class="inv-row ${p.email ? "" : "off"}">${p.email ? `<input type="checkbox" data-sa-pick="${esc(p.id)}" ${q.picked.includes(p.id) ? "checked" : ""}>` : `<input type="checkbox" disabled>`}${avatar(p.id)}<span class="inv-main"><b>${esc(p.name)}</b><small>${esc(p.title || "No title")}</small></span>${p.email ? `<span class="inv-mail" title="${esc(p.email)}">${esc(p.email)}</span>` : `<input class="inv-mail-input" type="email" data-sa-email="${esc(p.id)}" placeholder="Add email address" aria-label="Email for ${esc(p.name)}">`}</label>`;
+  root.innerHTML = `<div class="notify-modal-overlay" data-sa-close>
+    <div class="notify-modal inv-modal" style="max-width:600px" role="dialog" aria-modal="true" aria-label="Invite contacts to Mutual Closeplan" onclick="event.stopPropagation()">
+      <button type="button" class="notify-modal-close" aria-label="Close" data-sa-close>×</button>
+      <div class="notify-modal-header"><span class="notify-modal-icon"><span class="i i-mail"></span></span><div><h2>Invite contacts to Mutual Closeplan</h2><p>The users will receive an email with a personal link to connect to the plan.</p></div></div>
+      ${todo.length ? `<div class="inv-list">${todo.map(row).join("")}</div>` : `<p class="hint" style="margin:0">Everyone from ${esc(B())} has been invited already. Add another contact to invite more people.</p>`}
+      ${canAdd ? `<div class="notify-field" style="margin:18px 0 0"><label>ADD FROM SALESFORCE</label><input class="notify-people-search" type="search" id="sa-search" value="${esc(q.search)}" placeholder="Start typing a name, email or title" autocomplete="off"><div id="sa-results">${saResults(q)}</div></div>
+      ${q.adding ? `<form class="inv-add" id="sa-form"><label class="field full">Name<input id="sa-name" required placeholder="First and last name" autocomplete="off"></label><label class="field">Title<input id="sa-title" placeholder="Job title" autocomplete="off"></label><label class="field">Email<input id="sa-email" type="email" required placeholder="name@${esc(state.domain || "company.com")}" autocomplete="off"></label><div class="full" style="display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn sm" id="sa-add-cancel">Cancel</button><button type="submit" class="btn sm primary">Add contact</button></div></form>` : ""}` : ""}
+      <div class="notify-modal-actions" style="margin-top:20px"><button type="button" class="notify-cancel" data-sa-close>Cancel</button><button type="button" class="notify-send" id="sa-send" ${n && !q.busy ? "" : "disabled"}>${q.busy ? "Sending…" : n > 1 ? `Send ${n} invitations` : "Send invitation"}</button></div>
+    </div></div>`;
+  const close = () => { ui.shareAll = null; renderShareAll(); };
+  root.querySelectorAll("[data-sa-close]").forEach(b => b.onclick = close);
+  root.querySelectorAll("[data-sa-pick]").forEach(c => c.onchange = () => { q.picked = c.checked ? [...q.picked, c.dataset.saPick] : q.picked.filter(x => x !== c.dataset.saPick); renderShareAll(); });
+  root.querySelectorAll("[data-sa-email]").forEach(i => i.onchange = () => {
+    const v = i.value.trim(), p = person(i.dataset.saEmail); if (!v || !/^\S+@\S+\.\S+$/.test(v)) { if (v) toast("That is not a valid email address."); return; }
+    p.email = v; q.picked = [...q.picked, p.id]; log(`added an email for ${p.name}`, null); save(); renderShareAll(); render();
+  });
+  const bindSf = () => root.querySelectorAll("[data-sa-sf]").forEach(b => b.onclick = () => {
+    const c = ui.peopleOpts.contacts[+b.dataset.saSf]; if (!c || onPlan(c)) return;
+    const id = "p" + (++state.seq);
+    state.people.push({ id, name: c.name, email: c.email || "", title: c.title || "", role: "", side: "buyer", ...(c.contactIds && c.contactIds.length ? { contactIds: c.contactIds } : {}), access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } });
+    log(`added ${c.name} to the ${B()} team`, null); if (c.email) q.picked = [...q.picked, id]; q.search = ""; save(); renderShareAll(); render();
+  });
+  const bindManual = () => root.querySelectorAll("[data-sa-manual]").forEach(b => b.onclick = () => { q.adding = true; renderShareAll(); const n = document.getElementById("sa-name"); if (n) { n.value = q.search || ""; n.focus(); } });
+  bindSf(); bindManual();
+  const srch = root.querySelector("#sa-search"); if (srch) srch.oninput = () => { q.search = srch.value; root.querySelector("#sa-results").innerHTML = saResults(q); bindSf(); bindManual(); };
+  const addCancel = root.querySelector("#sa-add-cancel"); if (addCancel) addCancel.onclick = () => { q.adding = false; renderShareAll(); };
+  const form = root.querySelector("#sa-form");
+  if (form) form.onsubmit = e => {
+    e.preventDefault();
+    const name = form.querySelector("#sa-name").value.trim(), email = form.querySelector("#sa-email").value.trim(), title = form.querySelector("#sa-title").value.trim();
+    if (!name || !email) return;
+    const id = "p" + (++state.seq);
+    state.people.push({ id, name, email, title, role: "", side: "buyer", access: { ...ACCESS_DEFAULTS.buyer }, invite: { status: "none" } });
+    log(`added ${name} to the ${B()} team`, null); q.picked = [...q.picked, id]; q.adding = false; save(); renderShareAll(); render();
+  };
+  const send = root.querySelector("#sa-send");
+  send.onclick = async () => {
+    q.busy = true; renderShareAll();
+    const today = new Date().toISOString().slice(0, 10), people = q.picked.map(person), notSent = [];
+    let sent = 0;
+    for (const p of people) {
+      if (!IN_APP || state._demo) { p.invite = { status: "invited", at: today }; log(`invited ${p.name}`, null); sent++; continue; }
+      try {
+        await flushPlanSave();
+        const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/invite`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ personId: p.id }) });
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(res.error || "The invitation could not be sent.");
+        // Not emailed (switched off, opted out, no sending set up): the personal link exists, so they count as invited
+        // and their link can be copied from the People tab.
+        p.invite = { status: "invited", at: today };
+        if (res.sent) { log(`invited ${p.name}`, null); sent++; } else { log(`created a personal link for ${p.name}`, null); notSent.push(res.reason || p.name); }
+      } catch (e) { notSent.push(`${p.name}: ${e.message || "failed"}`); }
+    }
+    q.busy = false; save(); ui.shareAll = null; renderShareAll(); render(); if (typeof renderManage === "function") renderManage();
+    toast(notSent.length ? `${sent ? `${sent} invited. ` : ""}${notSent.length} could not be emailed: ${notSent[0]}. Copy their personal links from the People tab.` : sent === 1 ? `Invitation sent to ${people[0].name}` : `${sent} invitations sent`);
+  };
 }
 
 // Recent activity: a short summary of the last 7 days on top (AI inside Task AI, rule-based elsewhere or as
@@ -3399,11 +3502,7 @@ function wirePage() {
   const nt = $("#new-task"); if (nt) nt.onclick = () => { const cur = state.phases.find(p => TODAY >= d(p.start) && TODAY <= d(p.end)) || state.phases[0]; if (cur) openInlineAdd(cur.id, true); };
   // Inside Task AI sharing is real: each customer contact gets a personal link from the People tab (invitation
   // emails come later). The stand-alone demo keeps explaining what it would do.
-  const sa = $("#share-all"); if (sa) sa.onclick = () => {
-    if (!IN_APP || state._demo) { toast(`In the real module this emails each ${B()} contact their personal link`); return; }
-    ui.tab = "people"; render(); window.scrollTo({ top: 0, behavior: "smooth" });
-    toast(`Copy each ${B()} contact's personal link here and send it in your own email`);
-  };
+  const sa = $("#share-all"); if (sa) sa.onclick = () => { ui.shareAll = { picked: state.people.filter(p => p.side === "buyer" && p.email && (!p.invite || p.invite.status === "none")).map(p => p.id), adding: false, busy: false, search: "" }; loadPeopleOptions(); renderShareAll(); };
   app.querySelectorAll("[data-link]").forEach(b => b.onclick = async () => {
     const p = person(b.dataset.link);
     if (IN_APP && !state._demo) { b.disabled = true; await copyPersonalLink(p); b.disabled = false; return; }
@@ -4734,7 +4833,7 @@ document.addEventListener("click", e => {
   if (ui.picker && !e.target.closest(".pfield")) { ui.picker = null; render(); }
   if (ui.photoMenu && !e.target.closest(".pphoto")) { ui.photoMenu = null; render(); }
 });
-document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.photoMenu) { ui.photoMenu = null; render(); return; } if (ui.notify) { ui.notify = null; renderNotify(); return; } if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
+document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (ui.photoMenu) { ui.photoMenu = null; render(); return; } if (ui.shareAll) { ui.shareAll = null; renderShareAll(); return; } if (ui.notify) { ui.notify = null; renderNotify(); return; } if (ui.phaseMenu) { ui.phaseMenu = null; render(); return; } if (ui.inviteFor) { ui.inviteFor = null; renderInvite(); } else if (ui.digestFor && ui.manage) { ui.digestFor = null; renderDigest(); } else if (ui.manage) { ui.manage = null; ui.removing = null; renderManage(); } else if (ui.ask) { ui.ask = null; renderAsk(); } else if (ui.digestFor) { ui.digestFor = null; renderDigest(); } else if (ui.open) closeDrawer(); });
 if (state) ui.expanded.add(state.tasks.find(t => t.title === "Proof of concept")?.id);
 loadAppUsers();
 if (LINK) { store = { plans: [], current: null }; state = null; ui.loading = true; render(); bootFromLink(); }
