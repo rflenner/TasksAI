@@ -1549,13 +1549,14 @@ function renderSfImport() {
   if (!ui.sfimport) { if (root) root.remove(); return; }
   if (!root) { root = document.createElement("div"); root.id = "sfimport-root"; document.body.appendChild(root); }
   const q = ui.sfimport;
-  root.innerHTML = `<div style="position:fixed;inset:0;background:rgba(30,40,55,.35);z-index:60;display:flex;align-items:flex-start;justify-content:center;padding-top:10vh" data-sfimport-close>
-    <div class="sf-box" style="margin:0;max-width:560px;width:calc(100% - 32px);background:#fff;border-radius:10px" role="dialog" aria-label="Import from Salesforce" onclick="event.stopPropagation()">
-      <b>Import a close plan from Salesforce</b><p>Search for the opportunity. Its phases and checkpoints become a new plan that stays in sync with Salesforce.</p>
-      <p><input type="text" id="sfimport-q" placeholder="Opportunity or account name" value="${esc(q.text || "")}" autocomplete="off" style="width:100%;box-sizing:border-box"></p>
-      ${q.busy ? "<p>Working…</p>" : q.hits ? (q.hits.length ? `<ul style="list-style:none;padding:0">${q.hits.map(h => `<li style="margin:4px 0"><button type="button" class="btn sm" style="width:100%;text-align:left" data-sfimport-pick="${esc(h.id)}"><b>${esc(h.name)}</b> · ${esc(h.account)} · ${esc(h.stage)}</button></li>`).join("")}</ul>` : "<p>No opportunities found.</p>") : ""}
-      ${q.error ? `<p style="color:#a8402f"><b>${esc(q.error)}</b></p>` : ""}
-      <div class="pe-actions"><button type="button" class="btn sm" data-sfimport-close>Cancel</button></div></div></div>`;
+  root.innerHTML = `<div class="notify-modal-overlay" data-sfimport-close>
+    <div class="notify-modal" role="dialog" aria-modal="true" aria-label="Import from Salesforce" onclick="event.stopPropagation()">
+      <button type="button" class="notify-modal-close" aria-label="Close" data-sfimport-close>×</button>
+      <div class="notify-modal-header"><span class="notify-modal-icon"><span style="width:44px;height:31px;display:block">${SF_CLOUD.replace("<svg ","<svg width=\"44\" height=\"31\" ")}</span></span><div><h2>Import a close plan from Salesforce</h2><p>Its phases and checkpoints become a new plan that stays in sync with Salesforce.</p></div></div>
+      <div class="notify-field"><label>OPPORTUNITY</label><input class="notify-people-search" type="text" id="sfimport-q" placeholder="Opportunity or account name" value="${esc(q.text || "")}" autocomplete="off"></div>
+      ${q.busy ? `<p class="hint">Working…</p>` : q.hits ? (q.hits.length ? `<div class="notify-people-results" style="max-height:240px;overflow-y:auto">${q.hits.map(h => `<button type="button" class="notify-people-result" data-sfimport-pick="${esc(h.id)}"><span>${esc(h.name)}</span><small>${esc(h.account)} · ${esc(h.stage)}</small></button>`).join("")}</div>` : `<p class="hint">No opportunities found.</p>`) : ""}
+      ${q.error ? `<p class="notify-result err">${esc(q.error)}</p>` : ""}
+      <div class="notify-modal-actions" style="margin-top:20px"><button type="button" class="btn" data-sfimport-close>Cancel</button></div></div></div>`;
   root.querySelectorAll("[data-sfimport-close]").forEach(b => b.onclick = () => { ui.sfimport = null; renderSfImport(); });
   const input = root.querySelector("#sfimport-q"), refocus = () => { const el = document.getElementById("sfimport-q"); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } };
   input.oninput = () => {
