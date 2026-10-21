@@ -417,6 +417,15 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .notify-box .notify-list small { color: #7a8391; }
 .notify-box .notify-list .role { background: #e4ebf5; font-weight: 600; }
 .notify-box .hint { font-size: 12px; margin-bottom: 0; }
+.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary h3 { margin: 0; flex: 1; }
+.fold > summary::after { content: ""; width: 7px; height: 7px; border-right: 2px solid #7a8391; border-bottom: 2px solid #7a8391; transform: rotate(45deg); margin: -3px 4px 0 0; transition: transform .15s; }
+.fold[open] > summary::after { transform: rotate(-135deg); margin-top: 3px; }
+.fold[open] > summary { margin-bottom: 10px; }
+.fold + .fold { margin-top: 10px; }
+.hist-list .hd { color: #3d4654; }
+.hist-list li { font-size: 12.5px; }
 .notify-box .mini { background: #fff; }
 .notify-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .notify-list li { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
@@ -2833,11 +2842,11 @@ function renderDrawer() {
     </div>
 
     ${attachmentsSection(t)}
-    ${ui.mode === "seller" ? notifySection(t) : ""}
     <div class="section updates"><h3>Status updates</h3>
       ${t.updates.slice().reverse().map(u => `<div class="update">${avatar(u.by)}<div><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><div class="upd-body rt-view">${richOf(u.html, u.text)}</div></div></div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
       ${canUpdate(t) ? `<form id="d-upd">${rteField("d-updtext", "", "", { label: "Update", placeholder: "Share progress, a blocker, or a decision…" })}<div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
     </div>
+    ${ui.mode === "seller" ? notifySection(t) + historySection(t) : ""}
     ${canDelete(t) ? `<div class="section d-del">${ui.delTask === t.id ? `<div class="del-box confirm" role="alertdialog" aria-label="Confirm deleting this ${parent ? "subtask" : "task"}">
         <b>Delete “${esc(t.title)}”?</b>
         <p>This removes it${children(t.id).length ? ` and its ${children(t.id).length} subtask${children(t.id).length > 1 ? "s" : ""}` : ""} for everyone${t.shared && ui.mode === "seller" ? `, including ${esc(B())}` : ""}.${t.sfdcId && !LINK ? " The checkpoint in Salesforce is deleted too (it stays in Salesforce's recycle bin for 15 days)." : ""} This can't be undone here.</p>
@@ -2883,6 +2892,7 @@ function renderDrawer() {
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
   wireAttachments(root, t);
+  wireFolds(root, t);
   if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = rteValue("d-updtext"); if (!v.plain) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v.plain, ...(v.html ? { html: v.html } : {}) }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
 }
 // People fields (Owner, Coworkers, Requested by): chips in an input-like box. "+ Add" / "Change" opens a small
@@ -2967,29 +2977,83 @@ function addUserToPlan(key) {
 
 // Prototype of the notification rules: Task AI's existing rules for iSEEit users,
 // and the proposed email-only rules for Meridian Biotech contacts (to be decided).
+// "Who hears about this task": what really happens for each person on the task today, from the notification rules (Admin →
+// Notifications; app/lib/close-plan-notify-rules.ts). Only the iSEEit team sees this box. Collapsed until opened.
+function loadNotifSummary() {
+  if (!IN_APP || LINK || ui.notifSum) return;
+  ui.notifSum = { loading: true };
+  fetch("/api/close-plans/notification-summary", { credentials: "same-origin", cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+    ui.notifSum = d || { failed: true };
+    if (ui.open && ui.notifyOpen) renderDrawer();
+  }).catch(() => { ui.notifSum = { failed: true }; });
+}
+const listWords = a => a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`;
 function notifySection(t) {
+  loadNotifSummary();
+  const sum = ui.notifSum && ui.notifSum.assignment ? ui.notifSum : null;
+  const a = sum ? sum.assignment : null;
   const parent = parentOf(t);
   const internal = !t.shared || (parent && !parent.shared);
   const seen = new Set();
   const rows = [[t.owner, "Owner"], ...(t.coworkers || []).map(id => [id, "Coworker"]), ...(t.recipients || []).map(id => [id, "Requested by"])]
     .filter(([id]) => !seen.has(id) && seen.add(id));
-  const how = (p, role, id) => {
+  const bell = "can be pinged with the bell";
+  const how = (p, role) => {
     if (p.side === "seller") {
-      if (role === "Owner") return "Slack on updates · “My tasks” in weekly digest · overdue reminders";
-      if (role === "Coworker") return "Slack on updates · “My tasks” in weekly digest";
-      return "Slack on updates · “Requested by you” in weekly digest";
+      if (role === "Requested by") return { text: `Not told automatically · ${bell}` };
+      const via = [a.internalEmail && "email", a.internalSlack && "Slack"].filter(Boolean);
+      return { text: via.length ? `Told by ${listWords(via)} when the task is assigned to them · ${bell}` : `Not told when a task is assigned (switched off in Admin → Notifications) · ${bell}` };
     }
-    if (internal) return "Not notified: internal task";
-    if (!p.email) return "Can’t be reached: no email in Sales AI";
-    const po = state.planOwners.buyer === id ? " (with the plan overview, as plan owner)" : "";
-    return `Monday email only: “${role === "Requested by" ? "Requested by you" : "My tasks"}” section${po}`;
+    if (internal) return { text: "Not notified: internal task", off: true };
+    if (!p.email) return { text: "Can’t be reached: no email in Sales AI", off: true };
+    if (p.noEmail) return { text: "Not emailed: they asked not to be", off: true };
+    if (!p.invite || p.invite.status === "none") return { text: "Not told yet: not invited to the plan", off: true };
+    if (role === "Requested by") return { text: `Not told automatically · ${bell}` };
+    return { text: a.customerEmail ? `Emailed when the task is assigned to them · ${bell}` : `Not told when a task is assigned (switched off in Admin → Notifications) · ${bell}` };
   };
-  return `<div class="section notify-box"><h3>Who hears about this task</h3>
-    <ul class="notify-list">${rows.map(([id, role]) => { const p = person(id); const txt = how(p, role, id); const off = /^Not|^Can/.test(txt);
-      return `<li>${avatar(id, "av-sm")}<div style="flex:1;min-width:0"><b>${esc(p.name)}</b> <span class="role">${role}</span><small class="${off ? "off" : ""}">${esc(txt)}</small></div>${!off && p.side === "buyer" && t.status !== "Closed" ? `<button type="button" class="mini" data-ask="${id}">Ask for an update</button>` : ""}</li>`; }).join("")}</ul>
-    <p class="hint" style="margin-top:10px">${esc(B())} contacts get at most one email per week from this plan. No email per update, no separate reminders.</p>
-    ${internal && rows.some(([id]) => person(id).side === "buyer") ? `<p class="perm" style="margin:10px 0 0">This task is internal, but ${esc(B())} people are named on it. They won't see it or be notified.</p>` : ""}
-  </div>`;
+  const paused = sum && sum.paused && sum.paused.length ? sum.paused : [];
+  const notes = [
+    state.status === "draft" ? "This plan is still a draft: nobody is told about assignments until it goes live." : t.status === "Closed" ? "This task is closed, so nobody is told about it." : "",
+    paused.length ? `${listWords(paused).replace(/^./, c => c.toUpperCase())} ${paused.length > 1 ? "are" : "is"} not switched on yet.` : "",
+  ].filter(Boolean);
+  const body = !a ? `<p class="hint">${ui.notifSum && ui.notifSum.failed ? "The notification rules could not be loaded." : "Loading…"}</p>` : `
+    <ul class="notify-list">${rows.map(([id, role]) => { const p = person(id), h = how(p, role);
+      return `<li>${avatar(id, "av-sm")}<div style="flex:1;min-width:0"><b>${esc(p.name)}</b> <span class="role">${role}</span><small class="${h.off ? "off" : ""}">${esc(h.text)}</small></div>${!h.off && p.side === "buyer" && t.status !== "Closed" ? `<button type="button" class="mini" data-ask="${id}">Ask for an update</button>` : ""}</li>`; }).join("")}</ul>
+    ${notes.map(n => `<p class="hint" style="margin-top:10px">${esc(n)}</p>`).join("")}
+    ${internal && rows.some(([id]) => person(id).side === "buyer") ? `<p class="perm" style="margin:10px 0 0">This task is internal, but ${esc(B())} people are named on it. They won't see it or be notified.</p>` : ""}`;
+  return `<details class="section notify-box fold" id="d-notify"${ui.notifyOpen ? " open" : ""}><summary><h3>Who hears about this task</h3></summary>${body}</details>`;
+}
+
+// Task history, like Task AI's: what was changed and by whom, files, and who last opened the task. Only the iSEEit team sees it;
+// it is filled from the activity log (app/lib/close-plan-access-log.ts), so it starts from when the log began. Collapsed until opened.
+function loadHistory(taskId, force) {
+  const cur = ui.hist;
+  if (!force && cur && cur.planId === state.id && cur.taskId === taskId && Date.now() - cur.at < 8000) return;
+  const mine = { planId: state.id, taskId, at: Date.now(), list: cur && cur.planId === state.id && cur.taskId === taskId ? cur.list : null };
+  ui.hist = mine;
+  fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/tasks/${encodeURIComponent(taskId)}/history`, { credentials: "same-origin", cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+    if (ui.hist !== mine || !d) return;
+    const changed = JSON.stringify(mine.list) !== JSON.stringify(d.history);
+    mine.list = d.history;
+    if (changed && ui.open === taskId && ui.histOpen) renderDrawer();
+  }).catch(() => {});
+}
+function historySection(t) {
+  if (!IN_APP || LINK || state._demo) return "";
+  if (ui.histOpen) {
+    loadHistory(t.id);
+    // A save is logged just after it is sent, so look again shortly (stops once nothing new arrives).
+    clearTimeout(ui.histTimer); ui.histTimer = setTimeout(() => { if (ui.open === t.id && ui.histOpen) loadHistory(t.id, true); }, 3500);
+  }
+  const h = ui.hist && ui.hist.planId === state.id && ui.hist.taskId === t.id ? ui.hist.list : null;
+  const body = !ui.histOpen ? "" : h === null ? `<p class="hint">Loading…</p>` : !h.length ? `<p class="hint">Nothing recorded yet. Changes made from now on appear here.</p>`
+    : `<ul class="notify-list hist-list">${h.map(e => `<li><div style="flex:1;min-width:0"><b>${esc(e.actorName)}</b>${e.side === "buyer" ? ` <span class="role">${esc(B())}</span>` : ""} <span class="hd">${esc(e.detail)}</span><small>${esc(fmtWhen(e.at))}</small></div></li>`).join("")}</ul>`;
+  return `<details class="section notify-box fold" id="d-hist"${ui.histOpen ? " open" : ""}><summary><h3>Task history${h && h.length ? ` <small>${h.length}</small>` : ""}</h3></summary>${body}</details>`;
+}
+const fmtWhen = iso => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+function wireFolds(root, t) {
+  const dn = $("#d-notify"); if (dn) dn.ontoggle = () => { if (dn.open === !!ui.notifyOpen) return; ui.notifyOpen = dn.open; if (dn.open && !ui.notifSum) renderDrawer(); };
+  const dh = $("#d-hist"); if (dh) dh.ontoggle = () => { if (dh.open === !!ui.histOpen) return; ui.histOpen = dh.open; if (dh.open) { loadHistory(t.id, true); renderDrawer(); } };
 }
 
 // Weekly digest (Monday). At most one email per person per plan:
