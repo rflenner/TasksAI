@@ -35,7 +35,7 @@ button { cursor: pointer; }
 .side { position: fixed; inset: 0 auto 0 0; width: 246px; background: #fff; border-right: 1px solid var(--line); padding: 34px 22px; display: flex; flex-direction: column; }
 .logo { font-size: 32px; font-weight: 800; color: var(--navy); padding: 0 15px 38px; }
 .logo b { font-size: 20px; background: var(--orange); color: #fff; padding: 7px 6px; border-radius: 5px; margin-left: 4px; vertical-align: 5px; }
-.side nav { display: grid; gap: 7px; align-content: start; }
+.side nav { display: grid; gap: 7px; align-content: start; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .side nav button { border: 0; background: none; color: #5d6470; padding: 13px 14px; border-radius: 9px; display: flex; gap: 14px; align-items: center; text-align: left; width: 100%; }
 .side nav button:hover { background: #f3f6fa; }
 .side nav .active { background: #edf3fb; color: var(--navy); font-weight: 700; }
