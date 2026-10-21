@@ -105,6 +105,7 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   // "Noisy room": stricter listening (see app/lib/voice-audio.ts), remembered per browser.
   const [noisy, setNoisy] = useState(false);
   const noisyRef = useRef(false);
+  const audioInputRef = useRef<Record<string, unknown> | null>(null);
   // Offered once per session when the room sounds noisy and the stricter mode is off.
   const [noiseOffer, setNoiseOffer] = useState(false);
   const stopNoiseWatchRef = useRef<(() => void) | null>(null);
@@ -249,6 +250,17 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   function openTask(taskId: number) {
     onOpenTask(taskId);
     if (workingListRef.current.includes(taskId)) cursorRef.current = taskId;
+  }
+
+  // Noisy room on or off. A running session is updated in place (no restart, nothing lost); false when it cannot be.
+  function applyListeningMode(on: boolean): boolean {
+    noisyRef.current = on; setNoisy(on); setNoiseOffer(false); offeredRef.current = true;
+    try { localStorage.setItem("voiceMode", on ? "noisy" : "normal"); } catch { /* storage unavailable */ }
+    const dc = dcRef.current, input = audioInputRef.current?.[on ? "noisy" : "normal"];
+    if (!dc || dc.readyState !== "open" || !input) return false;
+    dc.send(JSON.stringify({ type: "session.update", session: { type: "realtime", audio: { input } } }));
+    audit({ event: "session", mode: on ? "noisy_on" : "noisy_off", outcome: "shown", spokenAnswer: `Noisy room listening ${on ? "on" : "off"}.` });
+    return true;
   }
 
   // Everything that reaches Task AI goes through here. `prefix` is spoken
@@ -403,6 +415,14 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   function handleRealtimeEvent(msg: RealtimeEvent) {
     if (msg.type === "response.function_call_arguments.done" && msg.call_id && msg.arguments !== undefined) {
       if (msg.name === "next_task") { void runNext(msg.call_id); return; }
+      if (msg.name === "set_listening_mode") {
+        let on = false;
+        try { on = (JSON.parse(msg.arguments) as { noisy?: boolean }).noisy === true; } catch { /* leave off */ }
+        const done = applyListeningMode(on);
+        addFeed("asked", `Noisy room ${on ? "on" : "off"}`);
+        finish(msg.call_id, done ? `Noisy room listening is ${on ? "on" : "off"}.` : "I couldn't change the listening mode right now.");
+        return;
+      }
       if (msg.name !== "ask_task_ai") {
         audit({ event: "error", outcome: "failed", spokenAnswer: `The assistant tried to call an unknown tool (${msg.name}).`, detail: { tool: msg.name } });
         return;
@@ -467,9 +487,10 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
     activeSinceRef.current = 0; wantResponseRef.current = false;
     try {
       const sessionRes = await fetch("/api/voice-live/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: noisyRef.current ? "noisy" : "normal" }) });
-      const session = await sessionRes.json() as { clientSecret?: string; model?: string; transcription?: boolean; firstName?: string; error?: string };
+      const session = await sessionRes.json() as { audioInput?: Record<string, unknown>; clientSecret?: string; model?: string; transcription?: boolean; firstName?: string; error?: string };
       if (!session.clientSecret) throw new Error(session.error || "Could not start a live session");
       transcriptionOnRef.current = session.transcription !== false;
+      audioInputRef.current = session.audioInput ?? null;
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       streamRef.current = stream;
@@ -525,12 +546,8 @@ export default function VoiceAskRealtime({ onApplyFilters, onNavigate, onTaskUpd
   }
 
   function toggleNoisy() {
-    setNoiseOffer(false);
-    const on = !noisyRef.current;
-    noisyRef.current = on; setNoisy(on);
-    try { localStorage.setItem("voiceMode", on ? "noisy" : "normal"); } catch { /* storage unavailable */ }
-    // The setting is fixed when a session starts, so a running one restarts.
-    if (pcRef.current) { teardown(); void start(); }
+    // Applied to the running session; only when that is not possible does the session restart.
+    if (!applyListeningMode(!noisyRef.current) && pcRef.current) { teardown(); void start(); }
   }
 
   // Tapping a line in "What can I say?" says it for you, into the live

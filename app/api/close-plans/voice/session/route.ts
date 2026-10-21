@@ -4,7 +4,7 @@ import { closePlanDocuments } from "../../../../../db/schema";
 import { capabilities } from "../../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../lib/request";
-import { audioInputSettings, NO_CHATTER_INSTRUCTION, NOISY_ROOM_INSTRUCTION, parseListeningMode, transcriptionSettings } from "../../../../lib/voice-audio";
+import { audioInputProfiles, audioInputSettings, NO_CHATTER_INSTRUCTION, NOISY_ROOM_INSTRUCTION, parseListeningMode, transcriptionSettings } from "../../../../lib/voice-audio";
 import { currentActor } from "../../../../lib/session";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +52,10 @@ export async function POST(request: Request) {
           type: "function", name: "next_item",
           description: "Moves on to the next task of the list being walked and reads it out. For 'next', 'next one', 'skip this one'.",
           parameters: { type: "object", additionalProperties: false, properties: {}, required: [] },
+        }, {
+          type: "function", name: "set_listening_mode",
+          description: "Switches Noisy room listening on or off: stricter listening for a loud room. Use when the person asks to turn the noisy room mode, noise mode or background noise setting on or off.",
+          parameters: { type: "object", additionalProperties: false, properties: { noisy: { type: "boolean", description: "true = noisy room mode on, false = off." } }, required: ["noisy"] },
         }],
       },
     }),
@@ -69,5 +73,5 @@ export async function POST(request: Request) {
   const phase = (d.phases || []).find(p => String(p.start) <= today && today <= String(p.end)) || (d.phases || [])[0];
   const person = (d.people || []).find(p => p.side === "seller" && String(p.name || "").split(" ")[0] !== actor.name.split(" ")[0]);
   const list = capabilities(String(d.account || "the customer"), String(phase?.name || "this phase"), String(person?.name || "Drew").split(" ")[0]);
-  return Response.json({ clientSecret, model, transcription: withTranscription, firstName: actor.name.trim().split(/\s+/)[0] || "", capabilities: list });
+  return Response.json({ audioInput: audioInputProfiles(), clientSecret, model, transcription: withTranscription, firstName: actor.name.trim().split(/\s+/)[0] || "", capabilities: list });
 }

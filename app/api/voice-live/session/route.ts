@@ -2,7 +2,7 @@ import { getDb } from "../../../../db";
 import { tasks } from "../../../../db/schema";
 import { canSeeTask } from "../../../lib/permissions";
 import { requireSameOrigin } from "../../../lib/request";
-import { audioInputSettings, NO_CHATTER_INSTRUCTION, NOISY_ROOM_INSTRUCTION, parseListeningMode, transcriptionSettings } from "../../../lib/voice-audio";
+import { audioInputProfiles, audioInputSettings, NO_CHATTER_INSTRUCTION, NOISY_ROOM_INSTRUCTION, parseListeningMode, transcriptionSettings } from "../../../lib/voice-audio";
 import { currentActor } from "../../../lib/session";
 
 // Mints a short-lived (~1 minute) client secret the browser uses to open
@@ -92,6 +92,10 @@ export async function POST(request: Request) {
           name: "next_task",
           description: "Moves on to the next task of the list the person is working through and reads it out. Use for 'next', 'next one', 'next task', 'skip this one', 'what's next'. Takes no arguments.",
           parameters: { type: "object", additionalProperties: false, properties: {}, required: [] },
+        }, {
+          type: "function", name: "set_listening_mode",
+          description: "Switches Noisy room listening on or off: stricter listening for a loud room. Use when the person asks to turn the noisy room mode, noise mode or background noise setting on or off.",
+          parameters: { type: "object", additionalProperties: false, properties: { noisy: { type: "boolean", description: "true = noisy room mode on, false = off." } }, required: ["noisy"] },
         }],
       },
     }),
@@ -112,5 +116,5 @@ export async function POST(request: Request) {
   if (!clientSecret) return Response.json({ error: "Realtime API did not return a client secret", code: "ai_failed" }, { status: 502 });
   // The first name lets the assistant greet the person by name ("Hi Rizan, …").
   const firstName = actor.name.trim().split(/\s+/)[0] || "";
-  return Response.json({ clientSecret, model, transcription: withTranscription, firstName });
+  return Response.json({ audioInput: audioInputProfiles(), clientSecret, model, transcription: withTranscription, firstName });
 }

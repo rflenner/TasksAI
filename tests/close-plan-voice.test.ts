@@ -238,7 +238,7 @@ test("briefing and whatsNew: counted by code, in plain sentences", () => {
   assert.match(text, /You are in Validate/); assert.match(text, /1 of 3 main tasks is closed/); assert.match(text, /1 task is overdue: "Security review"/);
   assert.match(text, /2 tasks are due in the next 7 days/); assert.match(text, /We have 2 open tasks; Meridian has 1/); assert.match(text, /next milestone is "Sign-off"/);
   assert.equal(newsDays("what happened today"), 1); assert.equal(newsDays("what's new"), 7);
-  assert.equal(whatsNew(data, "2026-10-19", 7), "1 change in the last 7 days. Drew closed “POC”.");
+  assert.equal(whatsNew(data, "2026-10-19", 7), "1 change in the last 7 days. Newest: Drew closed “POC”.");
   assert.equal(whatsNew({ ...data, activity: [] }, "2026-10-19", 1), "Nothing has changed today.");
 });
 
@@ -257,9 +257,9 @@ const act = (a: Partial<VoiceAction>): VoiceAction => ({ type: "set_shared", sta
 
 test("checkBulk: a phase or the list on screen, asked first with the count; one-task-only changes refused", () => {
   const byPhase = checkBulk(bulkData, prop({ phaseId: "p1", actions: [act({})] }), [], "make all tasks in Validation internal");
-  assert.ok(byPhase.ok && byPhase.change.taskIds.join() === "1,2" && /Make 2 tasks in Validation internal\? Say yes/.test(byPhase.question));
+  assert.ok(byPhase.ok && byPhase.change.groups[0].taskIds.join() === "1,2" && /Make 2 tasks in Validation internal\? Say yes/.test(byPhase.question));
   const byList = checkBulk(bulkData, prop({ actions: [act({ type: "set_status", status: "Closed" })] }), ["1", "2", "3"], "close all of these");
-  assert.ok(byList.ok && byList.change.taskIds.length === 3 && /Set 3 tasks to Closed/.test(byList.question));
+  assert.ok(byList.ok && byList.change.groups[0].taskIds.length === 3 && /Set 3 tasks to Closed/.test(byList.question));
   assert.equal(checkBulk(bulkData, prop({ actions: [act({})] }), [], "make them internal").ok, false);
   assert.equal(checkBulk(bulkData, prop({ phaseId: "p1", actions: [act({ type: "delete_task" })] }), [], "delete all").ok, false);
 });
@@ -281,4 +281,34 @@ test("checkPhaseEdit sort, person lists are open tasks only, transcription is En
   assert.deepEqual(listMatches({ ...bulkData, tasks: [{ id: "1", phase: "p1", status: "Closed", owner: "a" }, { id: "2", phase: "p1", status: "Open", owner: "a" }] }, "person", null, "2026-10-19", "a"), ["2"]);
   const t = transcriptionSettings("gpt-transcribe", ["CluePoints", "Drew Klein"]);
   assert.equal(t.language, "en"); assert.match(t.prompt, /CluePoints/);
+});
+
+import { checkView, shiftWords, upcomingIds } from "../app/lib/close-plan-voice";
+test("named tasks, several kinds of change, and relative date moves", () => {
+  const act2 = (a: Partial<VoiceAction>): VoiceAction => ({ type: "shift_due", status: null, text: null, date: null, personId: null, flag: null, days: 7, ...a } as VoiceAction);
+  const named = checkBulk(bulkData, prop({ groups: [{ taskIds: ["1", "2"], actions: [act2({})] }, { taskIds: ["4"], actions: [act2({ type: "set_status", status: "Open", days: null })] }] }), [], "move A and B back a week and reopen C");
+  assert.ok(named.ok && named.change.groups.length === 2 && named.change.groups[0].taskIds.join() === "1,2");
+  assert.match(named.ok ? named.question : "", /Move "A" and "B" 1 week later and set "C" to Open\? Say yes/);
+  // a task without a due date is left out of a relative move; none left = refused
+  const noDue = checkBulk(bulkData, prop({ groups: [{ taskIds: ["3"], actions: [act2({})] }] }), [], "move A1 back a week");
+  assert.equal(noDue.ok, false);
+  assert.equal(checkBulk(bulkData, prop({ groups: [{ taskIds: ["zz"], actions: [act2({})] }] }), [], "x").ok, false);
+  assert.equal(shiftWords(7), "1 week later"); assert.equal(shiftWords(-3), "3 days earlier");
+  // one task: shift_due through the normal path
+  const one = checkProposal(bulkData, { mode: "act", answer: "", taskId: "1", filter: null, personId: null, phaseId: null, actions: [act2({ days: -7 })], newTask: null }, null, "move it forward a week");
+  assert.ok(one.ok && /Moved "A" 1 week earlier to /.test(describeActions(bulkData, "1", one.ok ? one.actions : [], "2026-10-19")));
+});
+
+test("up next, activity by side, collapsing phases, and delete needs the word delete", () => {
+  assert.deepEqual(upcomingIds(bulkData), ["1", "2"]);
+  const people = [{ id: "a", name: "Drew Klein", side: "seller" }, { id: "b", name: "Olivia Grant", side: "buyer" }];
+  const d = { ...bulkData, people, activity: [{ at: "2026-10-19", by: "a", text: "closed “A”" }, { at: "2026-10-19", by: "a", text: "closed “B”" }, { at: "2026-10-18", by: "b", text: "posted an update" }] };
+  assert.equal(whatsNew(d, "2026-10-19", 7, {}), "3 changes in the last 7 days. By person: Drew 2, Olivia 1. Newest: Drew closed “A”. Drew closed “B”. Olivia posted an update.");
+  assert.equal(whatsNew(d, "2026-10-19", 7, { side: "buyer" }, "Meridian"), "1 change by Meridian people in the last 7 days. Newest: Olivia posted an update.");
+  assert.equal(whatsNew({ ...d, activity: [d.activity[0]] }, "2026-10-19", 7, { side: "buyer" }, "Meridian"), "Nothing has changed by Meridian people in the last 7 days.");
+  const v = checkView(bulkData, "p1", false); assert.ok(v.ok && v.said === "Collapsed Validation." && !v.open);
+  const all = checkView(bulkData, null, true); assert.ok(all.ok && all.phaseIds.length === 2 && all.said === "Opened all phases.");
+  const del = (say: string) => checkPhaseEdit(bulkData, "p1", { sort: false, add: false, remove: true, name: null, goal: null, start: null, end: null, moveTo: null }, say, "2026-10-19");
+  assert.equal(del("collapse the phase Validation").ok, false);
+  assert.equal(del("delete the phase Validation").ok, true);
 });
