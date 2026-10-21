@@ -1135,7 +1135,7 @@ let state = IN_APP ? null : (store.plans.find(x => x.id === store.current) || st
 const B = () => (state && state.account) || "Customer";
 function switchPlan(id) { if (voice.open) voiceClose(); state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); sfAutoSoon(500); }
 let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null };
-try { const t = localStorage.getItem(STORE_KEY + ":tab"); if (t === "plan" || t === "people") ui.tab = t; } catch (e) {}
+// A close plan always opens on the Plan tab; the last-used tab is deliberately not remembered.
 try { const m = localStorage.getItem(STORE_KEY + ":mode"); if (m === "buyer" || m === "seller") ui.mode = m; } catch (e) {}
 
 function load() { try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
@@ -3274,7 +3274,7 @@ function wirePage() {
   wireWizard(app);
   app.querySelectorAll("[data-kd]").forEach(b => b.onclick = () => { hideTip(); ui.open = b.dataset.kd; render(); });
   app.querySelectorAll(".ms-mark").forEach(m => { m.onmouseenter = m.onfocus = () => showTip(m); m.onmouseleave = m.onblur = hideTip; });
-  app.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ui.tab = b.dataset.tab; ui.addFor = null; ui.removing = null; try { localStorage.setItem(STORE_KEY + ":tab", ui.tab); } catch (e) {} render(); });
+  app.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ui.tab = b.dataset.tab; ui.addFor = null; ui.removing = null; render(); });
   app.querySelectorAll("[data-addperson]").forEach(b => b.onclick = () => { const side = b.dataset.addperson; ui.addFor = ui.addFor === side ? null : side; ui.addTab = "sales"; if (ui.addFor) loadPeopleOptions(); render(); });
   app.querySelectorAll("[data-ap-tab]").forEach(b => b.onclick = () => { ui.addTab = b.dataset.apTab; render(); });
   // Search narrows the list without re-rendering (so ticked rows and typed roles stay).
