@@ -1,4 +1,4 @@
-import { describeChanges, logAccess } from "../../../../lib/close-plan-access-log";
+import { logChanges } from "../../../../lib/close-plan-access-log";
 import { notifyAssignments } from "../../../../lib/close-plan-assignments";
 import { appBase, newInternalMembers, notifyAddedToPlan } from "../../../../lib/close-plan-invitations";
 import { and, eq, isNull } from "drizzle-orm";
@@ -43,8 +43,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (members.length) void notifyAddedToPlan({ plan: { id, title }, members, byName: actor.name || "A colleague", baseUrl: appBase() });
   // Tasks that were assigned to someone (owner or coworker) in this save: tell them (per Admin → Notifications).
   void notifyAssignments({ plan: { id, title, oldData: existing.data as Record<string, unknown>, newData: data as Record<string, unknown> }, byName: actor.name || "A colleague", actorEmail: actor.email, source: "closeplan", baseUrl: appBase() });
-  const changed = describeChanges(existing.data as Record<string, unknown>, data as Record<string, unknown>);
-  if (changed) void logAccess({ event: "changes_saved", side: "seller", via: "app", userId: actor.id, personName: actor.name, plan: { id, title }, task: changed.taskId ? { id: changed.taskId, title: changed.taskTitle } : null, detail: changed.detail });
+  void logChanges({ side: "seller", via: "app", userId: actor.id, personName: actor.name }, { id, title }, existing.data as Record<string, unknown>, data as Record<string, unknown>);
   return Response.json({ id, version: row.version, updatedAt: row.updatedAt.toISOString() });
 }
 

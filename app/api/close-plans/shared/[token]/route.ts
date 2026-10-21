@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { closePlanDocuments } from "../../../../../db/schema";
 import { resolvePlanLink, touchPlanLink } from "../../../../lib/close-plan-links";
-import { describeChanges, logAccess } from "../../../../lib/close-plan-access-log";
+import { logAccess, logChanges } from "../../../../lib/close-plan-access-log";
 import { applyCustomerChanges, customerPerson, customerView, markOpened } from "../../../../lib/close-plan-share";
 import { requireSameOrigin } from "../../../../lib/request";
 
@@ -49,8 +49,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       .where(and(eq(closePlanDocuments.id, row.id), eq(closePlanDocuments.version, row.version))).returning();
     if (!saved) continue;
     await touchPlanLink(link.id);
-    const changed = applied ? describeChanges(row.data as Record<string, unknown>, data) : null, who = customerPerson(data, link.personId);
-    if (changed && who) void logAccess({ event: "changes_saved", side: "buyer", via: "link", personId: link.personId, personName: String(who.name || "Customer"), plan: { id: row.id, title: row.title }, task: changed.taskId ? { id: changed.taskId, title: changed.taskTitle } : null, detail: changed.detail });
+    const who = customerPerson(data, link.personId);
+    if (applied && who) void logChanges({ side: "buyer", via: "link", personId: link.personId, personName: String(who.name || "Customer") }, { id: row.id, title: row.title }, row.data as Record<string, unknown>, data);
     return Response.json({ version: saved.version, applied, ignored, plan: customerView(saved.data, link.personId) });
   }
   return Response.json({ error: "The plan is busy. Please try again." }, { status: 409 });

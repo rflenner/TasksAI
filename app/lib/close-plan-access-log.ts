@@ -31,37 +31,44 @@ export const taskTitleOf = (data: Obj, id: string) => { const t = arr(data.tasks
 const TASK_FIELDS: Array<[string, string]> = [["title", "renamed"], ["desc", "edited the description"], ["status", "status"], ["due", "due date"], ["owner", "owner"], ["coworkers", "coworkers"], ["recipients", "requested by"], ["shared", "visibility"], ["milestone", "milestone"], ["phase", "phase"]];
 export type ChangeSummary = { taskId: string | null; taskTitle: string | null; detail: string };
 
-// A short, readable summary of what a save changed, or null when nothing that matters did (sync bookkeeping, activity text).
-export function describeChanges(prev: Obj, next: Obj): ChangeSummary | null {
+// What a save changed, one entry per task (plus one for the plan itself, with taskId null). The same entries feed the admin log and each task's history.
+export function changeEntries(prev: Obj, next: Obj): ChangeSummary[] {
   const prevTasks = arr(prev.tasks), nextTasks = arr(next.tasks), before = new Map(prevTasks.map(t => [t.id, t]));
   const people = new Map(arr(next.people).map(p => [p.id, cut(p.name, 60)]));
-  const parts: string[] = [], touched: Obj[] = [];
+  const out: ChangeSummary[] = [];
+  const entry = (t: Obj, detail: string) => out.push({ taskId: cut(t.id, 64), taskTitle: cut(t.title, 200), detail: cut(detail, 900) });
   for (const t of nextTasks) {
-    const old = before.get(t.id), title = `“${cut(t.title, 60)}”`;
-    if (!old) { parts.push(`added ${title}`); touched.push(t); continue; }
+    const old = before.get(t.id);
+    if (!old) { entry(t, "created this task"); continue; }
     const what: string[] = [];
     for (const [f, label] of TASK_FIELDS) {
       if (same(old[f], t[f])) continue;
       if (f === "status") what.push(`status ${cut(old.status, 20)} → ${cut(t.status, 20)}`);
       else if (f === "owner") what.push(`owner → ${people.get(t.owner as string) || "someone"}`);
-      else if (f === "due") what.push(t.due ? `due ${cut(t.due, 10)}` : "due date removed");
+      else if (f === "due") what.push(t.due ? `due date → ${cut(t.due, 10)}` : "due date removed");
       else what.push(label);
     }
-    if (arr(t.updates).length > arr(old.updates).length) what.push("posted an update");
-    if (what.length) { parts.push(`${title}: ${what.join(", ")}`); touched.push(t); }
+    if (arr(t.updates).length > arr(old.updates).length) what.push("posted a status update");
+    if (what.length) entry(t, what.join(", "));
   }
   const nextIds = new Set(nextTasks.map(t => t.id));
-  for (const t of prevTasks) if (!nextIds.has(t.id)) { parts.push(`deleted “${cut(t.title, 60)}”`); touched.push(t); }
+  for (const t of prevTasks) if (!nextIds.has(t.id)) entry(t, "deleted this task");
   const plan: string[] = [];
   if (!same(prev.title, next.title)) plan.push("title");
   if (!same(arr(prev.phases).map(p => [p.id, p.name, p.start, p.end]), arr(next.phases).map(p => [p.id, p.name, p.start, p.end]))) plan.push("phases");
   if (!same(arr(prev.people).map(p => [p.id, p.name, p.role, p.email, p.side]), arr(next.people).map(p => [p.id, p.name, p.role, p.email, p.side]))) plan.push("people");
   if (!same(prev.planOwners, next.planOwners)) plan.push("plan owners");
-  if (plan.length) parts.push(`plan ${plan.join(", ")}`);
-  if (!parts.length) return null;
-  const shown = parts.slice(0, 6), more = parts.length - shown.length;
-  const one = touched.length === 1 && !plan.length ? touched[0] : null;
-  return { taskId: one ? cut(one.id, 64) : null, taskTitle: one ? cut(one.title, 200) : null, detail: cut(shown.join("; ") + (more > 0 ? `; and ${more} more` : ""), 900) };
+  if (plan.length) out.push({ taskId: null, taskTitle: null, detail: `changed the plan: ${plan.join(", ")}` });
+  return out;
+}
+
+// One combined summary of a save (kept for callers that want a single line), or null when nothing that matters changed.
+export function describeChanges(prev: Obj, next: Obj): ChangeSummary | null {
+  const all = changeEntries(prev, next);
+  if (!all.length) return null;
+  const parts = all.map(e => e.taskTitle ? `“${cut(e.taskTitle, 60)}”: ${e.detail}` : e.detail), shown = parts.slice(0, 6), more = parts.length - shown.length;
+  const one = all.length === 1 && all[0].taskId ? all[0] : null;
+  return { taskId: one ? one.taskId : null, taskTitle: one ? one.taskTitle : null, detail: cut(shown.join("; ") + (more > 0 ? `; and ${more} more` : ""), 900) };
 }
 
 // ---- writing ----
@@ -123,4 +130,26 @@ export async function lastSeen(planId: string, data: Obj): Promise<Record<string
   for (const r of await db.select({ person: closePlanLinks.personId, at: max(closePlanLinks.lastUsedAt) }).from(closePlanLinks).where(eq(closePlanLinks.planId, planId)).groupBy(closePlanLinks.personId))
     if (r.at && r.person in out) out[r.person] = r.at.toISOString();
   return out;
+}
+
+// Writes what a save changed: one row per task touched (at most 12 a save, the rest summarised) and one for the plan itself.
+export async function logChanges(who: Pick<AccessEntry, "side" | "via" | "personName" | "userId" | "personId">, plan: { id: string; title?: unknown }, prev: Obj, next: Obj): Promise<void> {
+  const all = changeEntries(prev, next), shown = all.slice(0, 12), more = all.length - shown.length;
+  for (const e of shown) await logAccess({ ...who, event: "changes_saved", plan, task: e.taskId ? { id: e.taskId, title: e.taskTitle } : null, detail: e.detail });
+  if (more > 0) await logAccess({ ...who, event: "changes_saved", plan, detail: `and ${more} more changes` });
+}
+
+// ---- a task's history (for the iSEEit team): edits, files and who last opened it, newest first ----
+export type HistoryEntry = { type: "edit" | "view"; detail: string; actorName: string; side: string; at: string };
+export async function taskHistory(planId: string, taskId: string): Promise<HistoryEntry[]> {
+  const c = closePlanAccessLog;
+  const rows = await getDb().select().from(c).where(and(eq(c.planId, planId), eq(c.taskId, taskId), inArray(c.event, ["changes_saved", "file_added", "file_removed", "file_downloaded", "file_viewed", "task_opened"]))).orderBy(desc(c.id)).limit(300);
+  const seen = new Set<string>(), out: HistoryEntry[] = [];
+  for (const r of rows) {
+    const who = r.userId ? `u${r.userId}` : `p${r.personId}`;
+    if (r.event === "task_opened") { if (seen.has(who)) continue; seen.add(who); out.push({ type: "view", detail: "viewed this task", actorName: r.personName, side: r.side, at: r.at.toISOString() }); continue; }
+    const detail = r.event === "changes_saved" ? String(r.detail || "changed this task") : r.event === "file_added" ? `added the file ${r.detail || ""}` : r.event === "file_removed" ? `removed the file ${r.detail || ""}` : r.event === "file_viewed" ? `viewed the file ${r.detail || ""}` : `downloaded the file ${r.detail || ""}`;
+    out.push({ type: "edit", detail: detail.trim(), actorName: r.personName, side: r.side, at: r.at.toISOString() });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100);
 }

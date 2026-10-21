@@ -107,3 +107,7 @@ export function emailFromUnsubscribeToken(token: string): string | null {
 }
 // A sender asks this before every email: people who opted out are skipped, whatever the rules say.
 export const mayEmail = (email: string, optedOut: Set<string>) => isValidEmail(normalizeEmail(email)) && !optedOut.has(normalizeEmail(email));
+
+// Notification kinds that have settings under Admin → Notifications but are not switched on yet (planned for after the test round).
+// The task drawer's "Who hears about this task" box says so. Remove an entry here when that notice goes live.
+export const PAUSED_NOTIFICATIONS = ["the weekly email", "overdue reminders", "Slack on updates"] as const;
