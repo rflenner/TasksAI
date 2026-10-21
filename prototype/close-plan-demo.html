@@ -4230,7 +4230,7 @@ async function voiceAsk(callId, utterance) {
     const pending = voice.pending; voice.pending = null;
     if (VX_YES.test(text) && (pending.many || pending.shift)) {
       const said = pending.many ? voiceApplyMany(pending.many) : voiceApplyShift(pending.shift);
-      voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: voice.applied > 0 ? "changed" : "not_done", utterance: text, spokenAnswer: said, detail: { taskTitle: pending.many ? `${pending.many.taskIds.length} tasks` : "whole plan", changes: voice.applied > 0 ? [said] : [] } });
+      voiceAudit({ event: "confirmation", mode: "close_plan_applied", outcome: voice.applied > 0 ? "changed" : "not_done", utterance: text, spokenAnswer: said, detail: { taskTitle: pending.many ? `${pending.many.groups.reduce((n, g) => n + g.taskIds.length, 0)} tasks` : "whole plan", changes: voice.applied > 0 ? [said] : [] } });
       voiceReply(callId, said); return;
     }
     if (VX_YES.test(text) && pending.phase) { const said = voiceApplyPhase(pending.phase); voiceAuditPhase(pending.phase, said, voice.applied > 0); voiceReply(callId, said); return; }
@@ -4303,7 +4303,7 @@ function voiceApplyPhase(e) {
 // The same change on many tasks, one task at a time through voiceApply (so every access rule and log line applies).
 function voiceApplyMany(m) {
   let ok = 0, skipped = 0;
-  for (const id of m.taskIds) { voice.applied = 0; voiceApply({ taskId: id, actions: m.actions }); if (voice.applied > 0) ok++; else skipped++; }
+  for (const g of m.groups) for (const id of g.taskIds) { voice.applied = 0; voiceApply({ taskId: id, actions: g.actions }); if (voice.applied > 0) ok++; else skipped++; }
   voice.applied = ok;
   return ok ? `Done for ${ok} task${ok > 1 ? "s" : ""}.${skipped ? ` ${skipped} could not be changed or were already like that.` : ""}` : "Nothing changed. You may not have the right to change those tasks, or they were already like that.";
 }
@@ -4339,6 +4339,7 @@ function voiceHandle(res) {
       return res.spokenAnswer;
     case "confirm": voice.pending = { taskId: res.taskId, actions: res.actions || [] }; voiceShowTask(res.taskId); return res.spokenAnswer;
     case "confirm_phase": voice.pending = { phase: res.phaseEdit }; return res.spokenAnswer;
+    case "view_phase": setPhaseOpen(res.phaseIds || [], res.open === true); render(); return res.spokenAnswer;
     case "confirm_many": voice.pending = { many: res.bulk }; return res.spokenAnswer;
     case "confirm_shift": voice.pending = { shift: res.shift }; return res.spokenAnswer;
     case "act_phase": { const text = voiceApplyPhase(res.phaseEdit); voiceAuditPhase(res.phaseEdit, text, voice.applied > 0); return text; }
@@ -4354,7 +4355,13 @@ function voiceApply(change, said) {
   if (!canUpdate(t)) return "You can't change that task.";
   const edit = canEdit(t), today = new Date().toISOString().slice(0, 10), done = [];
   let skipped = 0;
-  for (const a of change.actions) {
+  for (let a of change.actions) {
+    // "back one week": each task moves from its own due date; a task without one is skipped.
+    if (a.type === "shift_due") {
+      const to = t.due ? new Date(Date.parse(t.due + "T12:00:00Z") + a.days * 864e5).toISOString().slice(0, 10) : null;
+      if (!to) continue;
+      a = { ...a, type: "set_due", date: to };
+    }
     if (a.type === "set_status") {
       if (t.status === a.status) continue;
       t.status = a.status; t.closedAt = a.status === "Closed" ? today : null;
@@ -4442,6 +4449,7 @@ async function voiceNext(callId) {
 function voiceEvent(m) {
   if (m.type === "response.function_call_arguments.done" && m.call_id) {
     if (m.name === "next_item") { voiceNext(m.call_id); return; }
+    if (m.name === "set_listening_mode") { let on = false; try { on = JSON.parse(m.arguments || "{}").noisy === true; } catch (e) {} voiceSetMode(m.call_id, on); return; }
     let u = ""; try { u = JSON.parse(m.arguments || "{}").utterance || ""; } catch (e) {}
     voiceAsk(m.call_id, u);
   } else if (m.type === "input_audio_buffer.speech_started" && m.item_id && voice.transcribing) voiceHeard(m.item_id, {});
@@ -4489,6 +4497,17 @@ function voiceWatchNoise(stream) {
   }, 200);
   return () => { clearInterval(timer); try { ctx.close(); } catch (x) {} };
 }
+// Switches Noisy room listening on or off in the running session (no restart), by updating the realtime session.
+function voiceApplyMode(noisy) {
+  try { localStorage.setItem("voiceMode", noisy ? "noisy" : "normal"); } catch (x) {}
+  const dc = voice.dc, input = voice.audioInput && voice.audioInput[noisy ? "noisy" : "normal"];
+  if (!dc || dc.readyState !== "open" || !input) return false;
+  dc.send(JSON.stringify({ type: "session.update", session: { type: "realtime", audio: { input } } }));
+  voice.noiseOffer = false; voiceNoise.offered = true;
+  voiceAudit({ event: "session", mode: noisy ? "noisy_on" : "noisy_off", outcome: "shown", spokenAnswer: `Noisy room listening ${noisy ? "on" : "off"}.` });
+  return true;
+}
+function voiceSetMode(callId, noisy) { const ok = voiceApplyMode(noisy); renderVoice(); voiceReply(callId, ok ? `Noisy room listening is ${noisy ? "on" : "off"}.` : "I couldn't change the listening mode right now."); }
 function voiceMode() { try { return localStorage.getItem("voiceMode") === "noisy" ? "noisy" : "normal"; } catch (x) { return "normal"; } }
 async function voiceStart() {
   voiceNoise.offered = voiceMode() === "noisy"; voiceNoise.garbled = []; voice.noiseOffer = false;
@@ -4499,7 +4518,7 @@ async function voiceStart() {
     const r = await fetch("/api/close-plans/voice/session", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: state.id, mode: voiceMode() }) });
     const s = await r.json().catch(() => ({}));
     if (!s.clientSecret) throw new Error(s.error || "Could not start the voice assistant.");
-    voice.transcribing = s.transcription !== false; voice.caps = Array.isArray(s.capabilities) ? s.capabilities : [];
+    voice.audioInput = s.audioInput || null; voice.transcribing = s.transcription !== false; voice.caps = Array.isArray(s.capabilities) ? s.capabilities : [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); voice.stream = stream; voiceNoise.stop = voiceWatchNoise(stream);
     const pc = new RTCPeerConnection(); voice.pc = pc;
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -4557,7 +4576,7 @@ function renderVoice() {
   const mn = root.querySelector("[data-vx-min]"); if (mn) mn.onclick = () => { voice.min = true; renderVoice(); };
   const st = root.querySelector("[data-vx-start]"); if (st) st.onclick = () => voiceStart();
   const no = root.querySelector("[data-vx-offer-no]"); if (no) no.onclick = () => { voice.noiseOffer = false; renderVoice(); };
-  root.querySelectorAll("[data-vx-noisy]").forEach(nz => nz.onclick = () => { try { localStorage.setItem("voiceMode", voiceMode() === "noisy" ? "normal" : "noisy"); } catch (x) {} voice.noiseOffer = false; if (voice.status === "connected" || voice.status === "connecting") { voiceTeardown(); voiceStart(); } else renderVoice(); });
+  root.querySelectorAll("[data-vx-noisy]").forEach(nz => nz.onclick = () => { const on = voiceMode() !== "noisy"; if (!voiceApplyMode(on)) { voice.noiseOffer = false; if (voice.status === "connected" || voice.status === "connecting") { voiceTeardown(); voiceStart(); } } renderVoice(); });
   const hp = root.querySelector("[data-vx-help]"); if (hp) hp.onclick = () => { voice.help = !voice.help; renderVoice(); };
   root.querySelectorAll("[data-vx-say]").forEach(b => b.onclick = () => voiceSay(b.dataset.vxSay));
 }

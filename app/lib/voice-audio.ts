@@ -33,6 +33,9 @@ export function audioInputSettings(mode: ListeningMode) {
   };
 }
 
+// Both profiles, sent to the browser so it can switch a running session (session.update) when asked to.
+export const audioInputProfiles = () => ({ normal: audioInputSettings("normal"), noisy: audioInputSettings("noisy") });
+
 // Transcription settings for the audit trail and the on-screen "heard" line. Without a language the transcriber
 // guessed Chinese for background noise ("是", "嗯"), and a vocabulary hint helps with names and terms it kept
 // mishearing (internal as "Intel", CluePoints as "clue points").

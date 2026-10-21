@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { closePlanDocuments } from "../../../../db/schema";
-import { ACTION_TYPES, addressedToSomeoneElse, briefing, calendar, checkBulk, checkShift, type BulkChange, type ShiftChange, checkPhaseEdit, newsDays, whatsNew, type PhaseEdit, checkProposal, completeDraft, type Draft, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, sanitizeDraft, viewerId, waitingSide } from "../../../lib/close-plan-voice";
+import { ACTION_TYPES, addressedToSomeoneElse, briefing, calendar, checkBulk, checkShift, checkView, plural, upcomingIds, type BulkChange, type ShiftChange, checkPhaseEdit, newsDays, whatsNew, type PhaseEdit, checkProposal, completeDraft, type Draft, HELP_SPOKEN, isHelpRequest, confirmQuestion, describeActions, describeTask, LIST_FILTERS, listLabel, listMatches, planContext, type Proposal, sanitizeDraft, viewerId, waitingSide } from "../../../lib/close-plan-voice";
 import { canAccessPlan } from "../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../lib/request";
 import { currentActor } from "../../../lib/session";
@@ -16,14 +16,28 @@ export const dynamic = "force-dynamic";
 // spoken text itself (never a count the model came up with). Changes are NOT
 // written here: the page applies them through its own functions, so the same
 // access rules, saving and activity log apply as for a click.
+const ACTION_ITEM = {
+  type: "object", additionalProperties: false, required: ["type", "status", "text", "date", "personId", "phaseId", "flag", "days"],
+  properties: {
+    type: { type: "string", enum: [...ACTION_TYPES] },
+    status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
+    text: { type: ["string", "null"] }, date: { type: ["string", "null"] }, personId: { type: ["string", "null"] },
+    phaseId: { type: ["string", "null"] }, flag: { type: ["boolean", "null"] }, days: { type: ["integer", "null"] },
+  },
+};
 const schema = {
   type: "object", additionalProperties: false,
-  required: ["mode", "answer", "taskId", "filter", "personId", "phaseId", "actions", "newTask", "requestName", "sameAsKnownRequest", "phaseEdit", "shiftDays", "shiftTasks"],
+  required: ["mode", "answer", "taskId", "filter", "personId", "phaseId", "actions", "newTask", "requestName", "sameAsKnownRequest", "phaseEdit", "shiftDays", "shiftTasks", "groups", "viewOpen"],
   properties: {
-    mode: { type: "string", enum: ["answer", "open_task", "list", "next", "act", "act_many", "shift_plan", "act_phase", "briefing", "news", "add_task", "unsupported", "wish", "unclear"] },
+    mode: { type: "string", enum: ["answer", "open_task", "list", "next", "act", "act_many", "shift_plan", "view_phase", "act_phase", "briefing", "news", "add_task", "unsupported", "wish", "unclear"] },
     phaseEdit: {
       type: ["object", "null"], additionalProperties: false, required: ["sort", "add", "remove", "name", "goal", "start", "end", "moveTo"],
       properties: { sort: { type: "boolean" }, add: { type: "boolean" }, remove: { type: "boolean" }, name: { type: ["string", "null"] }, goal: { type: ["string", "null"] }, start: { type: ["string", "null"] }, end: { type: ["string", "null"] }, moveTo: { type: ["string", "null"] } },
+    },
+    viewOpen: { type: ["boolean", "null"] },
+    groups: {
+      type: ["array", "null"],
+      items: { type: "object", additionalProperties: false, required: ["taskIds", "actions"], properties: { taskIds: { type: "array", items: { type: "string" } }, actions: { type: "array", items: ACTION_ITEM } } },
     },
     shiftDays: { type: ["integer", "null"] },
     shiftTasks: { type: ["boolean", "null"] },
@@ -36,15 +50,7 @@ const schema = {
     phaseId: { type: ["string", "null"] },
     actions: {
       type: "array",
-      items: {
-        type: "object", additionalProperties: false, required: ["type", "status", "text", "date", "personId", "phaseId", "flag"],
-        properties: {
-          type: { type: "string", enum: [...ACTION_TYPES] },
-          status: { type: ["string", "null"], enum: ["Open", "In progress", "Closed", null] },
-          text: { type: ["string", "null"] }, date: { type: ["string", "null"] }, personId: { type: ["string", "null"] },
-          phaseId: { type: ["string", "null"] }, flag: { type: ["boolean", "null"] },
-        },
-      },
+      items: ACTION_ITEM,
     },
     newTask: {
       type: ["object", "null"], additionalProperties: false, required: ["title", "phaseId", "parentId", "ownerId", "due", "description", "internal", "done"],
@@ -59,7 +65,7 @@ Modes:
 - "open_task": bring one task on screen and read it ("open the security review", "tell me about the POC", "the second one"). Set taskId. Ordinals like "the second one" refer to the list on screen (listIds) when there is one.
 - "list": show a list of tasks ("what's overdue", "what's open for Erik", "my tasks", "show the internal tasks", "what's left in Validate"). Set filter: mine (their own open tasks), tracking (open tasks they requested), overdue, buyer, seller, internal, person (with personId: tasks involving that person), all. phaseId narrows it to one phase. Leave answer empty; the caller counts and speaks the list.
   Waiting, by side: every person has a side (iSEEit or customer, see people and ownerSide). "What is ${customer} waiting on", "what do they need from us", "what's on us" = seller (open tasks owned by iSEEit people). "What are we waiting on from ${customer}", "what do we need from them", "what's on their side" = buyer (open tasks owned by ${customer} people). These are always "list", never "answer".
-- "next": the next task of the list on screen.
+- "next": the next task of the list on screen. Also for "what's up next", "what is the next one due", "what's coming up": when no list is on screen the answer is built from the soonest due open tasks.
 - "next": also for "next", "next one", "skip this one".
 - "act": change one existing task, any field of it. taskId is the task (null means the task open on screen, focusTaskId); a subtask has its own id, so "tick off the SOC 2 subtask" targets that subtask. actions (one per change, several are fine; leave unused fields null):
   set_status (status Open / In progress / Closed — the status dropdown, and the subtask checkboxes: "done", "tick off", "check", "complete" = Closed; "untick", "uncheck", "reopen" = Open; "started", "working on it" = In progress),
@@ -69,10 +75,11 @@ Modes:
   rename (text), set_description (text, only their words),
   set_shared (flag: false = "make it internal / hide it from the customer", true = "share it with the customer"), set_milestone (flag: "mark it as a milestone" / "not a milestone any more"),
   delete_task ("delete it", "remove this task"; always asked to confirm, never combined with other actions).
-- "act_many": the SAME change to many tasks at once: "make all the tasks in Business Validation internal", "close all of these", "move them all to Friday", "assign these to Drew". phaseId = the phase when they name one ("all tasks in Validation"), otherwise null and it applies to the list on screen (listIds) ("all of these", "each of them"). actions as in "act" (only set_status, set_due, set_owner, set_phase, set_shared, set_milestone, add/remove coworker or requester), ONE entry per kind of change, never one per task. Use this instead of "act" whenever they mean more than one task.
+- "act_many": changes to TWO OR MORE tasks in one request. Named tasks: "move the SOC 2 review, the POC and the pricing task back one week", "close A and B, reopen C" → groups: one entry per kind of change, each with taskIds (the exact ids of the tasks they named) and its actions; leave top-level actions empty. A whole phase or the list on screen: "make all the tasks in Business Validation internal", "close all of these", "move them all to Friday" → no groups; phaseId = the phase if they named one, otherwise null for the list on screen (listIds), and actions as in "act". Actions: only set_status ("mark as open" = Open, "mark closed" = Closed), set_due, shift_due (days: move each task by this many days from ITS OWN due date, positive = later: "back", "push out", "postpone", "delay"; negative = earlier: "forward", "bring forward"; one week = 7), set_owner, set_phase, set_shared, set_milestone, add/remove coworker or requester; one entry per kind of change, never one per task. Use this instead of "act" whenever they mean more than one task. For ONE task, "act" also has shift_due ("move it back a week", days 7).
 - "shift_plan": move the whole plan earlier or later by a number of days or weeks ("move the whole plan back four weeks" = later by 28 days; "bring everything forward two weeks" = earlier by 14). shiftDays = the number of days: positive = later ("back", "push out", "postpone", "delay"), negative = earlier ("forward", "bring forward", "earlier"). shiftTasks = true when they also mean the tasks' due dates ("the whole plan", "everything", "and the tasks"), false when only the phases.
 - "briefing": they want the plan in a nutshell ("give me a briefing", "brief me", "catch me up", "summary", "where do we stand", "how are we doing overall"); a question about one specific thing is an "answer" instead. Nothing else is needed; the answer is built from the plan.
-- "news": they want the latest changes ("what's new", "what changed", "any updates", "what happened since yesterday", "what did Drew do"). Nothing else is needed.
+- "news": they want the latest changes ("what's new", "what changed", "any updates", "recent activity", "what happened since yesterday"). Narrow it with filter: buyer for what the customer's people did ("any client activity?", "has CluePoints done anything?"), seller for the iSEEit team, or personId for one person ("what did Drew do?"); otherwise null. Never answer these from the task list: only the activity feed counts.
+- "view_phase": fold a phase away or open it ON SCREEN, changing nothing in the plan: "collapse the Evaluation phase", "fold it", "hide the closed phases", "expand Validation", "open all phases". phaseId = the phase (null = all phases), viewOpen = true to open, false to collapse. NEVER use act_phase or delete for collapse, fold or hide.
 - "act_phase": change a PHASE of the plan (not a task): rename it, move its start or end date ("change the end date of Validate to June 30", "start Negotiate next Monday"), change its description, add a new phase, or delete one. phaseId = the phase it is about (the exact id from the plan's phases; null only when adding). phaseEdit: set only what they said and leave everything else null: name (the new name, their words), goal (the new description, their words), start / end (YYYY-MM-DD from the calendar; "move the end to Friday" sets only end), add (true = a new phase: name, start and end all needed), remove (true = delete the phase; moveTo = the phase id its tasks should go to only if they named one), sort (true = "put the phases in date order", "get the phases in the right time order"; nothing else set). Phases are never changed by "act".
 - "add_task": create a task or subtask ("add a task to Validate: send the SOC 2 report", "add a subtask under the POC: book the room"). newTask: title (their words), phaseId (ONLY a phase whose name they said, else null; never guess a phase from the plan or from other tasks), parentId (ONLY when they say "subtask": the task it belongs under; otherwise null, even if a similar task exists), ownerId (personId ONLY when they named a person or said "me"; otherwise null), due (YYYY-MM-DD from the calendar, else null), description (only their own words about what the task is, else null), internal (true only when they say internal or "just for us"), done (true when they decline to give more: "skip", "that's all", "no", "nothing", "that's fine", "leave it"). The caller asks for whatever is missing. When a draftTask is given, the request is the person's ANSWER to the caller's last question about that draft: use mode "add_task", set only what they just said, leave everything else null, and do not repeat the title (use the draft's); if they decline, set done true.
 - "unsupported": they want something this assistant can't do: inviting someone or sharing the plan ("invite Olivia", "send her the link"), sending emails or messages, deleting the plan, changing access rights, exporting, scheduling a meeting, the task history, anything outside this plan. answer: one short sentence "I can't do that yet" plus, only if it really helps, the closest thing from what you CAN do (the modes above: answer, list, open, change status/dates/owner/coworkers/requested by of a task, post an update, add a task or subtask). Never suggest anything else. requestName: your own NEW short name for the feature they want in THIS request, 2 to 6 words, Title Case (e.g. "Task History By Voice"); never copy a known request name into requestName. sameAsKnownRequest: one of the known request names ONLY if it is clearly the very same feature, else null.
@@ -159,7 +166,7 @@ export async function POST(request: Request) {
   return Response.json(reply);
 }
 
-type Reply = { bulk?: BulkChange; shift?: ShiftChange; phaseEdit?: PhaseEdit; mode: string; spokenAnswer: string; taskId?: string | null; filter?: string | null; personId?: string | null; phaseId?: string | null; listIds?: string[]; actions?: unknown[]; newTask?: unknown; draft?: Draft };
+type Reply = { phaseIds?: string[]; open?: boolean; bulk?: BulkChange; shift?: ShiftChange; phaseEdit?: PhaseEdit; mode: string; spokenAnswer: string; taskId?: string | null; filter?: string | null; personId?: string | null; phaseId?: string | null; listIds?: string[]; actions?: unknown[]; newTask?: unknown; draft?: Draft };
 
 function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string | null, listIds: string[], viewer: string | null, today: string, utterance: string, draft: Draft | null): Reply {
   const tasks = Array.isArray(data.tasks) ? data.tasks as Array<{ id: string }> : [];
@@ -180,8 +187,12 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
     case "next": {
       const at = focusTaskId ? listIds.indexOf(focusTaskId) : -1;
       const next = listIds[at + 1];
-      return next ? { mode: "open_task", taskId: next, spokenAnswer: `Number ${at + 2} of ${listIds.length}. ${describeTask(data, next, today)}` }
-        : { mode: "unclear", spokenAnswer: listIds.length ? "That was the last one on the list." : "There's no list to go through yet. Ask for one, like what's overdue." };
+      if (next) return { mode: "open_task", taskId: next, spokenAnswer: `Number ${at + 2} of ${listIds.length}. ${describeTask(data, next, today)}` };
+      if (listIds.length) return { mode: "unclear", spokenAnswer: "That was the last one on the list." };
+      // No list yet: "what's up next" is the open tasks due soonest.
+      const soon = upcomingIds(data);
+      if (!soon.length) return { mode: "unclear", spokenAnswer: "There are no open tasks with a due date." };
+      return { mode: "list", filter: "all", personId: null, phaseId: null, listIds: soon, taskId: soon[0], spokenAnswer: `Up next, the ${plural(soon.length, "open task")} due soonest. First: ${describeTask(data, soon[0], today)}` };
     }
     case "add_task": {
       const r = completeDraft(data, draft, p.newTask, utterance, today, viewer);
@@ -206,7 +217,16 @@ function shape(data: Record<string, unknown>, p: Proposal, focusTaskId: string |
       return { mode: "confirm_shift", shift: r.change, spokenAnswer: r.question };
     }
     case "briefing": return { mode: "briefing", spokenAnswer: briefing(data, typeof data.account === "string" && data.account ? data.account : "the customer", today) };
-    case "news": return { mode: "news", spokenAnswer: whatsNew(data, today, newsDays(utterance)) };
+    case "news": {
+      const side = p.filter === "buyer" || p.filter === "seller" ? p.filter : null;
+      const personId = p.personId && Array.isArray(data.people) && (data.people as Array<{ id?: unknown }>).some(x => x.id === p.personId) ? p.personId : null;
+      return { mode: "news", spokenAnswer: whatsNew(data, today, newsDays(utterance), { side, personId }, typeof data.account === "string" && data.account ? data.account : "the customer") };
+    }
+    case "view_phase": {
+      const r = checkView(data, p.phaseId, p.viewOpen ?? null);
+      if (!r.ok) return { mode: "unclear", spokenAnswer: r.reason };
+      return { mode: "view_phase", phaseIds: r.phaseIds, open: r.open, spokenAnswer: r.said };
+    }
     case "act_phase": {
       const r = checkPhaseEdit(data, p.phaseId, p.phaseEdit, utterance, today);
       if (!r.ok) return { mode: "unclear", spokenAnswer: r.reason };
