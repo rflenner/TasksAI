@@ -277,6 +277,8 @@ button { cursor: pointer; }
 .empty { color: var(--hint); font-size: 13px; padding: 6px 5px; }
 
 /* Right rail */
+.act-plain .feed { margin-top: 6px; }
+.act-btn { position: relative; } .act-dot { position: absolute; top: 7px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); border: 2px solid #fff; box-sizing: content-box; }
 .rail { display: grid; gap: 14px; position: sticky; top: 20px; }
 .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 16px; }
 .panel h3 { font-size: 15px; color: var(--dark); margin: 0 0 4px; }
@@ -441,6 +443,17 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .em-foot { margin: 22px 0 0; color: #9299a3; font-size: 11.5px; }
 @media (max-width: 620px) { .em-overview { grid-template-columns: 1fr 1fr; } .em-body { padding: 22px 16px; } .em-head { padding: 18px 16px; } .po-row { grid-template-columns: 1fr; } }
 .page-tabs { margin: -12px 0 22px; }
+.ts-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 25; width: min(380px, 92vw); max-height: min(70vh, 560px); overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 34px #17223426; padding: 14px 18px 12px; }
+.ts-pop-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; } .ts-pop-head h3 { margin: 0; font-size: 15px; color: var(--dark); }
+.ts-pop .panel { border: 0; padding: 0; background: none; } .ts-pop .panel > h3 { display: none; }
+.page-tabs { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; }
+.tabs-status { display: flex; align-items: center; gap: 6px; position: relative; }
+.ts-icon { position: relative; width: 38px; height: 38px; border: 1px solid transparent; background: none; border-radius: 10px; color: var(--navy); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.ts-icon:hover, .ts-icon:focus-visible { background: #eef4fc; border-color: #dce7f5; outline: none; }
+.ts-icon::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: 0; background: var(--dark); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; padding: 5px 9px; border-radius: 6px; opacity: 0; pointer-events: none; transform: translateY(-2px); transition: opacity .12s, transform .12s; z-index: 30; }
+.ts-icon:hover::after, .ts-icon:focus-visible::after { opacity: 1; transform: none; transition-delay: .25s; }
+.ts-badge { position: absolute; top: 3px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--orange); color: #fff; font-size: 10px; font-weight: 800; font-style: normal; line-height: 16px; text-align: center; box-sizing: border-box; }
+.ts-icon .act-dot { top: 6px; right: 7px; width: 7px; height: 7px; }
 .page-tabs .tabs em { font-style: normal; background: #e4eaf1; border-radius: 10px; padding: 1px 7px; margin-left: 6px; font-size: 11px; color: #5d6470; }
 .page-tabs .tabs .on em { background: #d3e1f3; color: var(--navy); }
 .digest-strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 460px); gap: 18px; align-items: end; margin-bottom: 26px; }
@@ -1446,7 +1459,16 @@ function tabsBlock() {
   return `<div class="page-tabs"><div class="tabs" role="tablist" aria-label="Plan sections">
     <button type="button" role="tab" data-tab="plan" aria-selected="${ui.tab === "plan"}" class="${ui.tab === "plan" ? "on" : ""}">Plan</button>
     <button type="button" role="tab" data-tab="people" aria-selected="${ui.tab === "people"}" class="${ui.tab === "people" ? "on" : ""}">People <em>${n}</em></button>
-  </div></div>`;
+  </div>${tabsStatus()}</div>`;
+}
+// Right of the Plan / People tabs: the latest updates (opens the activity panel) and what is pending (jumps to the filters).
+document.addEventListener("click", e => { if (ui.actPanel && !e.target.closest(".tabs-status")) { ui.actPanel = false; render(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && ui.actPanel) { ui.actPanel = false; render(); } });
+function tabsStatus() {
+  const vis = state.tasks.filter(visible), overdue = vis.filter(t => matches(t, "overdue")).length;
+  const week = lastWeek(activityItems()).length;
+  const tip = (kind, label, svg, extra) => `<button type="button" class="ts-icon" data-act-open="${kind}" data-tip="${esc(label)}" aria-label="${esc(label)}">${svg}${extra}</button>`;
+  return `<div class="tabs-status">${tip("next", overdue ? `Next up · ${overdue} overdue` : "Next up", ico('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.5 1.5L7 5M3.5 12l1.5 1.5L7 11M3.5 18l1.5 1.5L7 17"/>', 19), overdue ? `<i class="ts-badge">${overdue}</i>` : "")}${tip("activity", week ? `Recent activity · ${week} this week` : "Recent activity", ico('<path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/>', 19), activityDot() ? `<i class="act-dot"></i>` : "")}${ui.actPanel ? `<div class="ts-pop" role="dialog" aria-label="${ui.actPanel === "next" ? "Next up" : "Recent activity"}"><div class="ts-pop-head"><h3>${ui.actPanel === "next" ? "Next up" : "Recent activity"}</h3><button type="button" class="ph-btn" data-act-close aria-label="Close">×</button></div>${ui.actPanel === "next" ? nextUpPanel() : activityPanel()}</div>` : ""}</div>`;
 }
 // Milestones visible to the current viewer, in date order, with their most recent date change (if within 14 days).
 function milestones() { return state.tasks.filter(t => t.milestone && visible(t) && t.due).sort((a, b) => a.due.localeCompare(b.due)); }
@@ -1460,7 +1482,7 @@ function shiftText(c) { const n = Math.round((d(c.to) - d(c.from)) / 864e5); ret
 
 function planTab() {
   return `${setupBlock()}${statsBlock()}${timelineBlock()}${filterBar()}
-    <div class="cols"><div>${phasesBlock()}</div><aside class="rail">${activityPanel()}</aside></div>`;
+    <div>${phasesBlock()}</div>`;
 }
 
 function titleBlock() {
@@ -2500,10 +2522,12 @@ function activityList(items) {
   }
   return `<ul class="feed">${list}</ul>`;
 }
+// Recent activity opens from a button in the header (it replaced the side column and "Next up"); a dot shows when something is new since the last look.
+function activityDot() { const all = activityItems(); if (!all.length) return false; let seen = ""; try { seen = localStorage.getItem("cp-act-seen-" + state.id) || ""; } catch (e) {} return all[0].at > seen; }
 function activityPanel() {
   const all = activityItems(), major = all.filter(a => MAJOR.test(a.text)).slice(0, 6), week = lastWeek(all);
   if (ui.actOpen) requestAiSummary(week);
-  return `${nextUpPanel()}<section class="panel"><h3>Recent activity</h3>
+  return `<section class="act-plain">
     ${major.length ? activityList(major) : `<p class="hint" style="margin:6px 0 0">No major updates yet.</p>`}
     ${all.length ? `<button type="button" class="act-toggle" data-act-toggle aria-expanded="${Boolean(ui.actOpen)}"><span class="i i-chev chev"></span>${ui.actOpen ? "Hide all activity" : `Show all activity (${all.length})`}</button>` : ""}
     ${ui.actOpen ? `<div class="act-all"><div class="act-summary" id="act-summary">${summaryHtml(week)}</div>${activityList(all)}</div>` : ""}
@@ -3064,9 +3088,17 @@ function wirePage() {
   app.querySelectorAll("[data-upload-later]").forEach(b => b.onclick = () => { ui.uploadOffer = null; render(); });
   app.querySelectorAll("[data-demo]").forEach(b => b.onclick = openDemoPlan);
   if (!state) { wireSetup(app); wireWizard(app); return; }
-  app.querySelectorAll("[data-act-toggle]").forEach(b => b.onclick = () => { ui.actOpen = !ui.actOpen; render(); });
-  app.querySelectorAll("[data-nu]").forEach(b => b.onclick = () => { ui.open = b.dataset.nu; render(); });
+  app.querySelectorAll("[data-act-open]").forEach(b => b.onclick = () => {
+    const kind = b.dataset.actOpen === "next" ? "next" : "activity";
+    if (ui.actPanel === kind) { ui.actPanel = false; render(); return; }
+    ui.actPanel = kind;
+    if (ui.actPanel === "activity") { try { localStorage.setItem("cp-act-seen-" + state.id, new Date().toISOString().slice(0, 10)); } catch (e) {} }
+    render();
+  });
+  app.querySelectorAll("[data-nu]").forEach(b => b.onclick = () => { ui.actPanel = false; ui.open = b.dataset.nu; render(); });
   app.querySelectorAll("[data-nu-all]").forEach(b => b.onclick = () => { ui.nextAll = !ui.nextAll; render(); });
+  app.querySelectorAll("[data-act-close]").forEach(b => b.onclick = () => { ui.actPanel = false; render(); });
+  app.querySelectorAll("[data-act-toggle]").forEach(b => b.onclick = () => { ui.actOpen = !ui.actOpen; render(); });
   wirePhases(app);
   wireReorder(app);
   // Inside the Task AI app (served at /close-plans) the sidebar leads back to the task list; in the stand-alone demo it explains instead.
