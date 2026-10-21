@@ -928,6 +928,9 @@ button.wz-card { font: inherit; text-align: left; }
 .toast.toast-center { bottom: auto; top: 50%; transform: translate(-50%, -50%); padding: 18px 28px; font-size: 15px; border-radius: 12px; box-shadow: 0 12px 40px #17223455; text-align: center; max-width: min(520px, calc(100vw - 40px)); }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: 0 10px 30px #17223440; }
 
+/* Next up and Recent activity: a side column on screens 1920px and wider, two icon buttons above that. */
+@media (max-width: 1919px) { .cols { grid-template-columns: minmax(0, 1fr); } .rail-wide { display: none; } }
+@media (min-width: 1920px) { .tabs-status { display: none; } }
 @media (max-width: 1180px) { .cols { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: 1fr 1fr; } }
 @media (max-width: 900px) {
   .side { display: none; } .main { margin-left: 0; }
@@ -1545,7 +1548,7 @@ function shiftText(c) { const n = Math.round((d(c.to) - d(c.from)) / 864e5); ret
 
 function planTab() {
   return `${setupBlock()}${statsBlock()}${timelineBlock()}${filterBar()}
-    <div>${phasesBlock()}</div>`;
+    <div class="cols"><div>${phasesBlock()}</div><aside class="rail rail-wide">${nextUpPanel()}<section class="panel"><h3>Recent activity</h3>${activityPanel()}</section></aside></div>`;
 }
 
 function titleBlock() {
