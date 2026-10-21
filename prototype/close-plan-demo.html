@@ -480,6 +480,12 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .em-overview span { display: block; font-size: 10.5px; color: #7a8492; font-weight: 700; }
 .em-overview b { display: block; color: #173f76; font-size: 14px; margin-top: 3px; overflow-wrap: anywhere; }
 .em-h { margin: 24px 0 12px; color: #102f59; font-size: 16px; }
+.em-phases { display: grid; gap: 8px; }
+.em-phase { display: flex; gap: 12px; align-items: flex-start; border: 1px solid #dfe5ec; border-radius: 10px; padding: 11px 14px; }
+.em-ph-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: #eef3fa; color: #173f76; font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+.em-ph-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.em-ph-main b { color: #173f76; font-size: 14px; } .em-ph-main small { color: #7a8492; font-size: 12px; }
+.em-ph-main i { display: block; height: 5px; border-radius: 3px; background: #e8edf3; margin-top: 5px; overflow: hidden; } .em-ph-main u { display: block; height: 100%; background: #25784b; }
 .em-card { border: 1px solid #dfe5ec; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
 .em-card-h { padding: 12px 18px; background: #eef3fa; font-size: 15px; font-weight: 700; color: #173f76; line-height: 1.35; }
 .em-parent { font-size: 11px; font-weight: 400; color: #7a8492; margin-top: 2px; }
@@ -2462,18 +2468,22 @@ function renderInvite() {
   const p = person(ui.inviteFor), first = p.name.split(" ")[0], from = person(me());
   const a = p.access || ACCESS_DEFAULTS.buyer;
   const mine = state.tasks.filter(t => t.shared && (!parentOf(t) || parentOf(t).shared) && t.status !== "Closed" && onTask(t, p.id)).sort((x, y) => (x.due || "9999").localeCompare(y.due || "9999"));
+  const sign = state.tasks.find(t => t.key === "sign"), live = state.tasks.find(t => t.key === "live"), shared = state.tasks.filter(t => t.shared && !parentOf(t));
   const can = [a.level === "view" ? "See the whole shared plan" : "See the whole shared plan and post updates on your tasks", a.level === "own" ? "Close and edit the tasks you own or work on" : a.level === "all" ? "Edit any task on the plan" : "", a.create && a.level !== "view" ? "Add new tasks and subtasks" : "", state.planOwners.buyer === p.id ? `Invite and manage colleagues from ${B()}, as plan owner` : ""].filter(Boolean);
   root.innerHTML = `<div class="overlay em-overlay" data-iclose-bg><div class="em-modal" role="dialog" aria-modal="true" aria-label="Invitation preview">
     <div class="em-meta"><div><b>To</b> ${esc(p.name)} &lt;${esc(p.email)}&gt;</div><div><b>Subject</b> ${esc(from.name)} invited you to the ${esc(B())} × iSEEit close plan</div><button type="button" class="x" data-iclose aria-label="Close" style="top:14px;right:14px">×</button></div>
     <div style="padding:12px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px"><button type="button" class="btn sm" data-iclose>Cancel</button>${IN_APP && !state._demo ? `<button type="button" class="btn sm" id="inv-copy">Copy link instead</button>` : ""}<button type="button" class="btn sm primary" id="inv-send">${p.invite?.status === "invited" ? "Resend invitation" : "Send invitation"}</button></div>
     <div class="em-page"><div class="em-mail">
-      <div class="em-head"><span class="em-logo">Task</span> <span class="em-ai">AI</span> <span class="em-logo">– Close Plan</span></div>
+      <div class="em-head"><img src="/iseeit-logo.png" width="44" height="44" alt="iSEEit" style="display:inline-block;border-radius:8px;vertical-align:middle"><span class="em-logo" style="font-size:20px;margin-left:12px">Mutual Closeplan</span></div>
       <div class="em-body">
         <div class="em-hi">Hi ${esc(first)},</div>
         <p style="color:#202735;font-size:14px;line-height:1.55;margin:8px 0 0">${esc(from.name)} from iSEEit invited you to the shared plan for <b>${esc(state.title)}</b>. It shows every step to signature and go-live, who owns what, and when it's due.</p>
+        <div class="em-overview"><div><span>Target signature</span><b>${sign ? fmtY(sign.due) : "–"}</b></div><div><span>Target go-live</span><b>${live ? fmtY(live.due) : "–"}</b></div><div><span>Plan owner ${esc(B())}</span><b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></div><div><span>Plan owner iSEEit</span><b>${esc(person(state.planOwners.seller).name)}</b></div></div>
+        <h4 class="em-h">The plan, phase by phase</h4>
+        <div class="em-phases">${state.phases.map((ph, i) => { const ts = shared.filter(t => t.phase === ph.id), done = ts.filter(t => t.status === "Closed").length, ds = ts.map(t => t.due).filter(Boolean).sort(); return `<div class="em-phase"><span class="em-ph-n">${i + 1}</span><div class="em-ph-main"><b>${esc(ph.name)}</b><small>${ds.length ? `${fmt(ds[0])}${ds.length > 1 && ds[ds.length - 1] !== ds[0] ? ` – ${fmtY(ds[ds.length - 1])}` : ""} · ` : ""}${done} of ${ts.length} tasks closed</small><i><u style="width:${ts.length ? Math.round(done / ts.length * 100) : 0}%"></u></i></div></div>`; }).join("")}</div>
         <h4 class="em-h">What you can do</h4>
         <ul style="margin:0;padding-left:18px;color:#4a5160;font-size:13.5px;line-height:1.7">${can.map(c => `<li>${esc(c)}</li>`).join("")}</ul>
-        ${mine.length ? `<h4 class="em-h">Waiting for you</h4>${mine.slice(0, 4).map(t => emailCard(t, p.id)).join("")}${mine.length > 4 ? `<p class="em-more">+${mine.length - 4} more in the plan.</p>` : ""}` : ""}
+        ${mine.length ? `<h4 class="em-h">Waiting for you</h4>${mine.slice(0, 2).map(t => emailCard(t, p.id)).join("")}${mine.length > 2 ? `<p class="em-more">+${mine.length - 2} more in the plan.</p>` : ""}` : ""}
         <span class="em-cta">Open the plan</span>
         <p class="em-foot">This link is personal to you, so don't forward it. No password needed. You'll get at most one email a week about this plan.</p>
       </div></div></div>

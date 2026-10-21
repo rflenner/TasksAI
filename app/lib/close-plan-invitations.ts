@@ -5,7 +5,7 @@ import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb } from "../../db";
 import { closePlanEmailLog, closePlanLinks } from "../../db/schema";
 import { accessOf, customerPerson, isShared } from "./close-plan-share";
-import { accessSummary, renderAddedToPlan, renderInvitation, type PlanEmailTask, type Rendered } from "./close-plan-emails";
+import { accessSummary, renderAddedToPlan, renderInvitation, type PlanEmailTask, type PlanOverview, type Rendered } from "./close-plan-emails";
 import { createPlanLink } from "./close-plan-links";
 import { customerBase, internalBase } from "./close-plan-urls";
 import { isOptedOut, loadRules, normalizeEmail, unsubscribeToken, type NotificationRules } from "./close-plan-notify-rules";
@@ -27,6 +27,22 @@ export function waitingTasks(data: Obj, personId: string, today = new Date().toI
     .filter(t => t.status !== "Closed" && isShared(t, tasks) && (t.owner === personId || strs(t.coworkers).includes(personId)))
     .sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")))
     .map(t => ({ title: String(t.title || ""), due: typeof t.due === "string" ? t.due : null, overdue: typeof t.due === "string" && t.due < today, description: typeof t.desc === "string" ? t.desc.slice(0, 400) : undefined, status: typeof t.status === "string" ? t.status : undefined }));
+}
+
+// The plan at a glance for the invitation email: key dates, plan owners and each phase's dates and progress (shared top-level tasks only).
+export function planOverview(data: Obj): PlanOverview {
+  const tasks = arr(data.tasks), people = arr(data.people), owners = (data.planOwners || {}) as Obj;
+  const nameOf = (id: unknown) => { const p = people.find(x => x.id === id); return p && typeof p.name === "string" ? p.name : undefined; };
+  const shown = tasks.filter(t => !t.parent && isShared(t, tasks));
+  const dueOf = (key: string) => { const t = tasks.find(x => x.key === key); return t && typeof t.due === "string" ? t.due : null; };
+  return {
+    customer: typeof data.account === "string" && data.account ? data.account : "Customer",
+    signature: dueOf("sign"), goLive: dueOf("live"), customerOwner: nameOf(owners.buyer), sellerOwner: nameOf(owners.seller),
+    phases: arr(data.phases).map(ph => {
+      const ts = shown.filter(t => t.phase === ph.id), ds = ts.map(t => t.due).filter((d): d is string => typeof d === "string").sort();
+      return { name: String(ph.name || ""), from: ds[0] ?? null, to: ds[ds.length - 1] ?? null, done: ts.filter(t => t.status === "Closed").length, total: ts.length };
+    }),
+  };
 }
 
 // The invitation reminder: only for a link nobody has opened, after the configured days since the last email, at most
@@ -58,7 +74,7 @@ export async function sendInvitation(input: { plan: { id: string; title: string;
   if (!email) return { sent: false, url, reason: "This contact has no email address." };
   if (person.noEmail === true || await isOptedOut(email)) return { sent: false, url, reason: "This person asked not to get Close Plan emails." };
   const first = String(person.name || "").split(/\s+/)[0] || "there";
-  const mail = renderInvitation({ firstName: first, fromName: input.fromName, planTitle: plan.title, url, unsubscribeUrl: unsubscribeUrl(email, input.baseUrl), can: accessSummary(accessOf(person)), tasks: waitingTasks(plan.data, personId), reminder: input.kind === "invitation_reminder" });
+  const mail = renderInvitation({ firstName: first, fromName: input.fromName, planTitle: plan.title, url, unsubscribeUrl: unsubscribeUrl(email, input.baseUrl), can: accessSummary(accessOf(person)), tasks: waitingTasks(plan.data, personId), overview: planOverview(plan.data), reminder: input.kind === "invitation_reminder" });
   const result = await sendWithResend({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
   if (!result.sent) return { sent: false, url, reason: result.reason || "The email could not be sent." };
   await logEmail(input.kind, plan.id, personId, email);

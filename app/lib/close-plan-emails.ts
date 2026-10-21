@@ -5,6 +5,8 @@
 import { emailShell, esc, taskCard } from "./email";
 
 export type PlanEmailTask = { title: string; due?: string | null; overdue?: boolean; description?: string; status?: string };
+// The plan at a glance for the invitation: the key dates, both plan owners and every phase with its dates and progress.
+export type PlanOverview = { customer: string; signature?: string | null; goLive?: string | null; customerOwner?: string; sellerOwner?: string; phases: { name: string; from?: string | null; to?: string | null; done: number; total: number }[] };
 export type Rendered = { subject: string; html: string; text: string };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -24,6 +26,11 @@ const section = (title: string) => `<h2 style="margin:28px 0 12px;color:#102f59;
 const canBox = (items: string[]) => items.length ? `${section("What you can do")}<div style="background:#f5f8fc;border:1px solid #e3e8ee;border-radius:12px;padding:14px 18px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${items.map(c => `<tr><td width="20" valign="top" style="color:#25784b;font-weight:800;font-size:14px;padding:3px 0">✓</td><td style="color:#2b3445;font-size:14px;line-height:1.5;padding:3px 0">${esc(c)}</td></tr>`).join("")}</table></div>` : "";
 const cards = (tasks: PlanEmailTask[], planTitle: string, url: string) => tasks.length
   ? `${section("Waiting for you")}<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${tasks.map(t => taskCard({ subject: t.title, description: t.description, project: planTitle, due: niceDate(t.due), overdue: t.overdue, status: t.status === "In progress" ? "In progress" : "Open", url })).join("")}</table>` : "";
+const tile = (label: string, value: string) => `<td width="25%" valign="top" style="padding:0 4px"><div style="border:1px solid #dfe5ec;border-radius:10px;padding:10px 12px"><div style="font-size:10.5px;font-weight:700;color:#7a8492">${esc(label)}</div><div style="font-size:14px;font-weight:700;color:#173f76;margin-top:3px">${esc(value)}</div></div></td>`;
+const phaseRange = (ph: PlanOverview["phases"][number]) => ph.from ? `${niceDate(ph.from)}${ph.to && ph.to !== ph.from ? ` – ${niceDate(ph.to)}` : ""} · ` : "";
+const overviewHtml = (o?: PlanOverview) => !o ? "" : `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px -4px 0;width:calc(100% + 8px)"><tr>${tile("Target signature", niceDate(o.signature) || "–")}${tile("Target go-live", niceDate(o.goLive) || "–")}${tile(`Plan owner ${o.customer}`, o.customerOwner || "not set")}${tile("Plan owner iSEEit", o.sellerOwner || "not set")}</tr></table>
+${o.phases.length ? `${section("The plan, phase by phase")}<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${o.phases.map((ph, i) => `<tr><td style="padding:0 0 8px"><div style="border:1px solid #dfe5ec;border-radius:10px;padding:11px 14px"><div style="font-size:14px;font-weight:700;color:#173f76">${i + 1}. ${esc(ph.name)}</div><div style="font-size:12px;color:#7a8492;margin-top:2px">${esc(phaseRange(ph))}${ph.done} of ${ph.total} tasks closed</div><div style="height:5px;border-radius:3px;background:#e8edf3;margin-top:7px"><div style="height:5px;border-radius:3px;background:#25784b;width:${ph.total ? Math.round(ph.done / ph.total * 100) : 0}%"></div></div></div></td></tr>`).join("")}</table>` : ""}`;
+const overviewText = (o?: PlanOverview) => !o ? "" : `\n\nTHE PLAN\nTarget signature: ${niceDate(o.signature) || "-"}\nTarget go-live: ${niceDate(o.goLive) || "-"}\nPlan owner ${o.customer}: ${o.customerOwner || "not set"}\nPlan owner iSEEit: ${o.sellerOwner || "not set"}${o.phases.map((ph, i) => `\n${i + 1}. ${ph.name} (${phaseRange(ph)}${ph.done} of ${ph.total} tasks closed)`).join("")}`;
 const taskText = (tasks: PlanEmailTask[]) => tasks.length ? `\n\nWAITING FOR YOU\n${tasks.map(t => `- ${t.title}${t.overdue ? " (overdue)" : t.due ? ` (due ${niceDate(t.due)})` : ""}`).join("\n")}` : "";
 const footer = (unsubscribeUrl: string) => `You are getting this because you are on a close plan. <a href="${esc(unsubscribeUrl)}" style="color:#697181">Stop these emails</a>.`;
 
@@ -37,18 +44,18 @@ export function accessSummary(access: { level?: string; create?: boolean } | und
   ].filter(Boolean);
 }
 
-export function renderInvitation(input: { firstName: string; fromName: string; planTitle: string; url: string; unsubscribeUrl: string; can: string[]; tasks: PlanEmailTask[]; reminder?: boolean }): Rendered {
-  const shown = input.tasks.slice(0, 4), more = input.tasks.length - shown.length;
+export function renderInvitation(input: { firstName: string; fromName: string; planTitle: string; url: string; unsubscribeUrl: string; can: string[]; tasks: PlanEmailTask[]; overview?: PlanOverview; reminder?: boolean }): Rendered {
+  const shown = input.tasks.slice(0, input.overview ? 2 : 4), more = input.tasks.length - shown.length;
   const introText = input.reminder
     ? `${input.fromName} from iSEEit invited you to the shared plan for ${input.planTitle}, and you haven't opened it yet. It takes a minute and needs no password.`
     : `${input.fromName} from iSEEit invited you to the shared plan for ${input.planTitle}. It shows every step to signature and go-live, who owns what, and when it's due.`;
   const html = emailShell(`${eyebrow(input.reminder ? "REMINDER" : "YOU’RE INVITED")}${heading(`Hello ${input.firstName}, ${input.reminder ? "your shared plan is waiting." : "your shared plan is ready."}`)}${para(esc(introText).replace(esc(input.planTitle), `<b>${esc(input.planTitle)}</b>`))}
-${canBox(input.can)}${cards(shown, input.planTitle, input.url)}${more > 0 ? `<p style="margin:2px 0 0;color:#9299a3;font-size:12px">+${more} more in the plan.</p>` : ""}
+${overviewHtml(input.overview)}${canBox(input.can)}${cards(shown, input.planTitle, input.url)}${more > 0 ? `<p style="margin:2px 0 0;color:#9299a3;font-size:12px">+${more} more in the plan.</p>` : ""}
 ${button(input.url, "Open the plan")}${small("This link is personal to you, so please don't forward it. No password needed. You'll get at most one email a week about this plan.")}`, footer(input.unsubscribeUrl), header());
   return {
     subject: input.reminder ? `Reminder: your ${input.planTitle} plan is waiting` : `${input.fromName} invited you to the ${input.planTitle} plan`,
     html,
-    text: `Hello ${input.firstName},\n\n${introText}\n\nWHAT YOU CAN DO\n${input.can.map(c => `- ${c}`).join("\n")}${taskText(shown)}${more > 0 ? `\n+${more} more in the plan.` : ""}\n\nOpen the plan: ${input.url}\n\nThis link is personal to you, so please don't forward it. No password needed.\n\nStop these emails: ${input.unsubscribeUrl}`,
+    text: `Hello ${input.firstName},\n\n${introText}${overviewText(input.overview)}\n\nWHAT YOU CAN DO\n${input.can.map(c => `- ${c}`).join("\n")}${taskText(shown)}${more > 0 ? `\n+${more} more in the plan.` : ""}\n\nOpen the plan: ${input.url}\n\nThis link is personal to you, so please don't forward it. No password needed.\n\nStop these emails: ${input.unsubscribeUrl}`,
   };
 }
 
