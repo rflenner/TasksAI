@@ -112,6 +112,11 @@ button { cursor: pointer; }
 .sf-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 12px 3px 5px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; }
 .sf-chip.ok { background: #eaf6ef; color: #25784b; border-color: #cfe9da; } .sf-chip.warn { background: #fff4de; color: #9b5d00; border-color: #f3dca9; } .sf-chip.bad { background: #fdecea; color: #a8402f; border-color: #f1c6bf; }
 .crm-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef4fc; color: var(--navy); border: 1px solid #dce7f5; border-radius: 14px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
+.title-actions [data-tip] { position: relative; }
+.title-actions [data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; transform: translate(-50%, -2px); background: var(--dark); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; padding: 5px 9px; border-radius: 6px; opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s; z-index: 30; }
+.title-actions [data-tip]:hover::after, .title-actions [data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); transition-delay: .25s; }
+.title-actions .ph-btn[data-tip]::after { left: auto; right: 0; transform: translateY(-2px); } .title-actions .ph-btn[data-tip]:hover::after, .title-actions .ph-btn[data-tip]:focus-visible::after { transform: none; }
+.title-actions .ph-btn.on::after { display: none; }
 .title-actions { display: flex; gap: 10px; align-items: center; flex: none; }
 .btn { height: 42px; border: 1px solid #d7dce3; background: #fff; border-radius: 8px; padding: 0 18px; font-weight: 700; color: var(--navy); display: inline-flex; align-items: center; gap: 8px; }
 .btn.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
@@ -180,6 +185,14 @@ button { cursor: pointer; }
 .pdf-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; font-size: 14px; }
 .vx-btn { position: fixed; z-index: 60; bottom: 22px; right: 22px; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid #d7dce3; background: #fff; color: var(--navy); font-weight: 700; font-size: 14px; box-shadow: 0 8px 30px rgba(16,47,89,.18); cursor: pointer; }
 .vx-btn:hover { border-color: var(--navy); }
+/* Task AI's Live Voice Assistant icon: seven sound bars. The floating launcher shows once the page is scrolled away from the top. */
+.vx-wave { display: block; flex: none; } .vx-wave.live line { transform-box: fill-box; transform-origin: center; animation: vx-wave 1.1s ease-in-out infinite; } .vx-wave.live line:nth-child(2n) { animation-delay: -.35s; } .vx-wave.live line:nth-child(3n) { animation-delay: -.7s; }
+@keyframes vx-wave { 0%, 100% { transform: scaleY(.4); } 50% { transform: scaleY(1); } } @media (prefers-reduced-motion: reduce) { .vx-wave.live line { animation: none; } }
+.vx-fab { position: fixed; z-index: 55; bottom: 22px; right: 22px; width: 54px; height: 54px; border-radius: 50%; border: 0; background: var(--navy); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 8px 30px rgba(16,47,89,.3); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .18s, transform .18s; }
+.vx-fab.show { opacity: 1; transform: none; pointer-events: auto; } .vx-fab:hover { background: #0f2f5c; }
+.vx-fab::after { content: attr(data-tip); position: absolute; right: 0; bottom: calc(100% + 8px); background: var(--dark); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; padding: 5px 9px; border-radius: 6px; opacity: 0; pointer-events: none; transition: opacity .12s; } .vx-fab:hover::after, .vx-fab:focus-visible::after { opacity: 1; transition-delay: .25s; }
+.vx-fab.left { right: auto; left: 22px; } .vx-fab.left::after { right: auto; left: 0; }
+@media print { .vx-fab { display: none !important; } }
 .vx-panel { position: fixed; z-index: 60; bottom: 22px; right: 22px; width: min(320px, calc(100vw - 32px)); background: #fff; border: 1px solid #e3e8ee; border-radius: 16px; box-shadow: 0 8px 30px rgba(16,47,89,.2); padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .vx-panel.left, .vx-btn.left { right: auto; left: 22px; }
 .vx-head { display: flex; align-items: center; gap: 8px; }
@@ -329,6 +342,9 @@ button { cursor: pointer; }
 .i-slack{background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%2336C5F0%22%20d%3D%22M9.3%2015.2a1.9%201.9%200%201%201-1.9-1.9h1.9v1.9zM10.3%2015.2a1.9%201.9%200%201%201%203.8%200v4.7a1.9%201.9%200%201%201-3.8%200v-4.7z%22/%3E%3Cpath%20fill%3D%22%232EB67D%22%20d%3D%22M8.4%209.6a1.9%201.9%200%201%201%201.9-1.9v1.9H8.4zM8.4%2010.6a1.9%201.9%200%201%201%200%203.8H3.7a1.9%201.9%200%201%201%200-3.8h4.7z%22/%3E%3Cpath%20fill%3D%22%23ECB22E%22%20d%3D%22M14%208.7a1.9%201.9%200%201%201%201.9%201.9H14V8.7zM13%208.7a1.9%201.9%200%201%201-3.8%200V4a1.9%201.9%200%201%201%203.8%200v4.7z%22/%3E%3Cpath%20fill%3D%22%23E01E5A%22%20d%3D%22M15.6%2014.3a1.9%201.9%200%201%201-1.9%201.9v-1.9h1.9zM15.6%2013.3a1.9%201.9%200%201%201%200-3.8h4.7a1.9%201.9%200%201%201%200%203.8h-4.7z%22/%3E%3C/svg%3E") center/contain no-repeat}
 .card-notify { border: 1px solid transparent; background: none; color: #9299a3; padding: 5px; border-radius: 50%; cursor: pointer; display: inline-grid; place-items: center; flex: none; }
 .card-notify .i { width: 20px; height: 20px; } .card-notify:hover { background: #eef3fa; border-color: #d9e3f0; color: var(--navy); }
+/* The bell only shows while the pointer is over the task (always on touch screens, where there is no hover). */
+@media (hover: hover) { .card > .card-notify, .ptask .card-notify { opacity: 0; } .card:hover > .card-notify, .ptask:hover .card-notify, .card-notify:focus-visible { opacity: 1; } }
+.ptask .card-notify { justify-self: end; } .ptask .card-notify .i { width: 18px; height: 18px; }
 .card > .card-notify { position: absolute; right: 12px; top: 10px; } .drawer > .card-notify { position: absolute; right: 74px; top: calc(28px + env(safe-area-inset-top, 0px)); padding: 6px; } .drawer > .card-notify .i { width: 22px; height: 22px; }
 .notify-modal-overlay { position: fixed; inset: 0; background: #17223466; display: flex; align-items: center; justify-content: center; z-index: 70; padding: 20px; }
 .notify-modal { width: 100%; max-width: 520px; max-height: min(680px, 90vh); overflow-y: auto; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px #17223440; padding: 30px 32px; position: relative; }
@@ -595,7 +611,7 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .gear { border: 1px solid transparent; background: none; width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center; color: #7e858f; }
 .gear:hover { background: #eef3fa; border-color: #d9e3f0; color: var(--navy); }
 .ptasks { padding: 6px 16px 10px 66px; display: grid; }
-.ptask { display: grid; grid-template-columns: 86px minmax(0, 1fr) 76px 110px 120px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
+.ptask { display: grid; grid-template-columns: 86px minmax(0, 1fr) 76px 110px 120px 30px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
 .ptask:last-child { border-bottom: 0; }
 .ptask .status { margin: 0; justify-self: start; }
 .pt-title { border: 0; background: none; padding: 0; text-align: left; color: var(--navy); font-size: 13.5px; min-width: 0; }
@@ -619,7 +635,7 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .tgl:has(input:disabled) { color: var(--hint); }
 .btn.danger-ghost { color: #a84235; border-color: #f2c9c1; }
 @media (max-width: 1100px) { .prow-main { grid-template-columns: minmax(0, 1fr) auto; } .prow-stats { grid-column: 1 / -1; grid-row: 2; } .prow-roles { grid-column: 1 / -1; grid-row: 3; } .prow-acts { grid-column: 2; grid-row: 1; } }
-@media (max-width: 700px) { .ptasks { padding-left: 16px; } .ptoggle { padding-left: 16px; } .prow-acts { min-width: 0; } .ptask { grid-template-columns: auto minmax(0, 1fr); } .pt-role, .pt-phase { display: none; } .pt-due { grid-column: 2; text-align: left; } .prow-acts .spill { display: none; } }
+@media (max-width: 700px) { .ptasks { padding-left: 16px; } .ptoggle { padding-left: 16px; } .prow-acts { min-width: 0; } .ptask { grid-template-columns: auto minmax(0, 1fr); } .ptask .card-notify { display: none; } .pt-role, .pt-phase { display: none; } .pt-due { grid-column: 2; text-align: left; } .prow-acts .spill { display: none; } }
 
 .timeline { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 18px 12px; margin-bottom: 8px; overflow-x: auto; overflow-y: visible; }
 .g-row { display: grid; grid-template-columns: 150px minmax(520px, 1fr); align-items: center; }
@@ -875,7 +891,7 @@ button.wz-card { font: inherit; text-align: left; }
 .r-task td { border-top: 1px solid #e3e8ef; }
 .r-subtask td { color: #4a5160; font-size: .95em; padding-top: 4px; padding-bottom: 4px; border-bottom: 1px dashed #eef1f5; }
 .r-subtask td:nth-child(2) { padding-left: 22px; }
-.r-desc { color: #6f7885; font-size: .92em; margin-top: 2px; }
+.r-desc, div.r-desc.rt-view { color: #6f7885; font-size: .92em; line-height: inherit; margin-top: 2px; }
 .r-sub { color: #8a919c; font-size: .88em; }
 .r-phase-head { background: #eef2f7; border-left: 3px solid #b3c3d8; border-radius: 6px; padding: 8px 12px; margin: 22px 0 8px; break-after: avoid; page-break-after: avoid; }
 .r-phase-head h3 { margin: 0; }
@@ -1561,9 +1577,9 @@ function titleBlock() {
       <div class="title-meta"><div><small>Target signature</small><b>${sign ? fmtY(sign.due) : "–"}</b></div><div><small>Target go-live</small><b>${live ? fmtY(live.due) : "–"}</b></div><div><small>Plan owner ${esc(B())}</small><b>${state.planOwners.buyer ? esc(person(state.planOwners.buyer).name) : "not set"}</b></div><div><small>Plan owner iSEEit</small><b>${esc(person(state.planOwners.seller).name)}</b></div></div>
     </div>
     <div class="title-actions">
-      ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn icon-btn" data-vx-title aria-label="Voice assistant" title="Voice assistant">${ico(ICO.mic, 18)}</button>` : ""}
-      ${ui.mode === "seller" ? `<button type="button" class="btn icon-btn" data-report aria-label="Download PDF" title="Download PDF">${DOWNLOAD}</button><button type="button" class="btn primary" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : `<button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>`}
-      ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" title="Plan options">${DOTS}</button>
+      ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn icon-btn" data-vx-title aria-label="Live Voice Assistant" data-tip="Live Voice Assistant">${WAVE(18)}</button>` : ""}
+      ${ui.mode === "seller" ? `<button type="button" class="btn icon-btn" data-report aria-label="Download PDF" data-tip="Download as PDF">${DOWNLOAD}</button><button type="button" class="btn primary" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : `<button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>`}
+      ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" data-tip="More plan options">${DOTS}</button>
         ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">${ico(ICO.print)}</span>Export PDF for ${esc(B())}</button>${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-sfplay><span class="mi">${ico(ICO.external)}</span>Open Salesforce close plan</button>` : ""}${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-demofill><span class="mi">${ico(ICO.sparkle)}</span>Fill with demo content</button>${state.demo && state.demo.anchor ? `<button type="button" role="menuitem" data-demoreset><span class="mi">${ico(ICO.calendar)}</span>Reset demo dates to today</button>` : ""}` : ""}${(IN_APP || SFPREVIEW) && !state._demo && canDeleteThisPlan() ? `<button type="button" role="menuitem" ${sfConnected() ? "data-sfresync" : "data-sfsync"}><span class="mi">${ico(ICO.refresh)}</span>${sfConnected() ? "Sync with Salesforce" : "Connect to Salesforce…"}</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">${ico(ICO.trash)}</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
   </div>
@@ -2354,6 +2370,7 @@ function personTasks(p) {
       <span class="pt-role">${role(t)}</span>
       <span class="pt-phase">${esc(ph.name)}</span>
       <span class="pt-due ${isOver(t) ? "late" : ""}">${t.status === "Closed" ? (t.closedAt ? `Closed ${fmt(t.closedAt)}` : "Closed") : isOver(t) ? `Overdue · ${fmt(t.due)}` : t.due ? fmt(t.due) : "No date"}</span>
+      ${bellButton(t) || "<span></span>"}
     </div>`; }).join("")}</div>`;
 }
 
@@ -3365,6 +3382,7 @@ function showTip(m) {
 }
 function hideTip() { const tip = document.getElementById("float-tip"); if (tip) tip.hidden = true; }
 window.addEventListener("scroll", hideTip, { passive: true });
+window.addEventListener("scroll", () => { const f = document.querySelector(".vx-fab"); if (f) f.classList.toggle("show", window.scrollY > 240); }, { passive: true });
 
 let pendingUpdate = null;
 function closeDrawer() { if (pendingUpdate) { const f = pendingUpdate; pendingUpdate = null; f(); } ui.open = null; ui.addSub = false; ui.picker = null; ui.delTask = null; render(); }
@@ -4297,6 +4315,7 @@ async function pollLink() {
 const VX_STALE_MS = 30000;
 const voice = { open: false, min: false, status: "idle", error: "", feed: [], seq: 0, pc: null, dc: null, stream: null, audio: null,
   history: [], listIds: [], pending: null, draft: null, help: false, caps: [], activeSince: 0, wantResponse: false, followUp: false, greeting: false, kinds: new Map(), said: new Map(), session: "", transcribing: true };
+const WAVE = (size = 20, live = false) => `<svg class="vx-wave ${live ? "live" : ""}" viewBox="36 34 448 480" width="${size}" height="${Math.round(size * 480 / 448)}" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" aria-hidden="true">${[[68, 226, 338], [132, 130, 434], [196, 178, 386], [260, 66, 482], [324, 178, 386], [388, 130, 434], [452, 226, 338]].map(([x, a, b]) => `<line x1="${x}" y1="${a}" x2="${x}" y2="${b}"/>`).join("")}</svg>`;
 const voiceAvailable = () => IN_APP && !LINK && Boolean(APP_ME) && Boolean(state) && !state._demo && !ui.wizard;
 function voiceAudit(...events) {
   if (!voice.session) return;
@@ -4686,9 +4705,13 @@ function renderVoice() {
   if (!voiceAvailable()) { if (voice.open) voiceClose(); root.innerHTML = ""; return; }
   const side = ui.open || ui.manage ? "left" : "";
   // Started from the "Voice assistant" button next to the title; the floating pill only shows a running, minimised session.
-  if (!voice.open) { root.innerHTML = ""; return; }
+  if (!voice.open) {
+    root.innerHTML = `<button type="button" class="vx-fab ${side} ${window.scrollY > 240 ? "show" : ""}" data-vx-fab aria-label="Live Voice Assistant" data-tip="Live Voice Assistant">${WAVE(24)}</button>`;
+    root.querySelector("[data-vx-fab]").onclick = () => { voice.open = true; voice.min = false; voiceStart(); };
+    return;
+  }
   if (voice.min) {
-    root.innerHTML = `<button type="button" class="vx-btn ${side}" data-vx-open><span class="vx-dot on"></span>Listening</button>`;
+    root.innerHTML = `<button type="button" class="vx-btn ${side}" data-vx-open>${WAVE(18, voice.status === "connected")}Listening</button>`;
     root.querySelector("[data-vx-open]").onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); };
     return;
   }
@@ -4698,8 +4721,8 @@ function renderVoice() {
     return `<div class="vx-item ${i.kind} ${i.pending ? "pending" : ""}">${esc(i.text) || "…"}</div>`;
   }).join("");
   const live = voice.status === "connected" || voice.status === "connecting";
-  root.innerHTML = `<div class="vx-panel ${side}" role="dialog" aria-label="Voice assistant">
-    <div class="vx-head"><span class="vx-dot ${voice.status === "connected" ? "on" : voice.status === "error" ? "bad" : ""}"></span><h2>Voice assistant</h2>
+  root.innerHTML = `<div class="vx-panel ${side}" role="dialog" aria-label="Live Voice Assistant">
+    <div class="vx-head"><span class="vx-dot ${voice.status === "connected" ? "on" : voice.status === "error" ? "bad" : ""}"></span><h2>Live Voice Assistant</h2>
       <button type="button" class="vx-x" data-vx-min aria-label="Minimise (keeps listening)" title="Minimise (keeps listening)">▾</button><button type="button" class="vx-x" data-vx-close aria-label="Stop and close" title="Stop and close">×</button></div>
     ${t ? `<div class="vx-screen" title="${esc(t.title)}">On screen: ${esc(t.title)}</div>` : ""}
     ${voice.help && voice.caps.length ? `<div class="vx-feed vx-help">${voice.caps.map(g => `<h3>${esc(g.group)}</h3>${g.items.map(i => i.includes("…") ? `<div class="vx-say pattern">“${esc(i)}”</div>` : `<button type="button" class="vx-say" data-vx-say="${esc(i)}">“${esc(i)}”</button>`).join("")}`).join("")}</div>`
