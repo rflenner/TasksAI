@@ -2862,7 +2862,7 @@ function renderDrawer() {
         <div class="field">Coworkers${peopleField(t, "coworkers", edit)}</div>
         <div class="field">Requested by${peopleField(t, "recipients", edit)}</div>
       </div>
-      ${ui.mode === "seller" ? `<div class="d-switches"><label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "checked" : ""}>Shared with ${esc(B())}</label><label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Milestone</label>${t.milestone ? `<label class="switch">Counts as <select id="d-key" aria-label="Counts as a target date"><option value="">—</option><option value="sign" ${t.key === "sign" ? "selected" : ""}>Target signature</option><option value="live" ${t.key === "live" ? "selected" : ""}>Target go-live</option></select></label>` : ""}</div>` : ""}
+      ${ui.mode === "seller" ? `<div class="d-switches"><label class="switch"><input type="checkbox" id="d-shared" ${t.shared ? "" : "checked"}>Share internal only</label><label class="switch"><input type="checkbox" id="d-mile" ${t.milestone ? "checked" : ""}>Milestone</label>${t.milestone ? `<label class="switch">Counts as <select id="d-key" aria-label="Counts as a target date"><option value="">—</option><option value="sign" ${t.key === "sign" ? "selected" : ""}>Target signature</option><option value="live" ${t.key === "live" ? "selected" : ""}>Target go-live</option></select></label>` : ""}</div>` : ""}
     </div>
 
     ${attachmentsSection(t)}
@@ -2907,7 +2907,7 @@ function renderDrawer() {
     if (t.milestone && from && to && from !== to) toast("Milestone moved. Both plan owners will see the change");
   };
   $("#d-phase").onchange = e => { t.phase = e.target.value; children(t.id).forEach(k => k.phase = t.phase); log(`moved “${t.title}” to ${state.phases.find(p => p.id === t.phase).name}`, t.id); save(); render(); };
-  const sh = $("#d-shared"); if (sh) sh.onchange = () => { t.shared = sh.checked; save(); render(); toast(t.shared ? `Now visible to ${B()}` : `Hidden from ${B()}`); };
+  const sh = $("#d-shared"); if (sh) sh.onchange = () => { t.shared = !sh.checked; save(); render(); toast(t.shared ? `Now visible to ${B()}` : `Hidden from ${B()}`); };
   const tk = $("#d-key"); if (tk) tk.onchange = () => { if (tk.value) state.tasks.forEach(x => { if (x.key === tk.value) delete x.key; }); if (tk.value) t.key = tk.value; else delete t.key; save(); render(); };
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
