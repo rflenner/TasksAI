@@ -2888,7 +2888,7 @@ function renderDrawer() {
     ${attachmentsSection(t)}
     <div class="section updates"><h3>Status updates</h3>
       ${t.updates.map((u, i) => [u, i]).filter(([u]) => !u.removed).reverse().map(([u, i]) => `<div class="update">${avatar(u.by)}<div style="flex:1;min-width:0"><b>${esc(person(u.by).name)}</b> <small>${fmtY(u.at)}${u.viaEmail ? " · via email reply" : person(u.by).side === "buyer" ? " · via shared link" : ""}</small><div class="upd-body rt-view">${richOf(u.html, u.text)}</div></div>${updCanRemove(u) ? (ui.updDel === `${t.id}:${i}` ? `<div class="upd-act"><button type="button" class="danger" data-upd-del-yes="${i}">Remove?</button><button type="button" data-upd-del-no>Keep</button></div>` : `<div class="upd-act"><button type="button" data-upd-del="${i}" aria-label="Remove this update">Remove</button></div>`) : ""}</div>`).join("") || `<p class="hint" style="margin:0 0 4px">No updates yet.</p>`}
-      ${canUpdate(t) ? `<form id="d-upd">${rteField("d-updtext", "", "", { label: "Update", placeholder: "Share progress, a blocker, or a decision…" })}<div class="upd-actions"><button class="btn primary" type="submit">Post update</button></div></form>` : ""}
+      ${canUpdate(t) ? `<form id="d-upd">${rteField("d-updtext", "", "", { label: "Update", placeholder: "Share progress, a blocker, or a decision…" })}</form>` : ""}
     </div>
     ${ui.mode === "seller" ? notifySection(t) + historySection(t) : ""}
     ${canDelete(t) ? `<div class="section d-del">${ui.delTask === t.id ? `<div class="del-box confirm" role="alertdialog" aria-label="Confirm deleting this ${parent ? "subtask" : "task"}">
@@ -2938,7 +2938,10 @@ function renderDrawer() {
   wireAttachments(root, t);
   wireFolds(root, t);
   wireUpdateRemove(root, t);
-  if ($("#d-upd")) $("#d-upd").onsubmit = e => { e.preventDefault(); const v = rteValue("d-updtext"); if (!v.plain) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v.plain, ...(v.html ? { html: v.html } : {}) }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
+  // No "Post update" button: an update is posted as soon as the box loses focus (a tap outside), or when the drawer closes.
+  const postUpdate = () => { if (!$("#d-updtext")) return; const v = rteValue("d-updtext"); if (!v.plain) return; t.updates.push({ by: me(), at: new Date().toISOString().slice(0, 10), text: v.plain, ...(v.html ? { html: v.html } : {}) }); log(`posted an update on “${t.title}”`, t.id); const moved = startWork(t); save(); render(); toast(`Update posted.${movedText(moved)}`); };
+  pendingUpdate = $("#d-updtext") ? postUpdate : null;
+  if ($("#d-updtext")) $("#d-updtext").addEventListener("focusout", e => { if (e.relatedTarget && $("#d-upd").contains(e.relatedTarget)) return; postUpdate(); });
 }
 // People fields (Owner, Coworkers, Requested by): chips in an input-like box. "+ Add" / "Change" opens a small
 // panel with a search box; results are grouped by team, and plan owners also see Task AI users not yet on the plan.
@@ -3247,7 +3250,8 @@ function showTip(m) {
 function hideTip() { const tip = document.getElementById("float-tip"); if (tip) tip.hidden = true; }
 window.addEventListener("scroll", hideTip, { passive: true });
 
-function closeDrawer() { ui.open = null; ui.addSub = false; ui.picker = null; ui.delTask = null; render(); }
+let pendingUpdate = null;
+function closeDrawer() { if (pendingUpdate) { const f = pendingUpdate; pendingUpdate = null; f(); } ui.open = null; ui.addSub = false; ui.picker = null; ui.delTask = null; render(); }
 
 // Site Admins: opens this plan's close plan in Salesforce (the Playground), no opportunity ID to copy. The
 // opportunity is stored on plans created from Sales AI; for older plans it's looked up by name and then kept.
