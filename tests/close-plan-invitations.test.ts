@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { accessSummary, renderAddedToPlan, renderInvitation } from "../app/lib/close-plan-emails";
-import { newInternalMembers, reminderDue, waitingTasks } from "../app/lib/close-plan-invitations";
+import { newInternalMembers, planOverview, reminderDue, waitingTasks } from "../app/lib/close-plan-invitations";
 import { DEFAULT_RULES } from "../app/lib/close-plan-notify-rules";
 
 test("the invitation email has the link, what the person can do, their open tasks and an unsubscribe link, and escapes names", () => {
@@ -88,4 +88,23 @@ test("the assigned-task email names who assigned what, in one email for several 
   const many = renderAssigned({ firstName: "Drew", byName: "Rizan", planTitle: "Cluepoints", tasks: [{ title: "A", role: "Owner" }, { title: "B", role: "Coworker", overdue: true }], url: "u", unsubscribeUrl: "x" });
   assert.match(many.subject, /assigned you 2 tasks in Cluepoints/);
   assert.match(many.text, /- B \(Coworker, overdue\)/);
+});
+
+test("the invitation shows the plan at a glance: dates, owners and each phase with its progress", () => {
+  const data = {
+    account: "Meridian", planOwners: { buyer: "b1", seller: "s1" },
+    people: [{ id: "b1", name: "Olivia Grant" }, { id: "s1", name: "Rizan Flenner" }],
+    phases: [{ id: "a", name: "Align" }, { id: "v", name: "Validate" }],
+    tasks: [
+      { id: "1", phase: "a", due: "2026-10-02", status: "Closed" }, { id: "2", phase: "a", due: "2026-09-10", status: "Open" },
+      { id: "3", phase: "a", parent: "2", due: "2026-09-11", status: "Open" }, { id: "4", phase: "v", due: "2026-10-30", status: "Open", shared: false },
+      { id: "5", phase: "v", due: "2026-11-27", status: "Open", key: "sign" },
+    ],
+  };
+  const o = planOverview(data);
+  assert.equal(o.signature, "2026-11-27"); assert.equal(o.customerOwner, "Olivia Grant"); assert.equal(o.sellerOwner, "Rizan Flenner");
+  assert.deepEqual(o.phases.map(p => [p.name, p.from, p.to, p.done, p.total]), [["Align", "2026-09-10", "2026-10-02", 1, 2], ["Validate", "2026-11-27", "2026-11-27", 0, 1]]);
+  const m = renderInvitation({ firstName: "G", fromName: "R", planTitle: "P", url: "u", unsubscribeUrl: "x", can: [], tasks: [], overview: o });
+  assert.match(m.html, /Plan owner Meridian/); assert.match(m.html, /1\. Align/); assert.match(m.html, /1 of 2 tasks closed/);
+  assert.match(m.text, /Plan owner iSEEit: Rizan Flenner/);
 });
