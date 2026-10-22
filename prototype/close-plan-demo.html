@@ -129,22 +129,21 @@ button { cursor: pointer; }
 /* Stats */
 /* Progress versus plan (iSEEit only): the Plan progress tile is twice as wide as the others and holds the score, the forecast signature date and a mini graph. */
 .stats.has-prog { grid-template-columns: 2fr 1fr 1fr 1fr; }
-.stat-prog { display: grid; grid-template-columns: minmax(120px, auto) minmax(110px, 1fr); gap: 4px 16px; align-items: center; cursor: pointer; position: relative; text-align: left; }
+.stat-prog { display: grid; gap: 0; cursor: pointer; text-align: left; align-content: start; }
+.pg-top { display: grid; grid-template-columns: minmax(120px, auto) minmax(110px, 1fr); gap: 4px 16px; align-items: center; }
 .pg-text { display: grid; gap: 2px; align-content: start; } .stat-prog .pg-title { color: var(--muted); font-size: 13px; } .stat-prog .pg-score { font-size: 34px; color: var(--navy); line-height: 1.1; } .stat-prog small { color: var(--muted); font-size: 12px; }
-.pg-right { min-width: 0; display: grid; gap: 6px; } .pg-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.pg-badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 9px; line-height: 1.3; white-space: nowrap; } .pg-badge.ok { background: #e4f4eb; color: #25784b; } .pg-badge.late { background: #fdecd8; color: #b25c00; }
-.pg-fc { display: grid; gap: 1px; font-size: 11.5px; color: #7a8492; } .stat-prog .pg-fc b { display: block; font-size: 14px; margin: 0; } .stat-prog .pg-fc .late { color: #b25c00; } .stat-prog .pg-fc .ok { color: #25784b; }
 .pg-mini { min-width: 0; } .pg-svg { width: 100%; height: auto; display: block; } .pg-svg text { font: 9.5px Arial, Helvetica, sans-serif; fill: #8a919c; }
-.pg-toggle { justify-self: start; margin-top: 8px; border: 0; background: none; color: var(--navy); font-weight: 700; font-size: 12.5px; padding: 2px 0; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
-.pg-card { grid-column: 1 / -1; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 20px; }
+.pg-sep { border-top: 1px solid #e3e8ee; margin: 12px 0 10px; }
+.pg-bottom { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pg-badge { display: inline-flex; align-items: center; height: 34px; box-sizing: border-box; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 0 12px; line-height: 1.2; white-space: nowrap; } .pg-badge.ok { background: #e4f4eb; color: #25784b; } .pg-badge.late { background: #fdecd8; color: #b25c00; }
+.pg-fcbox { display: grid; align-content: center; height: 34px; box-sizing: border-box; border: 1px solid #dfe5ec; border-radius: 10px; padding: 0 12px; background: #f8fafc; line-height: 1.15; } .stat-prog .pg-fcbox small { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #7a8492; } .stat-prog .pg-fcbox b { font-size: 13px; margin: 0; display: block; } .stat-prog .pg-fcbox .late { color: #b25c00; } .stat-prog .pg-fcbox .ok { color: #25784b; }
+.pg-toggle { margin: 0 0 0 auto; border: 0; background: none; color: var(--navy); font-weight: 700; font-size: 12.5px; padding: 2px 0; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.pg-card { grid-column: 1 / -1; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; }
 .pg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: #6f7885; justify-content: flex-end; margin-bottom: 4px; } .pg-legend span { display: inline-flex; align-items: center; gap: 6px; } .pg-legend i { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
-.pg-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 8px; } .pg-facts div { background: #f5f8fc; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: #4a5160; line-height: 1.4; } .pg-facts div > b { display: block; color: #173f76; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; } .pg-facts small { color: #7a8492; font-size: 11.5px; } .pg-facts .pg-wide { grid-column: 1 / -1; }
-.pg-late { color: #b25c00; font-weight: 700; } .pg-ok { color: #25784b; font-weight: 700; } .pg-note { margin: 8px 0 0; font-size: 11.5px; color: #8a919c; }
-@media (max-width: 900px) { .pg-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.pg-info { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid #d7dce3; background: #fff; color: #7a8492; font: 700 12px Arial, Helvetica, sans-serif; display: grid; place-items: center; cursor: help; padding: 0; }
-.pg-pop { display: none; position: absolute; top: 36px; right: 10px; z-index: 30; width: min(320px, 86vw); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 34px #17223433; padding: 14px 16px; text-align: left; cursor: default; font-size: 12.5px; color: #4a5160; line-height: 1.5; }
-.pg-info:hover + .pg-pop, .pg-info:focus + .pg-pop, .pg-pop:hover { display: block; }
-.pg-pop h4 { margin: 0 0 6px; font-size: 13px; color: var(--dark); } .pg-pop p { margin: 0 0 8px; } .pg-pop p:last-child { margin: 0; } .pg-pop b { color: #173f76; }
+.pg-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; } .pg-card .pg-legend { margin: 0 0 2px; }
+.pg-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } .pg-facts div { background: #f5f8fc; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #4a5160; line-height: 1.4; } .pg-facts div > b { display: block; color: #173f76; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; } .pg-facts small { color: #7a8492; font-size: 11px; } .pg-facts .pg-wide { grid-column: 1 / -1; }
+.pg-late { color: #b25c00; font-weight: 700; } .pg-ok { color: #25784b; font-weight: 700; } .pg-note { margin: 6px 0 0; font-size: 11px; color: #8a919c; }
+@media (max-width: 900px) { .pg-grid { grid-template-columns: 1fr; } }
 @media (max-width: 1180px) { .stats.has-prog { grid-template-columns: repeat(3, 1fr); } .stat-prog { grid-column: 1 / -1; } }
 @media (max-width: 560px) { .stats.has-prog { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 480px) { .stat-prog { grid-template-columns: 1fr; } }
@@ -1934,13 +1933,11 @@ function progressChart(g, H = 120, mini = false) {
   const line = (ser, last) => { const pts = [[g.start, 0], ...ser]; if (last) pts.push(last); return pts.map(([dt, p]) => `${x(dt).toFixed(1)},${y(p).toFixed(1)}`).join(" "); };
   const grid = [0, 50, 100].map(p => `<line x1="${L}" x2="${W - R}" y1="${y(p)}" y2="${y(p)}" stroke="#e8edf3"/>${mini ? "" : `<text x="${L - 5}" y="${y(p) + 3.5}" text-anchor="end">${p}%</text>`}`).join("");
   let ticks = ""; if (!mini) for (let m = new Date(g.start + "T00:00:00"), i = 0; m <= d(endDate) && i < 24; m = new Date(m.getFullYear(), m.getMonth() + 1, 1), i += 1) { const iso = isoOf(m); if (iso >= g.start && i % 2 === 0) ticks += `<text x="${x(iso)}" y="${H - 4}" text-anchor="middle">${m.toLocaleString("en", { month: "short" })}${m.getMonth() === 0 ? " " + m.getFullYear() : ""}</text>`; }
-  const fcEnd = g.finish && g.finish > g.today ? (g.finish > endDate ? endDate : g.finish) : null, fcY = fcEnd ? (fcEnd === g.finish ? 100 : g.actual + g.pace * daysBetween(g.today, fcEnd)) : 0;
-  const fc = fcEnd ? `<polyline points="${x(g.today)},${y(g.actual)} ${x(fcEnd)},${y(fcY)}" fill="none" stroke="#25784b" stroke-width="1.8" stroke-dasharray="2 3.5" stroke-linecap="round"/>` : "";
   const tx = x(g.today);
   return `<svg class="pg-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weighted progress over time against the original and the current plan">${grid}${ticks}
       <line x1="${tx}" x2="${tx}" y1="${T}" y2="${H - B}" stroke="#ffa614" stroke-width="1.3"/>
       <polyline points="${line(g.sBase)}" fill="none" stroke="#b6bfcc" stroke-width="1.8" stroke-dasharray="4 3"/>
-      <polyline points="${line(g.sNow)}" fill="none" stroke="#173f76" stroke-width="1.8"/>${fc}
+      <polyline points="${line(g.sNow)}" fill="none" stroke="#173f76" stroke-width="1.8"/>
       <polyline points="${line(g.sAct, [g.today, g.actual])}" fill="none" stroke="#25784b" stroke-width="2.6" stroke-linejoin="round"/><circle cx="${tx}" cy="${y(g.actual)}" r="3.8" fill="#25784b" stroke="#fff" stroke-width="1.6"/></svg>`;
 }
 const lateText = days => days === null ? "" : days > 0 ? `${days >= 14 ? Math.round(days / 7) + " weeks" : days + " day" + (days === 1 ? "" : "s")} late` : days < 0 ? `${-days} day${days === -1 ? "" : "s"} early` : "on time";
@@ -1949,25 +1946,17 @@ function progressPanel() {
   const liveDue = (g.ms.find(m => m.live) || {}).due;
   const fc = (label, f) => f ? `<div><b>${label}</b>${f.finish ? `${fmtY(f.finish)} <span class="${f.late > 0 ? "pg-late" : "pg-ok"}">· ${lateText(f.late)}</span><br><small>Target ${fmtY(f.target)}</small>` : `No forecast yet<br><small>Target ${fmtY(f.target)}</small>`}</div>` : "";
   const allText = g.finish === null ? "No tasks closed in the last 4 weeks, so no forecast yet." : g.actual >= 100 ? "Everything is closed." : `Every task is closed by <strong>${fmtY(g.finish)}</strong>${liveDue ? (g.finish > liveDue ? `, ${Math.round(daysBetween(liveDue, g.finish) / 7)} weeks after go-live.` : ", before go-live.") : "."}`;
-  return `<section class="pg-card" aria-label="Progress against plan"><div class="pg-legend"><span><i style="border-color:#b6bfcc;border-top-style:dashed"></i>Original plan</span><span><i style="border-color:#173f76"></i>Current plan</span><span><i style="border-color:#25784b"></i>Done</span><span><i style="border-color:#25784b;border-top-style:dotted"></i>Forecast</span></div>
-    ${progressChart(g, 170)}
-    <div class="pg-facts"><div><b>Today</b>${Math.round(g.actual)}% done<br><small>original plan ${Math.round(g.planBase)}% · current plan ${Math.round(g.planNow)}%</small></div>${fc("Forecast signature", g.fSign)}${fc("Forecast go-live", g.fLive)}<div><b>Dates moved</b>${g.moved ? `${g.moved} date change${g.moved === 1 ? "" : "s"}${moves ? `<br><small>${moves}</small>` : ""}` : "None since the plan started"}</div><div class="pg-wide"><b>All tasks</b>${allText}<br><small>At the pace of the last 4 weeks.</small></div></div>
-    <p class="pg-note">Every task counts 1 and every milestone counts ${MS_WEIGHT}. The original plan is the due dates when the plan was created or imported. Only the iSEEit team sees this. Details: docs/close-plan-progress-chart.md</p></section>`;
+  return `<section class="pg-card" aria-label="Progress against plan"><div class="pg-grid"><div class="pg-chartbox"><div class="pg-legend"><span><i style="border-color:#b6bfcc;border-top-style:dashed"></i>Original plan</span><span><i style="border-color:#173f76"></i>Current plan</span><span><i style="border-color:#25784b"></i>Done</span></div>${progressChart(g, 170)}</div>
+    <div class="pg-facts"><div><b>Today</b>${Math.round(g.actual)}% done<br><small>original ${Math.round(g.planBase)}% · current ${Math.round(g.planNow)}%</small></div>${fc("Forecast signature", g.fSign)}${fc("Forecast go-live", g.fLive)}<div><b>Dates moved</b>${g.moved ? `${g.moved} date change${g.moved === 1 ? "" : "s"}${moves ? `<br><small>${moves}</small>` : ""}` : "None since the plan started"}</div><div class="pg-wide"><b>All tasks</b>${allText}</div></div></div>
+    <p class="pg-note">Every task counts 1 and every milestone counts ${MS_WEIGHT}. The original plan is the due dates when the plan was created or imported. Only the iSEEit team sees this.</p></section>`;
 }
 function progressTile() {
   const g = progressData(), f = g.fSign, done = state.tasks.filter(t => t.status === "Closed").length;
   const late = f && f.finish && f.late > 0, behind = g.planBase - g.actual, diff = Math.round(Math.abs(behind));
   const standing = behind > 2 ? `${diff}% behind plan` : behind < -2 ? `${diff}% ahead of plan` : "On plan";
-  const fcLine = f ? `<div class="pg-fc"><span>Forecast signature</span><b class="${late ? "late" : "ok"}">${f.finish ? fmtY(f.finish) : "no forecast yet"}</b></div>` : "<span></span>";
-  return `<div class="pg-text"><span class="pg-title">Plan progress</span><b class="pg-score">${state.tasks.length ? Math.round(done / state.tasks.length * 100) : 0}%</b><small>${done} of ${state.tasks.length} tasks closed</small><button type="button" class="pg-toggle" data-prog-toggle aria-expanded="${Boolean(ui.progOpen)}"><span aria-hidden="true">${ui.progOpen ? "▴" : "▾"}</span>${ui.progOpen ? "Hide details" : "Show details"}</button></div>
-    <div class="pg-right"><div class="pg-mini">${progressChart(g, 84, true)}</div>
-      <div class="pg-foot">${fcLine}<span class="pg-badge ${behind > 2 ? "late" : "ok"}">${standing}</span></div></div>
-    <button type="button" class="pg-info" aria-label="How the progress figures are calculated">i</button>
-    <div class="pg-pop" role="tooltip"><h4>How this is calculated (iSEEit only)</h4>
-      <p><b>Now:</b> ${Math.round(g.actual)}% done (weighted) · original plan ${Math.round(g.planBase)}% · current plan ${Math.round(g.planNow)}% · <b>${esc(standing)}</b>.</p>
-      <p><b>Forecast signature:</b> the tasks due up to the signature, closed at the pace they had over the last 4 weeks. Target: ${f ? fmtY(f.target) : "–"}.</p>
-      <p><b>Graph:</b> green = done, blue = current plan, grey dashed = original plan, dotted = forecast.</p>
-      <p><b>Weights:</b> every task counts 1, every milestone ${MS_WEIGHT}. The big number is the plain share of closed tasks.</p><p>Details: docs/close-plan-progress-chart.md</p></div>`;
+  return `<div class="pg-top"><div class="pg-text"><span class="pg-title">Plan progress</span><b class="pg-score">${state.tasks.length ? Math.round(done / state.tasks.length * 100) : 0}%</b><small>${done} of ${state.tasks.length} tasks closed</small></div><div class="pg-mini">${progressChart(g, 84, true)}</div></div>
+    <div class="pg-sep"></div>
+    <div class="pg-bottom"><div class="pg-fcbox"><small>Current progress</small><b class="${behind > 2 ? "late" : "ok"}">${standing}</b></div>${f ? `<div class="pg-fcbox"><small>Forecasted signature</small><b class="${late ? "late" : "ok"}">${f.finish ? fmtY(f.finish) : "no forecast yet"}</b></div>` : ""}<button type="button" class="pg-toggle" data-prog-toggle aria-expanded="${Boolean(ui.progOpen)}"><span aria-hidden="true">${ui.progOpen ? "▴" : "▾"}</span>${ui.progOpen ? "Hide details" : "Show details"}</button></div>`;
 }
 function statsBlock() {
   const vis = state.tasks.filter(visible);
@@ -3523,7 +3512,6 @@ function wirePage() {
   const pt = document.getElementById("plan-title");
   if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); flushPlanSave(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
   app.querySelectorAll("[data-prog-toggle]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.progOpen = !ui.progOpen; render(); });
-  app.querySelectorAll(".pg-info").forEach(b => b.onclick = e => e.stopPropagation());
   app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { ui.filter = ui.filter === b.dataset.f && b.classList.contains("stat") ? "all" : b.dataset.f; render(); });
   app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { setPhaseOpen([b.dataset.jump], true); render(); document.getElementById("ph-" + b.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
   const fold = id => { const open = !document.getElementById("ph-" + id).classList.contains("folded"); setPhaseOpen([id], !open); render(); };

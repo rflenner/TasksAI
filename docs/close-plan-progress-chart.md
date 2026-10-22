@@ -1,19 +1,18 @@
 # Close Plan: progress chart, rules and weights
 
-The **Plan progress** tile on the Plan tab is twice as wide as the other three tiles. It shows the score (share of closed tasks) and a small graph, with the **forecast signature date** and the badge under the graph. **Show details** under the score opens a full-width panel below the tiles (closed by default): the full graph with axes, today, original and current plan, both forecasts with the delay against target, dates moved, and the whole-plan forecast. The "i" button explains the numbers. Under about 1180px wide the tile takes a full row. It is shown to the **iSEEit team only**: never on a customer's shared link, never in the customer PDF. Code: `progressData()` and `progressTile()` in `prototype/close-plan-demo.html`.
+The **Plan progress** tile on the Plan tab is twice as wide as the other three tiles. It shows the score (share of closed tasks) and a small graph. A grey line separates the top from a bottom row with a **Current progress** box ("21% behind plan"), a box with the **Forecasted signature** date and **Show details** on the right. **Show details** opens a full-width panel below the tiles (closed by default, at most two tile heights high): the full graph with axes, today, original and current plan, both forecasts with the delay against target, dates moved, and the whole-plan forecast. Under about 1180px wide the tile takes a full row. It is shown to the **iSEEit team only**: never on a customer's shared link, never in the customer PDF. Code: `progressData()` and `progressTile()` in `prototype/close-plan-demo.html`.
 
 ## What it shows
 
-Time runs along the bottom, weighted completion (0 to 100%) up the side. Four lines:
+Time runs along the bottom, weighted completion (0 to 100%) up the side. Three lines:
 
 | Line | Meaning |
 |---|---|
 | **Original plan** (grey, dashed) | How much should be done by each date, using the due dates the plan started with |
 | **Current plan** (blue) | The same, using today's due dates |
 | **Done** (green) | What has really been closed, up to today |
-| **Forecast** (green, dotted) | Where the current pace leads |
 
-An orange line marks today. The badge under the graph (and the "i" text) compares **Done** with the **Original plan** at today's date.
+An orange line marks today. The Current progress box compares **Done** with the **Original plan** at today's date.
 
 ## Weights
 
@@ -48,7 +47,7 @@ The tile shows one date, the **forecast signature**, in orange when it is after 
 3. **Finish date** = today + (100% minus the set's done %) divided by pace, rounded up to whole days. Already complete: today.
 4. **No task of the set closed in the last 28 days**: "no forecast yet".
 
-The dotted line in the small graph is a separate whole-plan forecast with the same pace rule (every task, not only the signature set); the chart stops 45 days after the plan end if that finish is later, so it stays readable. The go-live forecast (same rule, tasks due on or before the Target go-live) is shown in the details panel.
+The graphs have no forecast line. The details panel also states the whole-plan forecast (every task, same pace rule) in words. The go-live forecast (same rule, tasks due on or before the Target go-live) is shown in the details panel.
 
 The forecast is a straight extrapolation. It does not know about holidays, a known upcoming rush, or tasks that are not yet created.
 
