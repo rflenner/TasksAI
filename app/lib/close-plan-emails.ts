@@ -88,7 +88,7 @@ export function renderTaskNote(input: { firstName: string; fromName: string; pla
   const body = esc(input.message).replace(/\n/g, "<br>");
   return {
     subject: `${input.fromName} sent you a note on “${input.task.title}”`,
-    html: emailShell(`${eyebrow("A NOTE ON A TASK")}${heading(`Hello ${input.firstName}, ${input.fromName} wrote to you.`)}<div style="margin:14px 0 0;padding:14px 18px;background:#f5f8fc;border-left:3px solid #173f76;border-radius:0 10px 10px 0;color:#2b3445;font-size:15px;line-height:1.6">${body}</div>
+    html: emailShell(`${eyebrow("A NOTE ON A TASK")}${heading(`Hello ${input.firstName}, ${input.fromName} wrote to you.`)}<div style="margin:14px 0 0;padding:6px 0 6px 18px;background:#ffffff;border-left:3px solid #173f76;color:#2b3445;font-size:16px;line-height:1.65">${body}</div>
 ${section("The task")}<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${taskCard({ subject: input.task.title, description: input.task.description, project: input.planTitle, due: niceDate(input.task.due), overdue: input.task.overdue, status: input.task.status === "In progress" ? "In progress" : "Open", url: input.url })}</table>
 ${button(input.url, "Open the plan")}`, footer(input.unsubscribeUrl), header()),
     text: `Hello ${input.firstName},\n\n${input.fromName} wrote to you about “${input.task.title}” in the close plan ${input.planTitle}:\n\n${input.message}\n\nOpen the plan: ${input.url}\n\nStop these emails: ${input.unsubscribeUrl}`,
