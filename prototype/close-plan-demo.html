@@ -1629,8 +1629,9 @@ function renderOrgChart() {
   // Same look as the iSEEit chart in Salesforce: cards with a coloured left edge by type, gold elbow connectors, star for power base.
   const edge = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
   const star = n => n.powerBase ? `<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Power base"><path fill="${/Economic Buyer/.test(n.dealRole) ? "#8fb8e8" : "#f5c400"}" d="M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z"/></svg>` : "";
+  const linkedinIcon = n => n.linkedin ? `<a class="oc-in" href="${esc(n.linkedin)}" target="_blank" rel="noopener noreferrer" title="LinkedIn profile" onclick="event.stopPropagation()">in</a>` : `<span class="oc-in off" title="No LinkedIn profile on the contact">in</span>`;
   const initials = n => n.name.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
-  const card = n => `<div class="oc-card" style="border-left-color:${edge[n.type] || "#c4c4c4"}">${n.provisional ? `<span class="oc-tmp">Temp</span>` : ""}<div class="oc-av">${esc(initials(n))}${n.photo ? `<img src="/api/close-plans/store/${encodeURIComponent(state.id)}/orgchart/photo/${encodeURIComponent(n.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</div><div class="oc-tx"><div class="oc-nm">${esc(n.name)}</div><div class="oc-ds">${esc(n.title)}</div><div class="oc-rl">${esc(n.dealRole)}</div></div><div class="oc-rp">${star(n)}</div></div>`;
+  const card = n => `<div class="oc-card" style="border-left-color:${edge[n.type] || "#c4c4c4"}">${n.provisional ? `<span class="oc-tmp">Temp</span>` : ""}<div class="oc-av">${esc(initials(n))}${n.photo ? `<img src="/api/close-plans/store/${encodeURIComponent(state.id)}/orgchart/photo/${encodeURIComponent(n.photo)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</div><div class="oc-tx"><div class="oc-nm">${esc(n.name)}</div><div class="oc-ds">${esc(n.title)}</div><div class="oc-rl">${esc(n.dealRole)}</div></div><div class="oc-rp">${star(n)}${n.provisional ? "" : `<span class="oc-ic" title="Open tasks and events on this opportunity"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="#44546f" d="M9 2h6v2h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3zm1.5 2v2h3V4zM9 12h6v2H9zm0 4h4v2H9z" opacity=".95"/></svg><b>${Number(n.openTasks) || 0}</b></span>${linkedinIcon(n)}`}</div></div>`;
   const branch = n => { const k = kids.get(n.key) || []; return `<li>${card(n)}${k.length ? `<span class="oc-chev">⌃</span><ul>${k.map(branch).join("")}</ul>` : ""}</li>`; };
   const css = `<style>
     .oc-wrap{overflow:auto;max-height:62vh;padding:6px 4px 14px}
@@ -1658,6 +1659,11 @@ function renderOrgChart() {
     .oc-ds{font-size:12px;line-height:1.3;color:#5b6573;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
     .oc-rl{margin-top:auto;font-size:12px;font-style:italic;color:#5b6573}
     .oc-rp{flex:none;width:24px;display:flex;flex-direction:column;align-items:center;border-left:1px solid #eee;padding-left:8px;align-self:stretch}
+    .oc-rp{gap:8px;justify-content:flex-start}
+    .oc-ic{position:relative;display:flex;flex-direction:column;align-items:center;line-height:1}
+    .oc-ic b{font-size:9px;color:#fff;position:absolute;top:8px;font-weight:700}
+    .oc-in{display:block;width:18px;height:18px;border:1.5px solid #0a66c2;border-radius:3px;color:#0a66c2;font:700 11px/15px sans-serif;text-align:center;text-decoration:none;margin-top:auto}
+    .oc-in.off{border-color:#d0d4da;color:#d0d4da}
     .oc-tmp{position:absolute;top:-8px;right:8px;background:#fdf0c9;color:#7a5a00;font-size:10px;padding:0 7px;border-radius:8px}
   </style>`;
   root.innerHTML = `${css}<div class="notify-modal-overlay" data-orgchart-close>

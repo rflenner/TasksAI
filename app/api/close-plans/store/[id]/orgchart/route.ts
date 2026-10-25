@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
-import { buildOrgChart, orgLookupQueries, orgRoleQuery, type SfContactRoleRow, type SfOrgRoleRow, type SfProvisionalRow } from "../../../../../lib/close-plan-orgchart";
+import { applyContactExtras, buildOrgChart, orgContactExtraQueries, orgLookupQueries, orgRoleQuery, type SfContactRoleRow, type SfOrgRoleRow, type SfProvisionalRow } from "../../../../../lib/close-plan-orgchart";
 import { newestPhotos, photoQuery, type AttachmentRow } from "../../../../../lib/close-plan-photos";
 import { canAccessPlan, canDeletePlan } from "../../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../../lib/request";
@@ -40,6 +40,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const photos = soql ? newestPhotos(await query<AttachmentRow>(soql)) : new Map();
       for (const node of chart.nodes) node.photo = photos.get(node.key)?.attachmentId || "";
     } catch (error) { console.error("Close Plan org chart photos failed:", error instanceof Error ? error.message : error); }
+    // Likewise the LinkedIn link and open task count.
+    try {
+      const extra = orgContactExtraQueries(opportunityId, chart.nodes.filter(n => !n.provisional).map(n => n.key));
+      if (extra) {
+        const [links, tasks, events] = await Promise.all([
+          query<{ Id: string; iseeit__LinkedIn_Profile__c: string | null; iseeit__Linkedin_Profile_Url__c: string | null }>(extra.linkedin),
+          query<{ WhoId: string; n: number }>(extra.tasks), query<{ WhoId: string; n: number }>(extra.events),
+        ]);
+        applyContactExtras(chart.nodes, links, [...tasks, ...events]);
+      }
+    } catch (error) { console.error("Close Plan org chart details failed:", error instanceof Error ? error.message : error); }
     return Response.json({ opportunityId, ...chart });
   } catch (error) {
     if (error instanceof SalesforceNotConnectedError) return Response.json({ error: "Salesforce is not connected. Connect it under Integrations." }, { status: 409 });

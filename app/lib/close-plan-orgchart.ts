@@ -37,6 +37,8 @@ export type OrgNode = {
   powerBase: boolean;
   parentKey: string | null;
   order: number;
+  linkedin: string; // the Contact's LinkedIn profile link, or ""
+  openTasks: number; // open Tasks plus upcoming Events on this opportunity with the Contact
   photo: string; // Salesforce Attachment Id of the Contact's Profile_Picture.jpg, or "" (set by the route, see close-plan-photos.ts)
 };
 export type OrgChartIssue = { kind: "duplicate" | "unknown-person" | "parent-missing" | "cycle" | "persona"; roleId: string; text: string };
@@ -85,14 +87,14 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
       email: ocr?.Contact?.Email || "",
       type: role.iseeit__Type__c || "", dealRole: ocr?.Role || "", powerBase: Boolean(role.iseeit__Power_Base__c),
       parentKey: role.iseeit__Parent_Contact__c || role.iseeit__Parent_Provisional_Contact__c || null,
-      order: role.iseeit__Child_Number__c ?? 0, photo: "",
+      order: role.iseeit__Child_Number__c ?? 0, photo: "", linkedin: "", openTasks: 0,
     });
   }
 
   // A manager who has no entry of their own: show them as a node if we know who they are, otherwise the person becomes a top-level entry.
   for (const contact of parentContacts) {
     if (nodes.has(contact.Id) || ![...nodes.values()].some(n => n.parentKey === contact.Id)) continue;
-    nodes.set(contact.Id, { key: contact.Id, roleId: "", name: contact.Name || "(no name)", title: contact.Title || "", email: contact.Email || "", provisional: false, type: "", dealRole: "", powerBase: false, parentKey: null, order: -1, photo: "" });
+    nodes.set(contact.Id, { key: contact.Id, roleId: "", name: contact.Name || "(no name)", title: contact.Title || "", email: contact.Email || "", provisional: false, type: "", dealRole: "", powerBase: false, parentKey: null, order: -1, photo: "", linkedin: "", openTasks: 0 });
     issues.push({ kind: "parent-missing", roleId: "", text: `${contact.Name || contact.Id} is a manager in the chart but has no role of their own on the opportunity` });
   }
   for (const node of nodes.values()) {
@@ -116,4 +118,37 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
 
   const sorted = [...nodes.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   return { nodes: sorted, roots: sorted.filter(n => !n.parentKey).map(n => n.key), issues };
+}
+
+// Per Contact on the chart: the LinkedIn link and the number of open Tasks and upcoming Events on this opportunity
+// (what the Salesforce chart's clipboard counter shows). Both are read after the chart is built.
+export function orgContactExtraQueries(opportunityId: string, contactIds: string[]) {
+  const list = ids(contactIds);
+  if (!list.length) return null;
+  const who = `WhoId IN (${inList(list)})`;
+  return {
+    linkedin: `SELECT Id, iseeit__LinkedIn_Profile__c, iseeit__Linkedin_Profile_Url__c FROM Contact WHERE Id IN (${inList(list)})`,
+    tasks: `SELECT WhoId, COUNT(Id) n FROM Task WHERE WhatId = '${opportunityId}' AND IsClosed = false AND ${who} GROUP BY WhoId`,
+    events: `SELECT WhoId, COUNT(Id) n FROM Event WHERE WhatId = '${opportunityId}' AND ActivityDateTime >= TODAY AND ${who} GROUP BY WhoId`,
+  };
+}
+
+// Only a real LinkedIn address is ever linked to: the field is free text.
+export function linkedinUrl(...candidates: Array<string | null | undefined>): string {
+  for (const raw of candidates) {
+    const text = (raw || "").trim().split(/\s+/)[0];
+    if (!text) continue;
+    try {
+      const url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+      if (/^https?:$/.test(url.protocol) && /(^|\.)linkedin\.com$/i.test(url.hostname)) { url.protocol = "https:"; return url.toString(); }
+    } catch { /* not a link */ }
+  }
+  return "";
+}
+
+export function applyContactExtras(nodes: OrgNode[], linkedin: Array<{ Id: string; iseeit__LinkedIn_Profile__c: string | null; iseeit__Linkedin_Profile_Url__c: string | null }>, counts: Array<{ WhoId: string; n: number }>) {
+  const links = new Map(linkedin.map(c => [c.Id, linkedinUrl(c.iseeit__LinkedIn_Profile__c, c.iseeit__Linkedin_Profile_Url__c)]));
+  const open = new Map<string, number>();
+  for (const c of counts) open.set(c.WhoId, (open.get(c.WhoId) || 0) + Number(c.n || 0));
+  for (const node of nodes) { if (node.provisional) continue; node.linkedin = links.get(node.key) || ""; node.openTasks = open.get(node.key) || 0; }
 }
