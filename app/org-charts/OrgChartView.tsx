@@ -32,8 +32,8 @@ const edge = (n: { type: string }) => EDGE[mindset(n)] || EDGE.Neutral;
 const ACTIVITY_NOTE = "How well this person is covered, from the meetings and action items with them. Not matched yet: nothing is counted so far.";
 // Influence lines: a dotted arrow from the influencer to the influenced person, bent as an arc that steers clear of the other
 // cards where it can. Grey by default; "Who influences who" shows them in the colour of the kind of influence (red negative,
-// blue neutral, green positive). Thickness shows the strength. The line starts with a star (yellow; blue when the influencer
-// is the Economic Buyer, like the star on the tile). Drawn over the chart from the positions of the cards, so it follows
+// blue neutral, green positive). Thickness shows the strength. The influencer carries the star on their card (yellow; blue when
+// they are the Economic Buyer). Drawn over the chart from the positions of the cards, so it follows
 // collapsing, zoom, ladders and the PDF sheet.
 type Seg = { id: string; x1: number; y1: number; cx: number; cy: number; x2: number; y2: number; strength: number; tone: InfluenceTone; blue: boolean; from: string; to: string; note: string };
 const GREY = "#8a93a0", LIGHT = "#c9ced6",  TONE: Record<InfluenceTone, string> = { negative: "#d64545", neutral: "#2f6fb5", positive: "#3f9d3a" };
@@ -67,12 +67,11 @@ function lineSegs(canvas: HTMLElement, list: OrgInfluence[], byKey: Map<string, 
   }
   return out;
 }
-const star = (x: number, y: number, blue: boolean) => `<path transform="translate(${x - 7} ${y - 7}) scale(0.58)" d="${STAR}" fill="${blue ? "#8fb8e8" : "#f5c400"}" stroke="#fff" stroke-width="1.5" paint-order="stroke"/>`;
 const arrowhead = (x1: number, y1: number, x2: number, y2: number) => { const a = Math.atan2(y2 - y1, x2 - x1), c = Math.cos(a), s = Math.sin(a); return `${x2},${y2} ${x2 - 9 * c + 5 * s},${y2 - 9 * s - 5 * c} ${x2 - 9 * c - 5 * s},${y2 - 9 * s + 5 * c}`; };
 const arcPath = (g: Seg) => `M${g.x1} ${g.y1} Q${g.cx} ${g.cy} ${g.x2} ${g.y2}`;
 // Light grey so the lines stay quiet; the lines of the selected or hovered person are a darker grey. Colour when asked for.
 const lineColor = (g: Seg, colored: boolean, focus = true) => colored ? TONE[g.tone] : focus ? GREY : LIGHT;
-const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>${star(g.x1, g.y1, g.blue)}`).join("");
+const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>`).join("");
 // Control rail on the right of the chart, like the one in Salesforce: add contact, check for updates, import, zoom, PDF,
 // fit, layout and sync. Line icons; the tooltips come from data-tip.
 const IC: Record<string, React.ReactNode> = {
@@ -183,6 +182,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [influences, setInfluences] = useState<OrgInfluence[]>(initialInfluences);
   const [lineMode, setLineMode] = useState<"selected" | "all" | "off">("all");
   const [pdfLines, setPdfLines] = useState(true);
+  const [moreAt, setMoreAt] = useState<{ x: number; y: number } | null>(null);
   const [colored, setColored] = useState(false); // "Who influences who" switched on: all lines in the colour of their kind
   const colorPinned = colored;
   const [segs, setSegs] = useState<Seg[]>([]);
@@ -204,6 +204,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const wrap = useRef<HTMLDivElement>(null);
 
+  // Whoever influences someone carries the star on their card (yellow; blue for the Economic Buyer), not on the line.
+  const influencers = useMemo(() => new Set(influences.map(l => l.from)), [influences]);
   const { byKey, kids } = useMemo(() => {
     const byKey = new Map<string, OrgNode>(), kids = new Map<string | null, OrgNode[]>();
     for (const n of chart.nodes) { byKey.set(n.key, n); kids.set(n.parentKey, [...(kids.get(n.parentKey) || []), n]); }
@@ -222,6 +224,10 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       return next;
     });
   }
+  // Show only the top level (1), the top two levels (2) or everything (0).
+  const depthOf = (n: OrgNode): number => { let d = 0, p = n.parentKey; while (p && d < 50) { d++; p = byKey.get(p)?.parentKey ?? null; } return d; };
+  const showLevels = (level: number) => setCollapsed(level ? new Set(chart.nodes.filter(n => depthOf(n) === level - 1 && (kids.get(n.key) || []).length).map(n => n.key)) : new Set());
+  const collapsedLevel = [1, 2].find(l => { const want = chart.nodes.filter(n => depthOf(n) === l - 1 && (kids.get(n.key) || []).length).map(n => n.key); return want.length > 0 && collapsed.size === want.length && want.every(k => collapsed.has(k)); });
   const below = (n: OrgNode): number => (kids.get(n.key) || []).reduce((sum, k) => sum + 1 + below(k), 0);
   // eslint-disable-next-line @next/next/no-img-element
   const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
@@ -457,7 +463,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <div className="oc-av">{initials(n.name)}{photo(n, eager)}</div>
       <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span><Meter level={n.activity || 0} /></div></div>
       <div className="oc-rp">
-        <div className="oc-top">{n.powerBase && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
+        <div className="oc-top">{(n.powerBase || influencers.has(n.key)) && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
         {!n.provisional && (
           <div className="oc-bot">
             <button type="button" className="oc-ic" title="Open tasks and events in Salesforce" aria-label="Open tasks and events" onClick={e => { e.stopPropagation(); open(n.key); }}>
@@ -525,7 +531,6 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           <g key={g.id}>
             <path d={arcPath(g)} fill="none" stroke={lineColor(g, colored, focusOf(g))} strokeWidth={lineWidth(g.strength)} strokeDasharray="1 5" strokeLinecap="round" />
             <polygon points={arrowhead(g.cx, g.cy, g.x2, g.y2)} fill={lineColor(g, colored, focusOf(g))} />
-            <path transform={`translate(${g.x1 - 7} ${g.y1 - 7}) scale(0.58)`} d={STAR} fill={g.blue ? "#8fb8e8" : "#f5c400"} stroke="#fff" strokeWidth="1.5" paintOrder="stroke" />
             <path className="oc-line" d={arcPath(g)} fill="none" stroke="transparent" strokeWidth="14" onClick={e => { const cr = canvas.current?.getBoundingClientRect(); setLineMenu({ id: g.id, x: e.clientX - (cr?.left || 0), y: e.clientY - (cr?.top || 0) }); }}><title>{`${byKey.get(g.from)?.name} influences ${byKey.get(g.to)?.name} (${TONE_LABEL[g.tone].toLowerCase()})${g.note ? `: ${g.note}` : ""}`}</title></path>
           </g>
         ))}
@@ -559,18 +564,33 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   return (
     <div>
       <div className="oc-bar">
-        {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
-        {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
-        <label className="oc-sel">Influence lines <select value={lineMode} onChange={e => setLineMode(e.target.value as "selected" | "all" | "off")}><option value="all">All ({influences.length})</option><option value="selected">Selected person only</option><option value="off">Off</option></select></label>
-        <label className="oc-switch" title="Show who influences whom in colour: red negative, blue neutral, green positive"><input type="checkbox" role="switch" checked={colored} onChange={e => setColored(e.target.checked)} /><span className="oc-track" aria-hidden="true" />Who influences who</label>
-
-        <label className="oc-sel"><input type="checkbox" checked={pdfLines} onChange={e => setPdfLines(e.target.checked)} /> Lines in PDF</label>
-        <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { onEditing(!editing); setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
-        {edited && (confirm === "reset"
-          ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => void reset()}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
-          : <button type="button" disabled={busy} onClick={() => setConfirm("reset")}>Reset to Salesforce copy</button>)}
-              {edited && <span className="oc-edited" title="This copy was changed in Task AI. The changes are saved here only and are not in Salesforce.">Edited in Task AI</span>}
+        <label className="oc-switch" title="Show or hide the influence lines"><input type="checkbox" role="switch" checked={lineMode !== "off"} onChange={e => setLineMode(e.target.checked ? "all" : "off")} /><span className="oc-track" aria-hidden="true" />Influence lines ({influences.length})</label>
+        {chart.nodes.some(n => n.parentKey) && (
+          <span className="oc-seg" role="group" aria-label="How many levels to show">Show
+            <button type="button" className={collapsedLevel === 1 ? "on" : ""} onClick={() => showLevels(1)}>Level 1</button>
+            <button type="button" className={collapsedLevel === 2 ? "on" : ""} onClick={() => showLevels(2)}>Level 2</button>
+            <button type="button" className={collapsed.size === 0 ? "on" : ""} onClick={() => showLevels(0)}>All</button>
+          </span>
+        )}
+        {edited && <span className="oc-edited" title="This copy was changed in Task AI. The changes are saved here only and are not in Salesforce.">Edited in Task AI</span>}
+        {editing && <span className="oc-edited">Editing</span>}
         {colored && <span className="oc-legend end" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative (enemy)<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive (champion, coach)</span>}
+        <button type="button" className={`oc-more${colored ? "" : " end"}`} aria-label="More options" aria-haspopup="menu" aria-expanded={!!moreAt} onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setMoreAt(m => m ? null : { x: Math.max(8, Math.min(r.right, window.innerWidth - 8)), y: r.bottom + 6 }); }}>&#8943;</button>
+        {moreAt && (
+          <>
+            <button type="button" className="oc-scrim" tabIndex={-1} aria-label="Close the menu" onClick={() => setMoreAt(null)} />
+            <div className="oc-menu" role="menu" style={{ right: Math.max(8, window.innerWidth - moreAt.x), top: moreAt.y }}>
+              <label><input type="checkbox" checked={colored} onChange={e => setColored(e.target.checked)} /> Who influences who (colours)</label>
+              <label><input type="checkbox" checked={lineMode === "selected"} disabled={lineMode === "off"} onChange={e => setLineMode(e.target.checked ? "selected" : "all")} /> Only the selected person&apos;s lines</label>
+              <label><input type="checkbox" checked={pdfLines} onChange={e => setPdfLines(e.target.checked)} /> Lines in PDF</label>
+              <hr />
+              <button type="button" role="menuitem" onClick={() => { onEditing(!editing); setEditing(v => !v); setMsg(""); setConfirm(null); setMoreAt(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
+              {edited && (confirm === "reset"
+                ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => { setMoreAt(null); void reset(); }}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
+                : <button type="button" role="menuitem" disabled={busy} onClick={() => setConfirm("reset")}>Reset to Salesforce copy</button>)}
+            </div>
+          </>
+        )}
       </div>
       {msg && <p className="oc-err" role="alert">{msg}</p>}
       {pending && (() => {
