@@ -4,10 +4,13 @@ import type { OrgInfluence } from "../lib/org-chart-influence";
 import OrgChartView, { type ChartData } from "./OrgChartView";
 
 type Kind = "account" | "opportunity";
-export type ChartRow = { id: string; kind: Kind; sfdcId: string; name: string; accountName: string; people: number; importedAt: string; importedBy: string; editedAt: string | null };
+export type ChartRow = { id: string; kind: Kind; sfdcId: string; name: string; accountName: string; people: number; importedAt: string; importedBy: string; editedAt: string | null; logo: string };
 type Hit = { id: string; name: string; accountId: string; account: string; detail: string; owner: string };
-type Opened = { id: string; kind: Kind; name: string; accountName: string; importedAt: string; edited: boolean; chart: ChartData; influences: OrgInfluence[] };
+type Opened = { id: string; kind: Kind; name: string; accountName: string; importedAt: string; edited: boolean; chart: ChartData; influences: OrgInfluence[]; logo: string };
 
+// The company logo, from Sales AI. Hidden when the address does not load.
+// eslint-disable-next-line @next/next/no-img-element
+const Logo = ({ src, size }: { src: string; size: number }) => <img src={src} alt="" width={size} height={size} referrerPolicy="no-referrer" loading="lazy" onError={e => e.currentTarget.remove()} style={{ width: size, height: size, borderRadius: 6, objectFit: "contain", background: "#fff", border: "1px solid #e3e6ea", flex: "none" }} />;
 const btn = "border border-[#c9d3e0] rounded-lg px-3 py-1.5 text-sm text-[#2b3445] bg-white hover:bg-[#f4f7fb] disabled:opacity-40";
 const primary = "rounded-lg px-4 py-1.5 text-sm font-semibold text-white bg-[#173f76] hover:bg-[#102f59] disabled:opacity-40";
 const KIND_LABEL: Record<Kind, string> = { account: "Account", opportunity: "Opportunity" };
@@ -71,7 +74,7 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
         <div className="flex items-start justify-between gap-4 mt-2 mb-4">
           <div>
             <div className="text-[11px] font-extrabold tracking-widest text-[#173f76]">{KIND_LABEL[opened.kind].toUpperCase()} ORG CHART</div>
-            <h1 className="text-2xl font-bold text-[#102f59] mt-1">{opened.name}</h1>
+            <div className="flex items-center gap-3 mt-1">{opened.logo && <Logo src={opened.logo} size={44} />}<h1 className="text-2xl font-bold text-[#102f59]">{opened.name}</h1></div>
             <p className="text-sm text-[#697181]">{opened.kind === "opportunity" && opened.accountName ? `${opened.accountName} · ` : ""}Copied from Salesforce {when(opened.importedAt)}. Changes you make here stay in Task AI and are never sent to Salesforce.</p>
           </div>
           {row && (
@@ -84,7 +87,7 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
           )}
         </div>
         {notice && <p className="text-sm text-[#2b3445] bg-[#eef2f8] rounded-lg px-4 py-2 mb-3" role="status">{notice}</p>}
-        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} startEditing={editMode} onEditing={setEditMode} onImport={() => { setNotice(""); setImporting(true); }} influences={opened.influences || []} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
+        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} startEditing={editMode} onEditing={setEditMode} onImport={() => { setNotice(""); setImporting(true); }} influences={opened.influences || []} logo={opened.logo || ""} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
         {deleting && <DeleteDialog row={deleting} onCancel={() => setDeleting(null)} onConfirm={() => void remove(deleting)} />}
         {importing && <ImportDialog existing={charts} onClose={() => setImporting(false)} onDone={async msg => { setImporting(false); setNotice(msg); await refresh(); }} />}
       </div>
@@ -114,7 +117,7 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
             <li key={c.id} className="border border-[#e3e8ee] bg-white rounded-xl p-5 flex flex-col gap-3">
               <div>
                 <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${c.kind === "account" ? "bg-[#e8f0fb] text-[#173f76]" : "bg-[#eaf5ec] text-[#2a6a33]"}`}>{KIND_LABEL[c.kind]}</span>
-                <h2 className="text-base font-bold text-[#102f59] mt-2 break-words">{c.name}</h2>
+                <h2 className="text-base font-bold text-[#102f59] mt-2 break-words flex items-center gap-2">{c.logo && <Logo src={c.logo} size={26} />}{c.name}</h2>
                 {c.kind === "opportunity" && c.accountName && <p className="text-sm text-[#697181]">{c.accountName}</p>}
               </div>
               <p className="text-sm text-[#697181]">{c.people} {c.people === 1 ? "person" : "people"} · imported {client ? when(c.importedAt) : ""}{c.importedBy ? ` by ${c.importedBy}` : ""}</p>
