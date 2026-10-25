@@ -1,7 +1,7 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart";
-import type { OrgEdit } from "../lib/org-chart-edit";
+import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
 import "./org-charts.css";
 
 // The interactive org chart, same behaviour as the iSEEit chart in Salesforce: click a card for its details, the task icon for
@@ -11,6 +11,14 @@ import "./org-charts.css";
 export type ChartData = OrgChart & { salesforceBase: string };
 type TaskState = { busy?: boolean; items?: OrgTaskItem[]; error?: string };
 
+type Zone = Exclude<DropPosition, "root">;
+type Pending = { key: string; targetKey: string | null; position: DropPosition };
+// The card is split like in Salesforce: the left and right edges put the person beside it, the upper part above it (the person
+// becomes its manager), the rest below it (the person reports to it).
+const zoneAt = (e: React.DragEvent): Zone => {
+  const r = e.currentTarget.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+  return x < 0.2 ? "left" : x > 0.8 ? "right" : y < 0.35 ? "top" : "bottom";
+};
 const TYPES = ["Champion", "Coach", "Enemy", "Influencer", "Neutral"];
 const EDGE: Record<string, string> = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
 const LI = "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z";
@@ -70,6 +78,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [dragKey, setDragKey] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ key: string; zone: Zone } | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [confirm, setConfirm] = useState<"remove" | "reset" | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
@@ -114,7 +124,34 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     if (!r?.ok) { setMsg(res.error || "The edits could not be undone"); return; }
     setChart({ ...res.chart, salesforceBase: chart.salesforceBase }); setEdited(false); setSelected(null); onChanged(res.chart.nodes.length, false);
   }
-  const drop = (e: React.DragEvent, parentKey: string | null) => { e.preventDefault(); e.stopPropagation(); const key = dragKey; setDragKey(null); if (key && key !== parentKey) void send({ op: "move", key, parentKey }); };
+  // Dropping someone who has a team asks whether the team moves along, like Salesforce ("Move with hierarchy?").
+  function drop(e: React.DragEvent, targetKey: string | null, position: DropPosition) {
+    e.preventDefault(); e.stopPropagation();
+    const key = dragKey; setDragKey(null); setHover(null);
+    if (!key || key === targetKey) return;
+    if ((kids.get(key) || []).length) setPending({ key, targetKey, position });
+    else void send({ op: "drop", key, targetKey, position, withTeam: true });
+  }
+  function confirmDrop(withTeam: boolean) {
+    const p = pending; setPending(null);
+    if (p) void send({ op: "drop", ...p, withTeam });
+  }
+  const askFocus = (el: HTMLButtonElement | null) => el?.focus();
+  // While a card is dragged, the chart scrolls when the pointer gets near its edge.
+  useEffect(() => {
+    if (!dragKey) return;
+    let x = 0, y = 0;
+    const at = (e: DragEvent) => { x = e.clientX; y = e.clientY; };
+    const tick = window.setInterval(() => {
+      const el = wrap.current; if (!el) return;
+      const r = el.getBoundingClientRect(), edge = 70, speed = (d: number) => Math.ceil(Math.min(1, (edge - d) / edge) * 22);
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
+      if (x - r.left < edge) el.scrollLeft -= speed(x - r.left); else if (r.right - x < edge) el.scrollLeft += speed(r.right - x);
+      if (y - r.top < edge) el.scrollTop -= speed(y - r.top); else if (r.bottom - y < edge) el.scrollTop += speed(r.bottom - y);
+    }, 16);
+    document.addEventListener("dragover", at);
+    return () => { window.clearInterval(tick); document.removeEventListener("dragover", at); };
+  }, [dragKey]);
 
   function pan(e: React.MouseEvent) {
     const el = wrap.current;
@@ -127,9 +164,11 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   }
 
   const card = (n: OrgNode) => (
-    <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${editing && dragKey && dragKey !== n.key ? " target" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
-      draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => setDragKey(null)}
-      onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); } }} onDrop={e => editing && drop(e, n.key)}
+    <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${hover?.key === n.key ? ` z-${hover.zone}` : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
+      draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => { setDragKey(null); setHover(null); }}
+      onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); const zone = zoneAt(e); setHover(h => h?.key === n.key && h.zone === zone ? h : { key: n.key, zone }); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(h => h?.key === n.key ? null : h); }}
+      onDrop={e => editing && dragKey && dragKey !== n.key && drop(e, n.key, zoneAt(e))}
       onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
       {n.provisional && <span className="oc-tmp">Temp</span>}
       <div className="oc-av">{initials(n.name)}{photo(n)}</div>
@@ -189,13 +228,29 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       {edited && <p className="oc-note">Edited in Task AI. These changes are saved here only and are not in Salesforce.</p>}
       {editing && (
         <div className="oc-edit">
-          <p className="oc-hint">Drag a card onto the person they should report to, or drop it on the empty background to make them top level. Click a card to change type, role and notes, move it left or right, or remove it.</p>
+          <p className="oc-hint">Drag a card onto another card: on its left or right edge to put them beside it, on its upper part to make them its manager, anywhere else to make them report to it. Drop it on the empty background to make them top level. Click a card to change type, role and notes, move it left or right, or remove it.</p>
           <AddForm parentKey={null} busy={busy} onAdd={(name, title) => void send({ op: "add", name, title, parentKey: null })} />
         </div>
       )}
       {msg && <p className="oc-err" role="alert">{msg}</p>}
+      {pending && (() => {
+        const who = byKey.get(pending.key), team = (kids.get(pending.key) || []).length, boss = who?.parentKey ? byKey.get(who.parentKey)?.name : "";
+        return (
+          <div className="oc-modal" role="presentation">
+            <div role="dialog" aria-modal="true" aria-label="Move with team?">
+              <h4>Move {who?.name} with their team?</h4>
+              <p>{who?.name} has {team} {team === 1 ? "person" : "people"} reporting directly. Move the whole team along, or move {who?.name} alone and let the team report to {boss || "nobody (top level)"}?</p>
+              <div className="oc-row">
+                <button type="button" className="oc-save" ref={askFocus} onClick={() => confirmDrop(true)}>Move with team</button>
+                <button type="button" onClick={() => confirmDrop(false)}>Move alone</button>
+                <button type="button" onClick={() => setPending(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="oc-main">
-        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null)}><ul className="oc-tree" style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
+        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null, "root")}><ul className="oc-tree" style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>

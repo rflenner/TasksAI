@@ -8,10 +8,17 @@ export const MAX_PEOPLE = 2000;
 
 export type OrgEdit =
   | { op: "move"; key: string; parentKey: string | null; index?: number }
+  | { op: "drop"; key: string; targetKey: string | null; position: DropPosition; withTeam: boolean }
   | { op: "shift"; key: string; by: -1 | 1 }
   | { op: "update"; key: string; type?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string }
   | { op: "add"; name: string; title?: string; parentKey: string | null }
   | { op: "remove"; key: string };
+// Where a dragged card lands on the card it is dropped on, like the iSEEit chart in Salesforce: "top" = above it, so the dragged
+// person becomes its manager and takes its place; "bottom" = below it, so the dragged person reports to it; "left"/"right" =
+// next to it, a peer before or after it. With no target ("root") the person becomes top level. `withTeam` false moves the
+// person alone: the people who reported to them move up to their manager.
+export type DropPosition = "top" | "bottom" | "left" | "right" | "root";
+const POSITIONS: DropPosition[] = ["top", "bottom", "left", "right", "root"];
 export type EditResult = { chart: OrgChart; key?: string } | { error: string };
 
 const text = (value: unknown, max: number) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
@@ -55,6 +62,30 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
         if (isUnder(chart, parentKey, node.key)) return { error: `${find(parentKey)!.name} reports to ${node.name}, so ${node.name} cannot report to them. That would make a loop.` };
       }
       return { chart: place(chart, node.key, parentKey, typeof edit.index === "number" ? edit.index : undefined), key: node.key };
+    }
+    case "drop": {
+      const node = find(edit.key), target = edit.targetKey ? find(edit.targetKey) : null;
+      if (!node) return { error: "That person is not in the chart" };
+      if (!POSITIONS.includes(edit.position) || (edit.position === "root") !== !edit.targetKey) return { error: "Unknown place to drop" };
+      if (edit.targetKey && !target) return { error: "That person is not in the chart" };
+      if (target?.key === node.key) return { error: "Drop it on someone else" };
+      if (edit.withTeam && target && isUnder(chart, target.key, node.key)) return { error: `${target.name} is in ${node.name}'s team. Move ${node.name} alone, or move ${target.name} first.` };
+      let next = chart;
+      if (!edit.withTeam) {
+        // Their team moves up to their manager, at the place they had.
+        const at = siblings(next, node.parentKey).findIndex(n => n.key === node.key);
+        siblings(next, node.key).forEach((k, i) => { next = place(next, k.key, node.parentKey, at + i); });
+      }
+      const apart = (parentKey: string | null) => siblings(next, parentKey).filter(n => n.key !== node.key);
+      const t = target && next.nodes.find(n => n.key === target.key)!; // their manager may have changed when their team moved up
+      if (!t) next = place(next, node.key, null);
+      else if (edit.position === "bottom") next = place(next, node.key, t.key);
+      else {
+        const at = apart(t.parentKey).findIndex(n => n.key === t.key);
+        if (edit.position === "top") { next = place(next, node.key, t.parentKey, at); next = place(next, t.key, node.key); }
+        else next = place(next, node.key, t.parentKey, edit.position === "left" ? at : at + 1);
+      }
+      return { chart: next, key: node.key };
     }
     case "shift": {
       const node = find(edit.key);

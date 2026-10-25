@@ -79,3 +79,17 @@
 .oc-ed .oc-del{margin-top:12px;color:#b3261e;border-color:#e3b8b4}
 .oc-card.drag{opacity:.45}
 .oc-card.target:hover{outline:2px dashed #173f76}
+/* Drop zones on a card while dragging, like Salesforce */
+.oc-card::after{content:"";position:absolute;pointer-events:none;display:none;font:600 11px/1 sans-serif;color:#fff;text-align:center;box-sizing:border-box}
+.oc-card[class*=" z-"]::after{display:flex;align-items:center;justify-content:center;background:rgba(23,63,118,.78);border-radius:4px}
+.oc-card.z-top::after{content:"Above: becomes manager";left:20%;right:20%;top:0;height:35%}
+.oc-card.z-bottom::after{content:"Below: reports to them";left:20%;right:20%;top:35%;bottom:0}
+.oc-card.z-left::after{content:"Beside";left:0;top:0;bottom:0;width:20%}
+.oc-card.z-right::after{content:"Beside";right:0;top:0;bottom:0;width:20%}
+.oc-modal{position:fixed;inset:0;z-index:50;background:rgba(16,47,89,.35);display:flex;align-items:center;justify-content:center;padding:16px}
+.oc-modal>div{width:min(420px,100%);background:#fff;border-radius:12px;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.oc-modal h4{margin:0 0 8px;font-size:16px;color:#102f59}
+.oc-modal p{margin:0 0 14px;font-size:14px;color:#2b3445}
+.oc-modal .oc-row{display:flex;gap:8px;flex-wrap:wrap}
+.oc-modal button{padding:6px 12px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px;cursor:pointer}
+.oc-modal .oc-save{background:#173f76;color:#fff;border-color:#173f76}
