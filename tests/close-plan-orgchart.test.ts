@@ -222,3 +222,22 @@ test("comparing two copies of a chart lists who is new, gone or has a new manage
   assert.deepEqual(diffOrgCharts(before, after), { added: ["D"], removed: ["C"], moved: ["B"], same: false });
   assert.equal(diffOrgCharts(before, before).same, true);
 });
+
+test("influence lines: one direction, no duplicates, kept only for people still in the chart", async () => {
+  const { applyInfluenceEdit, keepInfluences } = await import("../app/lib/org-chart-influence");
+  const people = new Map([["a", "Ada"], ["b", "Ben"], ["c", "Cy"]]);
+  const added = applyInfluenceEdit([], people, { op: "add", from: "a", to: "b", strength: 2, note: "  plays   golf " }) as { influences: import("../app/lib/org-chart-influence").OrgInfluence[]; id: string };
+  assert.equal(added.influences.length, 1);
+  assert.deepEqual([added.influences[0].from, added.influences[0].to, added.influences[0].strength, added.influences[0].note], ["a", "b", 2, "plays golf"]);
+  assert.match((applyInfluenceEdit(added.influences, people, { op: "add", from: "a", to: "b" }) as { error: string }).error, /already influences/);
+  assert.match((applyInfluenceEdit(added.influences, people, { op: "add", from: "b", to: "a" }) as { error: string }).error, /one direction/);
+  assert.ok("error" in applyInfluenceEdit([], people, { op: "add", from: "a", to: "a" }));
+  assert.ok("error" in applyInfluenceEdit([], people, { op: "add", from: "a", to: "zz" }));
+  const reversed = applyInfluenceEdit(added.influences, people, { op: "reverse", id: added.id }) as { influences: import("../app/lib/org-chart-influence").OrgInfluence[] };
+  assert.deepEqual([reversed.influences[0].from, reversed.influences[0].to], ["b", "a"]);
+  const changed = applyInfluenceEdit(added.influences, people, { op: "update", id: added.id, strength: 1 }) as { influences: import("../app/lib/org-chart-influence").OrgInfluence[] };
+  assert.equal(changed.influences[0].strength, 1);
+  assert.deepEqual(keepInfluences(added.influences, ["a", "c"]), []);
+  assert.equal(keepInfluences(added.influences, ["a", "b"]).length, 1);
+  assert.deepEqual((applyInfluenceEdit(added.influences, people, { op: "remove", id: added.id }) as { influences: unknown[] }).influences, []);
+});

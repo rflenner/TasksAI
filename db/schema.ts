@@ -485,4 +485,6 @@ export const orgCharts = pgTable("org_charts", {
   edited: jsonb("edited"),
   editedAt: timestamp("edited_at", { withTimezone: true }),
   editedBy: integer("edited_by").references(() => users.id, { onDelete: "set null" }),
+  // Influence lines (who influences whom), see app/lib/org-chart-influence.ts. Migration 0035.
+  influences: jsonb("influences").$type<Array<{ id: string; from: string; to: string; strength: 1 | 2 | 3; note: string }>>().notNull().default([]),
 }, table => [unique("org_charts_source_unique").on(table.kind, table.sfdcId)]);
