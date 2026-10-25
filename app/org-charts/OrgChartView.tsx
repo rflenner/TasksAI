@@ -32,8 +32,8 @@ const edge = (n: { type: string }) => EDGE[mindset(n)] || EDGE.Neutral;
 const ACTIVITY_NOTE = "How well this person is covered, from the meetings and action items with them. Not matched yet: nothing is counted so far.";
 // Influence lines: a dotted arrow from the influencer to the influenced person, bent as an arc that steers clear of the other
 // cards where it can. Grey by default; "Who influences who" shows them in the colour of the kind of influence (red negative,
-// blue neutral, green positive). Thickness shows the strength. The line starts with a star (yellow; blue when the influencer
-// is the Economic Buyer, like the star on the tile). Drawn over the chart from the positions of the cards, so it follows
+// blue neutral, green positive). Thickness shows the strength. The influencer carries the star on their card (yellow; blue when
+// they are the Economic Buyer). Drawn over the chart from the positions of the cards, so it follows
 // collapsing, zoom, ladders and the PDF sheet.
 type Seg = { id: string; x1: number; y1: number; cx: number; cy: number; x2: number; y2: number; strength: number; tone: InfluenceTone; blue: boolean; from: string; to: string; note: string };
 const GREY = "#8a93a0", LIGHT = "#c9ced6",  TONE: Record<InfluenceTone, string> = { negative: "#d64545", neutral: "#2f6fb5", positive: "#3f9d3a" };
@@ -67,12 +67,11 @@ function lineSegs(canvas: HTMLElement, list: OrgInfluence[], byKey: Map<string, 
   }
   return out;
 }
-const star = (x: number, y: number, blue: boolean) => `<path transform="translate(${x - 7} ${y - 7}) scale(0.58)" d="${STAR}" fill="${blue ? "#8fb8e8" : "#f5c400"}" stroke="#fff" stroke-width="1.5" paint-order="stroke"/>`;
 const arrowhead = (x1: number, y1: number, x2: number, y2: number) => { const a = Math.atan2(y2 - y1, x2 - x1), c = Math.cos(a), s = Math.sin(a); return `${x2},${y2} ${x2 - 9 * c + 5 * s},${y2 - 9 * s - 5 * c} ${x2 - 9 * c - 5 * s},${y2 - 9 * s + 5 * c}`; };
 const arcPath = (g: Seg) => `M${g.x1} ${g.y1} Q${g.cx} ${g.cy} ${g.x2} ${g.y2}`;
 // Light grey so the lines stay quiet; the lines of the selected or hovered person are a darker grey. Colour when asked for.
 const lineColor = (g: Seg, colored: boolean, focus = true) => colored ? TONE[g.tone] : focus ? GREY : LIGHT;
-const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>${star(g.x1, g.y1, g.blue)}`).join("");
+const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>`).join("");
 // Control rail on the right of the chart, like the one in Salesforce: add contact, check for updates, import, zoom, PDF,
 // fit, layout and sync. Line icons; the tooltips come from data-tip.
 const IC: Record<string, React.ReactNode> = {
@@ -204,6 +203,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const wrap = useRef<HTMLDivElement>(null);
 
+  // Whoever influences someone carries the star on their card (yellow; blue for the Economic Buyer), not on the line.
+  const influencers = useMemo(() => new Set(influences.map(l => l.from)), [influences]);
   const { byKey, kids } = useMemo(() => {
     const byKey = new Map<string, OrgNode>(), kids = new Map<string | null, OrgNode[]>();
     for (const n of chart.nodes) { byKey.set(n.key, n); kids.set(n.parentKey, [...(kids.get(n.parentKey) || []), n]); }
@@ -457,7 +458,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <div className="oc-av">{initials(n.name)}{photo(n, eager)}</div>
       <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span><Meter level={n.activity || 0} /></div></div>
       <div className="oc-rp">
-        <div className="oc-top">{n.powerBase && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
+        <div className="oc-top">{(n.powerBase || influencers.has(n.key)) && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
         {!n.provisional && (
           <div className="oc-bot">
             <button type="button" className="oc-ic" title="Open tasks and events in Salesforce" aria-label="Open tasks and events" onClick={e => { e.stopPropagation(); open(n.key); }}>
@@ -525,7 +526,6 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           <g key={g.id}>
             <path d={arcPath(g)} fill="none" stroke={lineColor(g, colored, focusOf(g))} strokeWidth={lineWidth(g.strength)} strokeDasharray="1 5" strokeLinecap="round" />
             <polygon points={arrowhead(g.cx, g.cy, g.x2, g.y2)} fill={lineColor(g, colored, focusOf(g))} />
-            <path transform={`translate(${g.x1 - 7} ${g.y1 - 7}) scale(0.58)`} d={STAR} fill={g.blue ? "#8fb8e8" : "#f5c400"} stroke="#fff" strokeWidth="1.5" paintOrder="stroke" />
             <path className="oc-line" d={arcPath(g)} fill="none" stroke="transparent" strokeWidth="14" onClick={e => { const cr = canvas.current?.getBoundingClientRect(); setLineMenu({ id: g.id, x: e.clientX - (cr?.left || 0), y: e.clientY - (cr?.top || 0) }); }}><title>{`${byKey.get(g.from)?.name} influences ${byKey.get(g.to)?.name} (${TONE_LABEL[g.tone].toLowerCase()})${g.note ? `: ${g.note}` : ""}`}</title></path>
           </g>
         ))}
