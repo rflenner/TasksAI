@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { OrgInfluence } from "../lib/org-chart-influence";
 import OrgChartView, { type ChartData } from "./OrgChartView";
 
 type Kind = "account" | "opportunity";
 export type ChartRow = { id: string; kind: Kind; sfdcId: string; name: string; accountName: string; people: number; importedAt: string; importedBy: string; editedAt: string | null };
 type Hit = { id: string; name: string; accountId: string; account: string; detail: string; owner: string };
-type Opened = { id: string; kind: Kind; name: string; accountName: string; importedAt: string; edited: boolean; chart: ChartData };
+type Opened = { id: string; kind: Kind; name: string; accountName: string; importedAt: string; edited: boolean; chart: ChartData; influences: OrgInfluence[] };
 
 const btn = "border border-[#c9d3e0] rounded-lg px-3 py-1.5 text-sm text-[#2b3445] bg-white hover:bg-[#f4f7fb] disabled:opacity-40";
 const primary = "rounded-lg px-4 py-1.5 text-sm font-semibold text-white bg-[#173f76] hover:bg-[#102f59] disabled:opacity-40";
@@ -83,7 +84,7 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
           )}
         </div>
         {notice && <p className="text-sm text-[#2b3445] bg-[#eef2f8] rounded-lg px-4 py-2 mb-3" role="status">{notice}</p>}
-        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} startEditing={editMode} onEditing={setEditMode} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
+        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} startEditing={editMode} onEditing={setEditMode} influences={opened.influences || []} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
         {deleting && <DeleteDialog row={deleting} onCancel={() => setDeleting(null)} onConfirm={() => void remove(deleting)} />}
       </div>
     );

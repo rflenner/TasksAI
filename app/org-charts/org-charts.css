@@ -1,8 +1,8 @@
 /* Org chart view, same look as the iSEEit chart in Salesforce: cards with a coloured left edge by type, gold elbow connectors. */
-.oc-bar{display:flex;gap:8px;align-items:center;margin:2px 0 10px}
+.oc-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 10px}
 .oc-bar button{min-width:30px;padding:3px 9px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px;cursor:pointer}
 .oc-bar span{font-size:13px;color:#5b6573;min-width:44px;text-align:center}
-.oc-main{display:flex;gap:16px;align-items:flex-start}
+.oc-main{position:relative;display:flex;gap:16px;align-items:flex-start}
 .oc-wrap{flex:1;min-width:0;overflow:auto;height:68vh;padding:6px 4px 14px;cursor:grab;border:1px solid #e3e8ee;border-radius:10px;background:#fbfcfe}
 .oc-wrap.pan{cursor:grabbing;user-select:none}
 .oc-tree,.oc-tree ul{list-style:none;margin:0;padding:0;display:flex;justify-content:center}
@@ -138,3 +138,35 @@
 .oc-meter i.on{background:#2f6fb5}
 .oc-act{display:flex;align-items:flex-end;gap:10px;font-size:13px;color:#5b6573;margin-bottom:4px}
 .oc-info{width:16px;height:16px;padding:0;margin-left:4px;border:1.5px solid #8a93a0;border-radius:50%;background:none;color:#5b6573;font:italic 700 10px/12px serif;cursor:help;vertical-align:middle}
+/* Influence lines over the chart */
+.oc-canvas{position:relative;width:max-content;min-width:100%}
+.oc-lines{position:absolute;left:0;top:0;pointer-events:none;z-index:5;overflow:visible}
+.oc-lines .oc-line{pointer-events:stroke;cursor:pointer}
+.oc-lines .oc-handle{pointer-events:all;cursor:crosshair}
+.oc-card.link-target{outline:3px solid #2f6fb5;background:#eef4ff}
+.oc-linemenu{position:absolute;z-index:8;width:220px;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #c9d3e0;border-radius:8px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.2);font-size:13px}
+.oc-linemenu input{padding:5px 8px;border:1px solid #c9d3e0;border-radius:6px;font-size:13px}
+.oc-linemenu .oc-row{display:flex;gap:6px;flex-wrap:wrap}
+.oc-linemenu button{padding:4px 8px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:12px;cursor:pointer}
+.oc-linemenu button.on{background:#173f76;color:#fff;border-color:#173f76}
+.oc-linemenu .oc-del{color:#b3261e}
+.oc-sel{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#5b6573}
+.oc-sel select{padding:3px 6px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px}
+.oc-inf p{margin:6px 0 2px;font-size:13px}
+.oc-inf ul{list-style:none;margin:0;padding:0}
+.oc-inf li{display:flex;align-items:baseline;gap:6px;padding:3px 0;font-size:13px}
+.oc-inf li small{flex:1;color:#5b6573}
+.oc-inf select{width:100%;margin-top:4px;padding:4px 6px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px}
+.oc-lk,.oc-x2{border:0;background:none;padding:0;color:#173f76;font:600 13px/1.3 sans-serif;cursor:pointer;text-align:left}
+.oc-x2{color:#8a93a0;font-size:16px}
+.oc-print-canvas{position:relative;width:max-content}
+.oc-print-lines{position:absolute;left:0;top:0;pointer-events:none}
+.oc-who{padding:3px 10px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px;cursor:pointer}
+.oc-who.on,.oc-who:hover{background:#eef4ff;border-color:#2f6fb5;color:#173f76}
+.oc-legend{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#5b6573}
+.oc-legend i,.oc-dot{display:inline-block;flex:none;width:14px;height:0;border-top:3px dotted;border-radius:2px}
+.oc-linemenu .oc-tone.on.positive{background:#3f9d3a;border-color:#3f9d3a;color:#fff}
+.oc-linemenu .oc-tone.on.neutral{background:#2f6fb5;border-color:#2f6fb5;color:#fff}
+.oc-linemenu .oc-tone.on.negative{background:#d64545;border-color:#d64545;color:#fff}
+.oc-dot{margin-right:4px}
+.oc-legend.float{position:absolute;z-index:9;top:8px;left:12px;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.94);border:1px solid #e1e4e8;box-shadow:0 1px 6px rgba(0,0,0,.12)}

@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const auth = await orgChartActor(); if ("response" in auth) return auth.response;
   const row = await loadStoredOrgChart((await params).id);
   if (!row) return Response.json({ error: "Org chart not found" }, { status: 404 });
-  return Response.json({ id: row.id, kind: row.kind, sfdcId: row.sfdcId, name: row.name, accountName: row.accountName, importedAt: row.importedAt, edited: Boolean(row.edited), editedAt: row.editedAt, chart: row.edited || row.data });
+  return Response.json({ id: row.id, kind: row.kind, sfdcId: row.sfdcId, name: row.name, accountName: row.accountName, importedAt: row.importedAt, edited: Boolean(row.edited), editedAt: row.editedAt, chart: row.edited || row.data, influences: row.influences });
 }
 
 // Deletes the saved copy in Task AI. Nothing in Salesforce is touched.
