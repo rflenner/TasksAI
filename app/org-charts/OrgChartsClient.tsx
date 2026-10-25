@@ -74,9 +74,9 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
           </div>
           {row && (
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {askRefresh
-                ? <span className="text-sm text-[#2b3445]">{row.editedAt ? "This replaces the copy and throws away your edits. " : "This replaces the copy. "}<button type="button" className={btn} onClick={() => void pull(row)}>Yes, copy again</button> <button type="button" className={btn} onClick={() => setAskRefresh(false)}>No</button></span>
-                : <button type="button" className={btn} disabled={refreshing} onClick={() => setAskRefresh(true)} title="Temporary: copy this chart from Salesforce again">{refreshing ? "Copying…" : "Pull from Salesforce"}</button>}
+              {askRefresh && row.editedAt
+                ? <span className="text-sm text-[#2b3445]">You changed this chart in Task AI. Pulling brings in what is in Salesforce now and throws your changes away. <button type="button" className={btn} onClick={() => void pull(row)}>Pull and discard my changes</button> <button type="button" className={btn} onClick={() => setAskRefresh(false)}>Cancel</button></span>
+                : <button type="button" className={btn} disabled={refreshing} onClick={() => row.editedAt ? setAskRefresh(true) : void pull(row)} title="Temporary: copy this chart from Salesforce again">{refreshing ? "Pulling…" : "Pull from Salesforce"}</button>}
               <button type="button" className={btn} onClick={() => setDeleting(row)}>Delete</button>
             </div>
           )}
