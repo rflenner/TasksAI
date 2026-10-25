@@ -94,6 +94,19 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     for (const n of chart.nodes) { byKey.set(n.key, n); kids.set(n.parentKey, [...(kids.get(n.parentKey) || []), n]); }
     return { byKey, kids };
   }, [chart]);
+  // Everyone under a manager, at any depth. Folding a team hides the whole branch; opening it again opens the whole branch too,
+  // or only the next level when Shift is held (the people below stay folded).
+  const under = (key: string): OrgNode[] => (kids.get(key) || []).flatMap(k => [k, ...under(k.key)]);
+  function toggleTeam(n: OrgNode, oneLevel: boolean) {
+    setCollapsed(set => {
+      const next = new Set(set);
+      if (!next.has(n.key)) { next.add(n.key); return next; }
+      next.delete(n.key);
+      for (const d of under(n.key)) next.delete(d.key);
+      if (oneLevel) for (const k of kids.get(n.key) || []) if ((kids.get(k.key) || []).length) next.add(k.key);
+      return next;
+    });
+  }
   const below = (n: OrgNode): number => (kids.get(n.key) || []).reduce((sum, k) => sum + 1 + below(k), 0);
   // eslint-disable-next-line @next/next/no-img-element
   const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
@@ -222,8 +235,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <li key={n.key}>
         {card(n)}
         {k.length > 0 && (
-          <button type="button" className={`oc-chev${shut ? " shut" : ""}`} aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} the team of ${n.name}`} title={`${shut ? "Show" : "Hide"} ${below(n)} below`}
-            onClick={e => { e.stopPropagation(); setCollapsed(s => { const next = new Set(s); if (next.has(n.key)) next.delete(n.key); else next.add(n.key); return next; }); }}>
+          <button type="button" className={`oc-chev${shut ? " shut" : ""}`} aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} the team of ${n.name}`} title={shut ? `Show all ${below(n)} below (Shift: only the next level)` : `Hide all ${below(n)} below`}
+            onClick={e => { e.stopPropagation(); toggleTeam(n, e.shiftKey); }}>
             {shut ? <b>+{below(n)}</b> : "⌃"}
           </button>
         )}
@@ -257,6 +270,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         <button type="button" aria-label="Zoom in" onClick={() => setZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}>+</button>
         <button type="button" onClick={() => setZoom(1)}>Reset</button>
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
+        {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
         <button type="button" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}>{printing ? "Preparing PDF…" : "Export PDF"}</button>
         <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
         {edited && (confirm === "reset"
