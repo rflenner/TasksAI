@@ -36,7 +36,7 @@ const ACTIVITY_NOTE = "How well this person is covered, from the meetings and ac
 // is the Economic Buyer, like the star on the tile). Drawn over the chart from the positions of the cards, so it follows
 // collapsing, zoom, ladders and the PDF sheet.
 type Seg = { id: string; x1: number; y1: number; cx: number; cy: number; x2: number; y2: number; strength: number; tone: InfluenceTone; blue: boolean; from: string; to: string; note: string };
-const GREY = "#9aa3af", TONE: Record<InfluenceTone, string> = { negative: "#d64545", neutral: "#2f6fb5", positive: "#3f9d3a" };
+const GREY = "#8a93a0", LIGHT = "#c9ced6",  TONE: Record<InfluenceTone, string> = { negative: "#d64545", neutral: "#2f6fb5", positive: "#3f9d3a" };
 const TONE_LABEL: Record<InfluenceTone, string> = { negative: "Negative", neutral: "Neutral", positive: "Positive" };
 const STAR = "M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z";
 const lineWidth = (s: number) => s === 3 ? 3 : s === 2 ? 2 : 1.4;
@@ -70,7 +70,8 @@ function lineSegs(canvas: HTMLElement, list: OrgInfluence[], byKey: Map<string, 
 const star = (x: number, y: number, blue: boolean) => `<path transform="translate(${x - 7} ${y - 7}) scale(0.58)" d="${STAR}" fill="${blue ? "#8fb8e8" : "#f5c400"}" stroke="#fff" stroke-width="1.5" paint-order="stroke"/>`;
 const arrowhead = (x1: number, y1: number, x2: number, y2: number) => { const a = Math.atan2(y2 - y1, x2 - x1), c = Math.cos(a), s = Math.sin(a); return `${x2},${y2} ${x2 - 9 * c + 5 * s},${y2 - 9 * s - 5 * c} ${x2 - 9 * c - 5 * s},${y2 - 9 * s + 5 * c}`; };
 const arcPath = (g: Seg) => `M${g.x1} ${g.y1} Q${g.cx} ${g.cy} ${g.x2} ${g.y2}`;
-const lineColor = (g: Seg, colored: boolean) => colored ? TONE[g.tone] : GREY;
+// Light grey so the lines stay quiet; the lines of the selected or hovered person are a darker grey. Colour when asked for.
+const lineColor = (g: Seg, colored: boolean, focus = true) => colored ? TONE[g.tone] : focus ? GREY : LIGHT;
 const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>${star(g.x1, g.y1, g.blue)}`).join("");
 // Four bars like a signal meter; `level` 0 to 4 fills them, 0 = no activity matched (all light grey).
 function Meter({ level }: { level: number }) {
@@ -149,7 +150,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const sheet = useRef<HTMLDivElement>(null);
   const [confirm, setConfirm] = useState<"remove" | "reset" | null>(null);
   const [influences, setInfluences] = useState<OrgInfluence[]>(initialInfluences);
-  const [lineMode, setLineMode] = useState<"selected" | "all" | "off">("selected");
+  const [lineMode, setLineMode] = useState<"selected" | "all" | "off">("all");
   const [pdfLines, setPdfLines] = useState(true);
   const [colored, setColored] = useState(false); // "Who influences who" switched on: all lines in the colour of their kind
   const colorPinned = colored;
@@ -405,14 +406,15 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const r = el.getBoundingClientRect(), cr = box.getBoundingClientRect();
     setHandleAt({ x: r.right - cr.left + 11, y: r.top - cr.top + r.height / 2, from: handleCard });
   }, [handleCard, collapsed, zoom, editing, chart]);
+  const focusOf = (g: Seg) => g.from === selected || g.to === selected || g.from === hoverCard || g.to === hoverCard || g.id === lineMenu?.id;
   const menuLine = lineMenu ? influences.find(l => l.id === lineMenu.id) : null;
   const overlay = (
     <>
       <svg className="oc-lines" width={canvasSize.w} height={canvasSize.h} aria-hidden="true">
         {segs.map(g => (
           <g key={g.id}>
-            <path d={arcPath(g)} fill="none" stroke={lineColor(g, colored)} strokeWidth={lineWidth(g.strength)} strokeDasharray="1 5" strokeLinecap="round" />
-            <polygon points={arrowhead(g.cx, g.cy, g.x2, g.y2)} fill={lineColor(g, colored)} />
+            <path d={arcPath(g)} fill="none" stroke={lineColor(g, colored, focusOf(g))} strokeWidth={lineWidth(g.strength)} strokeDasharray="1 5" strokeLinecap="round" />
+            <polygon points={arrowhead(g.cx, g.cy, g.x2, g.y2)} fill={lineColor(g, colored, focusOf(g))} />
             <path transform={`translate(${g.x1 - 7} ${g.y1 - 7}) scale(0.58)`} d={STAR} fill={g.blue ? "#8fb8e8" : "#f5c400"} stroke="#fff" strokeWidth="1.5" paintOrder="stroke" />
             <path className="oc-line" d={arcPath(g)} fill="none" stroke="transparent" strokeWidth="14" onClick={e => { const cr = canvas.current?.getBoundingClientRect(); setLineMenu({ id: g.id, x: e.clientX - (cr?.left || 0), y: e.clientY - (cr?.top || 0) }); }}><title>{`${byKey.get(g.from)?.name} influences ${byKey.get(g.to)?.name} (${TONE_LABEL[g.tone].toLowerCase()})${g.note ? `: ${g.note}` : ""}`}</title></path>
           </g>
@@ -453,7 +455,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         <button type="button" onClick={() => setZoom(1)}>Reset</button>
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
         {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
-        <label className="oc-sel">Influence lines <select value={lineMode} onChange={e => setLineMode(e.target.value as "selected" | "all" | "off")}><option value="selected">Selected person</option><option value="all">All ({influences.length})</option><option value="off">Off</option></select></label>
+        <label className="oc-sel">Influence lines <select value={lineMode} onChange={e => setLineMode(e.target.value as "selected" | "all" | "off")}><option value="all">All ({influences.length})</option><option value="selected">Selected person only</option><option value="off">Off</option></select></label>
         <label className="oc-switch" title="Show who influences whom in colour: red negative, blue neutral, green positive"><input type="checkbox" role="switch" checked={colored} onChange={e => setColored(e.target.checked)} /><span className="oc-track" aria-hidden="true" />Who influences who</label>
 
         <label className="oc-sel"><input type="checkbox" checked={pdfLines} onChange={e => setPdfLines(e.target.checked)} /> Lines in PDF</label>
