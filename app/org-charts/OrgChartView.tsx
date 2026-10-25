@@ -23,8 +23,16 @@ type Pad = { spot: "top" | "bottom" | "left" | "right"; zone: Zone; label: strin
 const PADS: Pad[] = [{ spot: "top", zone: "top", label: "▲ Manager" }, { spot: "bottom", zone: "bottom", label: "▼ Reports to" }, { spot: "left", zone: "left", label: "◀ Peer" }, { spot: "right", zone: "right", label: "Peer ▶" }];
 // In a ladder the people are stacked, so above and below mean before and after: the manager and reports-to areas move to the sides.
 const LADDER_PADS: Pad[] = [{ spot: "top", zone: "left", label: "▲ Before" }, { spot: "bottom", zone: "right", label: "▼ After" }, { spot: "left", zone: "top", label: "◀ Manager" }, { spot: "right", zone: "bottom", label: "Reports to ▶" }];
-const TYPES = ["Champion", "Coach", "Enemy", "Influencer", "Neutral"];
-const EDGE: Record<string, string> = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
+// Mindset of a contact (the "type" in Salesforce): colours the bar on the left of the tile. Nothing set counts as Neutral (grey).
+const MINDSETS = ["Champion", "Coach", "Neutral", "Enemy"];
+const EDGE: Record<string, string> = { Champion: "#3f9d3a", Coach: "#f2c500", Neutral: "#c4c4c4", Enemy: "#e03a3a" };
+const mindset = (n: { type: string }) => n.type || "Neutral";
+const edge = (n: { type: string }) => EDGE[mindset(n)] || EDGE.Neutral;
+const ACTIVITY_NOTE = "How well this person is covered, from the meetings and action items with them. Not matched yet: nothing is counted so far.";
+// Four bars like a signal meter; `level` 0 to 4 fills them, 0 = no activity matched (all light grey).
+function Meter({ level }: { level: number }) {
+  return <span className="oc-meter" role="img" aria-label={level ? `Activity ${level} of 4` : "No activity matched"} title={level ? `Activity ${level} of 4` : "No activity matched"}>{[1, 2, 3, 4].map(i => <i key={i} className={i <= level ? "on" : ""} style={{ height: 4 + i * 3 }} />)}</span>;
+}
 const LI = "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z";
 const initials = (name: string) => name.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
 const dateText = (d: string) => { if (!d) return "No date"; const x = new Date(d + "T00:00:00"); return isNaN(x.getTime()) ? d : x.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); };
@@ -44,8 +52,8 @@ function AddForm({ parentKey, busy, onAdd }: { parentKey: string | null; busy: b
 }
 
 function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }: { node: OrgNode; nodes: OrgNode[]; busy: boolean; confirmRemove: boolean; onAsk: () => void; onCancel: () => void; onEdit: (edit: OrgEdit) => Promise<boolean | undefined> }) {
-  const [type, setType] = useState(node.type), [dealRole, setDealRole] = useState(node.dealRole), [powerBase, setPowerBase] = useState(node.powerBase), [description, setDescription] = useState(node.description);
-  const changed = type !== node.type || dealRole !== node.dealRole || powerBase !== node.powerBase || description !== node.description;
+  const [type, setType] = useState(mindset(node)), [dealRole, setDealRole] = useState(node.dealRole), [powerBase, setPowerBase] = useState(node.powerBase), [description, setDescription] = useState(node.description);
+  const changed = type !== mindset(node) || dealRole !== node.dealRole || powerBase !== node.powerBase || description !== node.description;
   // Not themselves and not anyone below them: that would make a loop.
   const under = new Set<string>([node.key]);
   for (let grew = true; grew;) { grew = false; for (const n of nodes) if (n.parentKey && under.has(n.parentKey) && !under.has(n.key)) { under.add(n.key); grew = true; } }
@@ -69,7 +77,7 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
           </select>
         </label>
       )}
-      <label>Type<select value={type} onChange={e => setType(e.target.value)}>{TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
+      <label>Mindset<select value={type} onChange={e => setType(e.target.value)}>{(MINDSETS.includes(type) ? MINDSETS : [...MINDSETS, type]).map(t => <option key={t}>{t}</option>)}</select></label>
       <label>Deal role<input value={dealRole} maxLength={80} onChange={e => setDealRole(e.target.value)} /></label>
       <label className="oc-chk"><input type="checkbox" checked={powerBase} onChange={e => setPowerBase(e.target.checked)} /> Power base</label>
       <label>Notes<textarea rows={3} value={description} maxLength={2000} onChange={e => setDescription(e.target.value)} /></label>
@@ -242,7 +250,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     <>
       {n.provisional && <span className="oc-tmp">Temp</span>}
       <div className="oc-av">{initials(n.name)}{photo(n, eager)}</div>
-      <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span></div></div>
+      <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span><Meter level={n.activity || 0} /></div></div>
       <div className="oc-rp">
         <div className="oc-top">{n.powerBase && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
         {!n.provisional && (
@@ -260,7 +268,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   );
 
   const card = (n: OrgNode, ladder = false) => (
-    <div data-key={n.key} data-ladder={ladder ? "1" : undefined} className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${hover?.key === n.key ? " active" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
+    <div data-key={n.key} data-ladder={ladder ? "1" : undefined} className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${hover?.key === n.key ? " active" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: edge(n) }}
       draggable={editing && !busy} onDragStart={e => { const r = e.currentTarget.getBoundingClientRect(); grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height }; e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }}
       onDragEnd={() => { setDragKey(null); setHover(null); hoverRef.current = null; }}
       onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
@@ -277,7 +285,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const deeper = (list: OrgNode[]) => list.map(c => node(c, level + 1, list === plan.ladder, plain));
     return (
       <li key={n.key}>
-        {plain ? <div className="oc-card" style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}>{inner(n, true)}</div> : card(n, inLadder)}
+        {plain ? <div className="oc-card" style={{ borderLeftColor: edge(n) }}>{inner(n, true)}</div> : card(n, inLadder)}
         {!plain && k.length > 0 && (
           <button type="button" className={`oc-chev${shut ? " shut" : ""}`} aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} the team of ${n.name}`} title={shut ? `Show all ${below(n)} below (Shift: only the next level)` : `Hide all ${below(n)} below`}
             onClick={e => { e.stopPropagation(); toggleTeam(n, e.shiftKey); }}>
@@ -348,13 +356,15 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
             <div className="oc-ph"><div className="oc-av big">{initials(sel.name)}{photo(sel)}</div><div><h3>{sel.name}</h3><p>{sel.title}</p></div></div>
             {sel.left && <p className="oc-left"><Warn /> Salesforce says this contact left the organization.</p>}
-            {row("Type", sel.type)}{row("Deal role", sel.dealRole)}{row("Power base", sel.powerBase ? "Yes" : "")}{row("Reports to", parent?.name)}{row("Direct reports", team ? String(team) : "")}
+            {row("Mindset", mindset(sel))}{row("Deal role", sel.dealRole)}{row("Power base", sel.powerBase ? "Yes" : "")}{row("Reports to", parent?.name)}{row("Direct reports", team ? String(team) : "")}
             {row("Email", sel.email && <a href={`mailto:${sel.email}`}>{sel.email}</a>)}{row("Phone", sel.phone)}{row("Notes", sel.description)}
             <div className="oc-links">
               {chart.salesforceBase && /^003/.test(sel.key) && <a className="oc-btn" href={`${chart.salesforceBase}/lightning/r/Contact/${encodeURIComponent(sel.key)}/view`} target="_blank" rel="noopener noreferrer">Go to contact in Salesforce ↗</a>}
               {sel.linkedin && <a className="oc-btn" href={sel.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>}
             </div>
             {editing && <EditPanel key={sel.key} node={sel} nodes={chart.nodes} busy={busy} confirmRemove={confirm === "remove"} onAsk={() => setConfirm("remove")} onCancel={() => setConfirm(null)} onEdit={edit => send(edit)} />}
+            <h4>Activity <button type="button" className="oc-info" aria-label="About activity" title={ACTIVITY_NOTE}>i</button></h4>
+            <div className="oc-act"><Meter level={sel.activity || 0} /><span>{sel.activity ? `${sel.activity} of 4` : "No activity matched"}</span></div>
             <h4>Open tasks and events in Salesforce <em>{sel.provisional ? "" : sel.openTasks || 0}</em></h4>
             {sel.provisional ? <p className="oc-hint">A placeholder contact has no tasks in Salesforce.</p>
               : !t || t.busy ? <p className="oc-hint">Reading Salesforce…</p>

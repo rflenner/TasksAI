@@ -132,3 +132,9 @@
 .oc-rootzone{position:absolute;left:8px;right:8px;top:6px;height:34px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:2px dashed #9db4d6;border-radius:8px;background:rgba(255,255,255,.92);color:#173f76;font:600 13px/1 sans-serif}
 .oc-rootzone.on{background:#173f76;border:2px solid #173f76;color:#fff}
 .oc-wrap.editing{padding-top:48px}
+/* Mindset colours the bar on the left of a tile (see EDGE in OrgChartView); the activity meter sits at the bottom of the text column */
+.oc-meter{display:inline-flex;align-items:flex-end;gap:2px;flex:none}
+.oc-meter i{display:block;width:5px;border-radius:2px;background:#e1e3e8}
+.oc-meter i.on{background:#2f6fb5}
+.oc-act{display:flex;align-items:flex-end;gap:10px;font-size:13px;color:#5b6573;margin-bottom:4px}
+.oc-info{width:16px;height:16px;padding:0;margin-left:4px;border:1.5px solid #8a93a0;border-radius:50%;background:none;color:#5b6573;font:italic 700 10px/12px serif;cursor:help;vertical-align:middle}
