@@ -281,13 +281,13 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     window.addEventListener("resize", size);
     return () => { ro.disconnect(); window.removeEventListener("resize", size); };
   }, []);
-  // On a phone the chart starts fitted to the screen, so the whole picture is there before zooming in on a person.
-  useEffect(() => { if (window.innerWidth <= 860) requestAnimationFrame(fitChart); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The chart opens fitted to the screen: 100% for a small chart, down to 50% for a large one.
+  useEffect(() => { requestAnimationFrame(fitChart); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const stepZoom = (d: number) => setZoom(z => Math.max(0.25, Math.min(2, Math.round((z + d) * 20) / 20)));
   function fitChart() {
     const el = wrap.current, tree = el?.querySelector<HTMLElement>(".oc-tree"); if (!el || !tree) return;
     const r = tree.getBoundingClientRect(), w = r.width / zoom, h = r.height / zoom;
-    setZoom(Math.max(0.25, Math.min(1, Math.floor(Math.min((el.clientWidth - 24) / w, (el.clientHeight - 70) / h) * 20) / 20)));
+    setZoom(Math.max(0.5, Math.min(1, Math.floor(Math.min((el.clientWidth - 24) / w, (el.clientHeight - 70) / h) * 20) / 20)));
     el.scrollTo(0, 0);
   }
   function checkUpdates() {
