@@ -2,6 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
 import { buildOrgChart, orgLookupQueries, orgRoleQuery, type SfContactRoleRow, type SfOrgRoleRow, type SfProvisionalRow } from "../../../../../lib/close-plan-orgchart";
+import { newestPhotos, photoQuery, type AttachmentRow } from "../../../../../lib/close-plan-photos";
 import { canAccessPlan, canDeletePlan } from "../../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../../lib/request";
 import { SalesforceNotConnectedError, salesforceApi } from "../../../../../lib/salesforce";
@@ -32,7 +33,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const [contactRoles, provisional] = await Promise.all([query<SfContactRoleRow>(lookups.contactRoles), lookups.provisional ? query<SfProvisionalRow>(lookups.provisional) : []]);
     const parentSql = lookups.parentContacts(new Set(contactRoles.map(r => r.ContactId)));
     const parents = parentSql ? await query<{ Id: string; Name: string | null; Title: string | null; Email: string | null }>(parentSql) : [];
-    return Response.json({ opportunityId, ...buildOrgChart(roles, contactRoles, provisional, parents) });
+    const chart = buildOrgChart(roles, contactRoles, provisional, parents);
+    // Photos are a nicety: if the lookup fails the cards show initials.
+    try {
+      const soql = photoQuery(chart.nodes.filter(n => !n.provisional).map(n => n.key));
+      const photos = soql ? newestPhotos(await query<AttachmentRow>(soql)) : new Map();
+      for (const node of chart.nodes) node.photo = photos.get(node.key)?.attachmentId || "";
+    } catch (error) { console.error("Close Plan org chart photos failed:", error instanceof Error ? error.message : error); }
+    return Response.json({ opportunityId, ...chart });
   } catch (error) {
     if (error instanceof SalesforceNotConnectedError) return Response.json({ error: "Salesforce is not connected. Connect it under Integrations." }, { status: 409 });
     return Response.json({ error: "Salesforce could not be reached" }, { status: 502 });

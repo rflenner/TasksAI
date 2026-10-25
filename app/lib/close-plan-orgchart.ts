@@ -37,6 +37,7 @@ export type OrgNode = {
   powerBase: boolean;
   parentKey: string | null;
   order: number;
+  photo: string; // Salesforce Attachment Id of the Contact's Profile_Picture.jpg, or "" (set by the route, see close-plan-photos.ts)
 };
 export type OrgChartIssue = { kind: "duplicate" | "unknown-person" | "parent-missing" | "cycle" | "persona"; roleId: string; text: string };
 export type OrgChart = { nodes: OrgNode[]; roots: string[]; issues: OrgChartIssue[] };
@@ -84,14 +85,14 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
       email: ocr?.Contact?.Email || "",
       type: role.iseeit__Type__c || "", dealRole: ocr?.Role || "", powerBase: Boolean(role.iseeit__Power_Base__c),
       parentKey: role.iseeit__Parent_Contact__c || role.iseeit__Parent_Provisional_Contact__c || null,
-      order: role.iseeit__Child_Number__c ?? 0,
+      order: role.iseeit__Child_Number__c ?? 0, photo: "",
     });
   }
 
   // A manager who has no entry of their own: show them as a node if we know who they are, otherwise the person becomes a top-level entry.
   for (const contact of parentContacts) {
     if (nodes.has(contact.Id) || ![...nodes.values()].some(n => n.parentKey === contact.Id)) continue;
-    nodes.set(contact.Id, { key: contact.Id, roleId: "", name: contact.Name || "(no name)", title: contact.Title || "", email: contact.Email || "", provisional: false, type: "", dealRole: "", powerBase: false, parentKey: null, order: -1 });
+    nodes.set(contact.Id, { key: contact.Id, roleId: "", name: contact.Name || "(no name)", title: contact.Title || "", email: contact.Email || "", provisional: false, type: "", dealRole: "", powerBase: false, parentKey: null, order: -1, photo: "" });
     issues.push({ kind: "parent-missing", roleId: "", text: `${contact.Name || contact.Id} is a manager in the chart but has no role of their own on the opportunity` });
   }
   for (const node of nodes.values()) {

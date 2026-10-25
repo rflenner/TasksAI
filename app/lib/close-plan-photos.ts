@@ -22,6 +22,7 @@ export const PHOTO_NAME = "Profile_Picture.jpg";
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 const CONTACT_ID = /^003[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/;
 const ATTACHMENT_ID = /^00P[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/;
+export const isAttachmentId = (id: string) => ATTACHMENT_ID.test(id);
 const SAFE_EMAIL = /^[^\s@'"\\]+@[^\s@'"\\]+\.[^\s@'"\\]+$/;
 const SALES_AI_CACHE_MS = 6 * 60 * 60 * 1000;
 const SALES_AI_PER_SYNC = 10;
