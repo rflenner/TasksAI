@@ -15,9 +15,10 @@
 .oc-tree>li::before,.oc-tree>li::after{display:none}
 .oc-tree li:only-child::before,.oc-tree li:only-child::after{border-top:none}
 .oc-tree li:first-child::before,.oc-tree li:last-child::after{border-top:none}
-.oc-tree li>.oc-card::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+/* the card has a 5px coloured edge and left:50% counts from inside it, 2.5px right of the card middle: pull the line back */
+.oc-tree li>.oc-card::before{content:"";position:absolute;top:-34px;left:calc(50% - 3.5px);height:34px;border-left:2px solid #f5b942}
 .oc-tree>li>.oc-card::before{display:none}
-.oc-tree ul::before{content:"";position:absolute;top:0;left:50%;height:20px;border-left:2px solid #f5b942}
+.oc-tree ul::before{content:"";position:absolute;top:0;left:calc(50% - 1px);height:20px;border-left:2px solid #f5b942}
 .oc-chev{z-index:1;margin-top:8px;margin-bottom:-14px;min-width:22px;height:22px;padding:0 4px;border:2px solid #f5b942;border-radius:11px;background:#fff;color:#f5b942;font:600 13px/18px sans-serif;text-align:center;box-sizing:border-box;cursor:pointer}
 .oc-chev b{font-size:11px;color:#8a6a00}
 .oc-chev.shut{background:#fff6dc;margin-bottom:0}
@@ -123,7 +124,7 @@
 .oc-tree .oc-ladder>li>.oc-chev{align-self:flex-start;margin-left:104px}
 .oc-tree .oc-ladder .oc-ladder{margin-left:24px}
 .oc-grp{box-sizing:border-box;width:230px;padding:8px 10px;border:1.5px dashed #c9a24a;border-radius:4px;background:#fffaf0;color:#7a5a00;font:600 12px/1.3 sans-serif;text-align:center}
-.oc-tree li>.oc-grp::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+.oc-tree li>.oc-grp::before{content:"";position:absolute;top:-34px;left:calc(50% - 1px);height:34px;border-left:2px solid #f5b942}
 .oc-tree li.oc-group>.oc-grp{position:relative}
 .oc-tree li.oc-group>ul.oc-ladder{margin-top:6px}
 .oc-tree li.oc-group>ul.oc-ladder::before{top:-6px;height:6px}
@@ -228,3 +229,18 @@
 }
 /* The PDF sheet has no fold circle, so the hanging team's line starts right at the manager's card, not 16px up inside it */
 .oc-print-root .oc-tree ul.oc-ladder::before{top:0;height:0}
+
+/* Toolbar: line switch, levels, one menu for the rest */
+.oc-seg{display:inline-flex;align-items:center;gap:0;font-size:13px;color:#5b6573}
+.oc-seg button{border-radius:0;margin-left:-1px}
+.oc-seg button:first-of-type{margin-left:8px;border-radius:6px 0 0 6px}
+.oc-seg button:last-of-type{border-radius:0 6px 6px 0}
+.oc-bar .oc-seg button.on{background:#173f76;color:#fff;border-color:#173f76}
+.oc-bar .oc-more{margin-left:0;font-size:20px;line-height:1;padding:0 10px;height:30px}
+.oc-bar .oc-more.end{margin-left:auto}
+.oc-bar .oc-scrim{position:fixed;inset:0;z-index:49;width:auto;min-width:0;padding:0;border:0;border-radius:0;background:transparent;cursor:default}
+.oc-menu{position:fixed;z-index:50;display:flex;flex-direction:column;gap:2px;min-width:230px;padding:8px;border:1px solid #c9d3e0;border-radius:10px;background:#fff;box-shadow:0 6px 20px rgba(0,0,0,.2);font-size:13px;color:#2b3445;white-space:normal}
+.oc-menu label{display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer}
+.oc-menu hr{width:100%;border:0;border-top:1px solid #e3e6ea;margin:4px 0}
+.oc-bar .oc-menu button{width:100%;text-align:left;border:0;background:none;padding:7px 8px;border-radius:6px;min-width:0}
+.oc-bar .oc-menu button:hover:not(:disabled){background:#eef2f8}
