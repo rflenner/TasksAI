@@ -107,3 +107,23 @@
   .oc-print-root,.oc-print-root *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .oc-print-root li{break-inside:avoid}
 }
+/* Ladder: a team hanging as a vertical list off a line under its manager (rules in app/lib/org-chart-layout.ts).
+   The manager's card stays centred over its row connector; the ladder starts 24px in from the card's left edge. */
+.oc-tree ul.oc-ladder{display:block;align-self:flex-start;margin-left:62px;padding:0;--lp:10px;justify-content:flex-start}
+.oc-tree.editing ul.oc-ladder{--lp:34px}
+.oc-tree ul.oc-ladder::before{left:0;top:-16px;height:16px}
+.oc-tree .oc-ladder>li{display:block;padding:var(--lp) 0 0 14px;align-items:flex-start}
+.oc-tree.editing .oc-ladder>li{padding:var(--lp) 0 0 14px}
+.oc-tree .oc-ladder>li::after{display:none}
+.oc-tree .oc-ladder>li::before{display:block;left:0;top:0;width:0;height:100%;border-top:none;border-left:2px solid #f5b942}
+.oc-tree .oc-ladder>li:last-child::before{height:calc(var(--lp) + 50px)}
+.oc-tree .oc-ladder>li:only-child::before{border-left:2px solid #f5b942}
+.oc-tree .oc-ladder>li:first-child::before{border-left:2px solid #f5b942}
+.oc-tree .oc-ladder>li>.oc-card::before{display:block;left:-14px;top:50px;width:14px;height:0;border-left:none;border-top:2px solid #f5b942}
+.oc-tree .oc-ladder>li>.oc-chev{align-self:flex-start;margin-left:104px}
+.oc-tree .oc-ladder .oc-ladder{margin-left:24px}
+.oc-grp{box-sizing:border-box;width:230px;padding:8px 10px;border:1.5px dashed #c9a24a;border-radius:4px;background:#fffaf0;color:#7a5a00;font:600 12px/1.3 sans-serif;text-align:center}
+.oc-tree li>.oc-grp::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+.oc-tree li.oc-group>.oc-grp{position:relative}
+.oc-tree li.oc-group>ul.oc-ladder{margin-top:6px}
+.oc-tree li.oc-group>ul.oc-ladder::before{top:-6px;height:6px}

@@ -184,3 +184,32 @@ test("org chart drop zones: above, below, beside, with or without the team", asy
   assert.ok("error" in run("a", "e", "root", true));
   assert.ok("error" in run("a", null, "left", true));
 });
+
+test("team layout rules: row, ladder, deep levels, wide teams, manual override", async () => {
+  const { planTeam } = await import("../app/lib/org-chart-layout");
+  const person = (key: string, parentKey: string | null, extra: Record<string, unknown> = {}) => ({ key, roleId: "", name: key, title: "", email: "", phone: "", description: "", provisional: false, type: "Neutral", dealRole: "", powerBase: false, parentKey, order: 0, linkedin: "", left: false, openTasks: 0, photo: "", ...extra }) as import("../app/lib/close-plan-orgchart").OrgNode;
+  const make = (people: ReturnType<typeof person>[]) => { const by = new Map<string, ReturnType<typeof person>[]>(); for (const p of people) by.set(p.parentKey || "", [...(by.get(p.parentKey || "") || []), p]); return (k: string) => by.get(k) || []; };
+  const boss = person("m", null);
+  const leaves = (n: number) => Array.from({ length: n }, (_, i) => person("l" + i, "m"));
+  // 1 and 2: three leaves hang, two stay in a row
+  assert.equal(planTeam(boss, 1, make([boss, ...leaves(3)])).layout, "ladder");
+  assert.equal(planTeam(boss, 1, make([boss, ...leaves(2)])).layout, "row");
+  // a team where someone leads stays a row at the top, even when small
+  const lead = [boss, person("a", "m"), person("b", "m"), person("c", "m"), person("a1", "a")];
+  assert.equal(planTeam(boss, 1, make(lead)).layout, "row");
+  // 3: from level 4 down it hangs although someone leads
+  assert.equal(planTeam(boss, 3, make(lead)).layout, "ladder");
+  assert.equal(planTeam(boss, 2, make(lead)).layout, "row");
+  // 4: more than six with leaders: leaders stay in the row, leaves hang together
+  const wide = [boss, ...Array.from({ length: 8 }, (_, i) => person("w" + i, "m")), person("w0x", "w0")];
+  const plan = planTeam(boss, 1, make(wide));
+  assert.equal(plan.layout, "row"); assert.deepEqual(plan.row.map(n => n.key), ["w0"]); assert.equal(plan.ladder.length, 7);
+  // 5: manual choice beats the rules
+  assert.equal(planTeam(person("m", null, { layout: "row" }), 3, make([boss, ...leaves(5)])).layout, "row");
+  assert.equal(planTeam(person("m", null, { layout: "ladder" }), 1, make(lead)).layout, "ladder");
+  assert.equal(planTeam(person("m", null, { layout: "auto" }), 1, make([boss, ...leaves(4)])).layout, "ladder");
+  const { applyOrgEdit } = await import("../app/lib/org-chart-edit");
+  const chart = { nodes: [boss], roots: ["m"], issues: [] };
+  assert.equal((applyOrgEdit(chart, { op: "update", key: "m", layout: "ladder" }) as { chart: typeof chart }).chart.nodes[0].layout, "ladder");
+  assert.ok("error" in applyOrgEdit(chart, { op: "update", key: "m", layout: "diagonal" }));
+});
