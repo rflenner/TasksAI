@@ -1,13 +1,9 @@
-import { and, eq, isNull } from "drizzle-orm";
-import { getDb } from "../../../../../../db";
-import { closePlanDocuments } from "../../../../../../db/schema";
 import { applyContactExtras, buildOrgChart, orgContactExtraQueries, orgLookupQueries, orgPhotoQuery, orgRoleQuery, type SfContactRoleRow, type SfOrgRoleRow, type SfProvisionalRow } from "../../../../../lib/close-plan-orgchart";
 import { newestPhotos, type AttachmentRow } from "../../../../../lib/close-plan-photos";
-import { canAccessPlan, canDeletePlan } from "../../../../../lib/close-plan-store";
+import { authorizeOrgChart } from "../../../../../lib/close-plan-orgchart-access";
 import { requireSameOrigin } from "../../../../../lib/request";
-import { SalesforceNotConnectedError, salesforceApi } from "../../../../../lib/salesforce";
-import { isOpportunityId } from "../../../../../lib/salesforce-opportunity-search";
-import { currentActor } from "../../../../../lib/session";
+import { isSalesforceHost } from "../../../../../lib/salesforce-domain";
+import { SalesforceNotConnectedError, ensureSalesforceTokenFresh, salesforceApi } from "../../../../../lib/salesforce";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +13,9 @@ const query = async <T,>(soql: string) => (await salesforceApi<{ records: T[] }>
 // Reads Salesforce only and saves nothing, here or there. Owners of the plan and admins only, like the sync.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
-  const actor = await currentActor();
-  if (!actor) return Response.json({ error: "Sign in required" }, { status: 401 });
-  const { id } = await params;
-  const [row] = await getDb().select().from(closePlanDocuments).where(and(eq(closePlanDocuments.id, id), isNull(closePlanDocuments.deletedAt))).limit(1);
-  if (!row || !canAccessPlan(actor, row)) return Response.json({ error: "Plan not found" }, { status: 404 });
-  const data = row.data as { sfdc?: { opportunityId?: string }; sfdcOpportunityId?: string; people?: unknown };
-  if (!canDeletePlan(actor, data as Parameters<typeof canDeletePlan>[1])) return Response.json({ error: "Only the plan owner and admins can read the org chart from Salesforce" }, { status: 403 });
-  const opportunityId = [data.sfdc?.opportunityId, data.sfdcOpportunityId].find((v): v is string => typeof v === "string" && isOpportunityId(v));
-  if (!opportunityId) return Response.json({ error: "This plan is not linked to a Salesforce opportunity" }, { status: 400 });
+  const access = await authorizeOrgChart((await params).id);
+  if (access instanceof Response) return access;
+  const { opportunityId } = access;
 
   try {
     const roles = await query<SfOrgRoleRow>(orgRoleQuery(opportunityId));
@@ -51,7 +41,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         applyContactExtras(chart.nodes, links, [...tasks, ...events]);
       }
     } catch (error) { console.error("Close Plan org chart details failed:", error instanceof Error ? error.message : error); }
-    return Response.json({ opportunityId, ...chart });
+    // Base address for the "Go to contact" links; only ever a Salesforce-owned host.
+    let salesforceBase = "";
+    try { const auth = await ensureSalesforceTokenFresh(); if (auth) { const u = new URL(auth.instanceUrl); if (u.protocol === "https:" && isSalesforceHost(u.hostname)) salesforceBase = u.origin; } } catch { /* the links are optional */ }
+    return Response.json({ opportunityId, salesforceBase, ...chart });
   } catch (error) {
     if (error instanceof SalesforceNotConnectedError) return Response.json({ error: "Salesforce is not connected. Connect it under Integrations." }, { status: 409 });
     return Response.json({ error: "Salesforce could not be reached" }, { status: 502 });

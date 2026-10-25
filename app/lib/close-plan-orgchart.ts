@@ -21,8 +21,9 @@ export type SfOrgRoleRow = {
   iseeit__Power_Base__c: boolean | null;
   iseeit__Child_Number__c: number | null;
   iseeit__Is_Org_Chart_Persona__c?: boolean | null;
+  iseeit__Description__c?: string | null;
 };
-export type SfContactRoleRow = { Id: string; ContactId: string; Role: string | null; Contact: { Name: string | null; Title: string | null; Email: string | null } | null };
+export type SfContactRoleRow = { Id: string; ContactId: string; Role: string | null; Contact: { Name: string | null; Title: string | null; Email: string | null; Phone?: string | null } | null };
 export type SfProvisionalRow = { Id: string; Name: string | null; iseeit__Title__c: string | null };
 
 export type OrgNode = {
@@ -31,6 +32,8 @@ export type OrgNode = {
   name: string;
   title: string;
   email: string;
+  phone: string;
+  description: string; // the note on the role in the org chart
   provisional: boolean;
   type: string; // Champion, Coach, Enemy, Influencer, Neutral
   dealRole: string; // the standard Contact Role on the opportunity
@@ -49,24 +52,24 @@ const ids = (list: Array<string | null | undefined>) => [...new Set(list.filter(
 const inList = (list: string[]) => list.map(id => `'${id}'`).join(",");
 
 export function orgRoleQuery(opportunityId: string) {
-  return `SELECT Id, iseeit__OpportunityContactRole__c, iseeit__Provisional_Contact__c, iseeit__Parent_Contact__c, iseeit__Parent_Provisional_Contact__c, iseeit__Type__c, iseeit__Title__c, iseeit__Power_Base__c, iseeit__Child_Number__c, iseeit__Is_Org_Chart_Persona__c FROM iseeit__Opportunity_Role__c WHERE iseeit__Opportunity__c = '${opportunityId}' ORDER BY iseeit__Child_Number__c, CreatedDate LIMIT 2000`;
+  return `SELECT Id, iseeit__OpportunityContactRole__c, iseeit__Provisional_Contact__c, iseeit__Parent_Contact__c, iseeit__Parent_Provisional_Contact__c, iseeit__Type__c, iseeit__Title__c, iseeit__Power_Base__c, iseeit__Child_Number__c, iseeit__Is_Org_Chart_Persona__c, iseeit__Description__c FROM iseeit__Opportunity_Role__c WHERE iseeit__Opportunity__c = '${opportunityId}' ORDER BY iseeit__Child_Number__c, CreatedDate LIMIT 2000`;
 }
 
 // Follow-up lookups for the ids a role query returned (null when there is nothing to ask).
 export function orgLookupQueries(opportunityId: string, roles: SfOrgRoleRow[]) {
   const provisional = ids(roles.flatMap(r => [r.iseeit__Provisional_Contact__c, r.iseeit__Parent_Provisional_Contact__c]));
   return {
-    contactRoles: `SELECT Id, ContactId, Role, Contact.Name, Contact.Title, Contact.Email FROM OpportunityContactRole WHERE OpportunityId = '${opportunityId}' LIMIT 2000`,
+    contactRoles: `SELECT Id, ContactId, Role, Contact.Name, Contact.Title, Contact.Email, Contact.Phone FROM OpportunityContactRole WHERE OpportunityId = '${opportunityId}' LIMIT 2000`,
     // A parent can be a Contact that has no role of its own on this opportunity.
     parentContacts: (known: Set<string>) => {
       const missing = ids(roles.map(r => r.iseeit__Parent_Contact__c)).filter(id => !known.has(id));
-      return missing.length ? `SELECT Id, Name, Title, Email FROM Contact WHERE Id IN (${inList(missing)})` : null;
+      return missing.length ? `SELECT Id, Name, Title, Email, Phone FROM Contact WHERE Id IN (${inList(missing)})` : null;
     },
     provisional: provisional.length ? `SELECT Id, Name, iseeit__Title__c FROM iseeit__Provisional_Contact__c WHERE Id IN (${inList(provisional)})` : null,
   };
 }
 
-type ContactInfo = { Id: string; Name: string | null; Title: string | null; Email: string | null };
+type ContactInfo = { Id: string; Name: string | null; Title: string | null; Email: string | null; Phone?: string | null };
 
 export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRoleRow[], provisional: SfProvisionalRow[], parentContacts: ContactInfo[] = []): OrgChart {
   const issues: OrgChartIssue[] = [];
@@ -87,7 +90,7 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
       key, roleId: role.Id, provisional: !ocr,
       name: (ocr ? ocr.Contact?.Name : prov?.Name) || "(no name)",
       title: role.iseeit__Title__c || (ocr ? ocr.Contact?.Title : prov?.iseeit__Title__c) || "",
-      email: ocr?.Contact?.Email || "",
+      email: ocr?.Contact?.Email || "", phone: ocr?.Contact?.Phone || "", description: role.iseeit__Description__c || "",
       type: role.iseeit__Type__c || "", dealRole: ocr?.Role || "", powerBase: Boolean(role.iseeit__Power_Base__c),
       parentKey: role.iseeit__Parent_Contact__c || role.iseeit__Parent_Provisional_Contact__c || null,
       order: role.iseeit__Child_Number__c ?? 0, photo: "", linkedin: "", left: false, openTasks: 0,
@@ -100,7 +103,7 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
   // A manager who has no entry of their own: show them as a node if we know who they are, otherwise the person becomes a top-level entry.
   for (const contact of parentContacts) {
     if (nodes.has(contact.Id) || ![...nodes.values()].some(n => n.parentKey === contact.Id)) continue;
-    nodes.set(contact.Id, { key: contact.Id, roleId: "", name: contact.Name || "(no name)", title: contact.Title || "", email: contact.Email || "", provisional: false, type: "", dealRole: "", powerBase: false, parentKey: null, order: -1, photo: "", linkedin: "", left: false, openTasks: 0 });
+    nodes.set(contact.Id, { key: contact.Id, roleId: "", name: contact.Name || "(no name)", title: contact.Title || "", email: contact.Email || "", phone: contact.Phone || "", description: "", provisional: false, type: "", dealRole: "", powerBase: false, parentKey: null, order: -1, photo: "", linkedin: "", left: false, openTasks: 0 });
     issues.push({ kind: "parent-missing", roleId: "", text: `${contact.Name || contact.Id} is a manager in the chart but has no role of their own on the opportunity` });
   }
   for (const node of nodes.values()) {
@@ -164,4 +167,22 @@ export function applyContactExtras(nodes: OrgNode[], linkedin: Array<{ Id: strin
 export function orgPhotoQuery(contactIds: string[]): string | null {
   const list = ids(contactIds).slice(0, 200);
   return list.length ? `SELECT Id, ParentId, LastModifiedDate FROM Attachment WHERE Name LIKE 'Profile_Picture%' AND ParentId IN (${inList(list)}) ORDER BY LastModifiedDate DESC` : null;
+}
+
+// The open Tasks and upcoming Events on this opportunity that have this Contact as the "who" (the Salesforce chart's
+// "View Tasks/Events"). Only a Salesforce id is ever put into the queries.
+export type OrgTaskItem = { id: string; kind: "Task" | "Event"; subject: string; when: string; status: string; owner: string };
+export function orgTaskQueries(opportunityId: string, contactId: string) {
+  if (!ids([opportunityId, contactId]).length || ids([opportunityId, contactId]).length < 2) return null;
+  const where = `WhatId = '${opportunityId}' AND WhoId = '${contactId}'`;
+  return {
+    tasks: `SELECT Id, Subject, ActivityDate, Status, Owner.Name FROM Task WHERE ${where} AND IsClosed = false ORDER BY ActivityDate NULLS LAST LIMIT 50`,
+    events: `SELECT Id, Subject, ActivityDateTime, Owner.Name FROM Event WHERE ${where} AND ActivityDateTime >= TODAY ORDER BY ActivityDateTime LIMIT 50`,
+  };
+}
+export function mapOrgTasks(tasks: Array<{ Id: string; Subject: string | null; ActivityDate: string | null; Status: string | null; Owner?: { Name: string | null } | null }>, events: Array<{ Id: string; Subject: string | null; ActivityDateTime: string | null; Owner?: { Name: string | null } | null }>): OrgTaskItem[] {
+  return [
+    ...tasks.map(t => ({ id: t.Id, kind: "Task" as const, subject: t.Subject || "(no subject)", when: t.ActivityDate || "", status: t.Status || "", owner: t.Owner?.Name || "" })),
+    ...events.map(e => ({ id: e.Id, kind: "Event" as const, subject: e.Subject || "(no subject)", when: (e.ActivityDateTime || "").slice(0, 10), status: "Scheduled", owner: e.Owner?.Name || "" })),
+  ].sort((a, b) => (a.when || "9999").localeCompare(b.when || "9999"));
 }

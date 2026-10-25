@@ -84,3 +84,15 @@ test("LinkedIn links: only real linkedin.com addresses, with or without https", 
   assert.equal(orgContactExtraQueries("006000000000001AAA", []), null);
   assert.ok(orgPhotoQuery(["003000000000001AAA"])?.includes("LIKE 'Profile_Picture%'"));
 });
+
+test("task list queries only embed Salesforce ids, and tasks and events merge by date", async () => {
+  const { orgTaskQueries, mapOrgTasks } = await import("../app/lib/close-plan-orgchart");
+  const q = orgTaskQueries("006000000000001AAA", "003000000000001AAA")!;
+  assert.ok(q.tasks.includes("WhoId = '003000000000001AAA'") && q.tasks.includes("IsClosed = false") && q.events.includes("ActivityDateTime >= TODAY"));
+  assert.equal(orgTaskQueries("006000000000001AAA", "x' OR 1=1"), null);
+  assert.equal(orgTaskQueries("bad", "003000000000001AAA"), null);
+  const items = mapOrgTasks(
+    [{ Id: "00T1", Subject: "Send contract", ActivityDate: "2026-11-02", Status: "Not Started", Owner: { Name: "Sam" } }, { Id: "00T2", Subject: null, ActivityDate: null, Status: null }],
+    [{ Id: "00U1", Subject: "Demo", ActivityDateTime: "2026-10-30T09:00:00.000+0000", Owner: { Name: "Ana" } }]);
+  assert.deepEqual(items.map(i => [i.kind, i.subject, i.when]), [["Event", "Demo", "2026-10-30"], ["Task", "Send contract", "2026-11-02"], ["Task", "(no subject)", ""]]);
+});
