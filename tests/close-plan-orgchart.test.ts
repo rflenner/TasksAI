@@ -96,3 +96,27 @@ test("task list queries only embed Salesforce ids, and tasks and events merge by
     [{ Id: "00U1", Subject: "Demo", ActivityDateTime: "2026-10-30T09:00:00.000+0000", Owner: { Name: "Ana" } }]);
   assert.deepEqual(items.map(i => [i.kind, i.subject, i.when]), [["Event", "Demo", "2026-10-30"], ["Task", "Send contract", "2026-11-02"], ["Task", "(no subject)", ""]]);
 });
+
+test("an account's org chart is built from its contact roles", async () => {
+  const { accountRolesToChartInput, accountRoleQuery, contactQueries, orgSearchSoql, isAccountId } = await import("../app/lib/close-plan-orgchart");
+  const rows = [
+    { Id: "a0q000000000001AAA", iseeit__Contact__c: "003000000000001AAA", iseeit__Provisional_Contact__c: null, iseeit__Parent_Contact__c: null, iseeit__Parent_Provisional_Contact__c: null, iseeit__Type__c: "Champion", iseeit__Title__c: null, iseeit__Power_Base__c: true, iseeit__Child_Number__c: 0, iseeit__Description__c: "Sponsor" },
+    { Id: "a0q000000000002AAA", iseeit__Contact__c: "003000000000002AAA", iseeit__Provisional_Contact__c: null, iseeit__Parent_Contact__c: "003000000000001AAA", iseeit__Parent_Provisional_Contact__c: null, iseeit__Type__c: null, iseeit__Title__c: "Head of Ops", iseeit__Power_Base__c: false, iseeit__Child_Number__c: 1, iseeit__Description__c: null },
+    { Id: "a0q000000000003AAA", iseeit__Contact__c: null, iseeit__Provisional_Contact__c: null, iseeit__Parent_Contact__c: "003000000000001AAA", iseeit__Parent_Provisional_Contact__c: null, iseeit__Type__c: null, iseeit__Title__c: null, iseeit__Power_Base__c: false, iseeit__Child_Number__c: 2, iseeit__Description__c: null },
+  ];
+  const contacts = [{ Id: "003000000000001AAA", Name: "Ana Lopez", Title: "COO", Email: "ana@example.com", Phone: null }, { Id: "003000000000002AAA", Name: "Ben Ito", Title: "Ops", Email: null }];
+  const { roles, contactRoles } = accountRolesToChartInput(rows, contacts);
+  const chart = buildOrgChart(roles, contactRoles, []);
+  assert.deepEqual(chart.roots, ["003000000000001AAA"]);
+  const ben = chart.nodes.find(n => n.name === "Ben Ito")!;
+  assert.equal(ben.parentKey, "003000000000001AAA"); assert.equal(ben.title, "Head of Ops");
+  assert.equal(chart.nodes.find(n => n.name === "Ana Lopez")!.description, "Sponsor");
+  assert.deepEqual(chart.issues.map(i => i.kind), ["unknown-person"]);
+  assert.ok(accountRoleQuery("001000000000001AAA").includes("iseeit__Account__c = '001000000000001AAA'"));
+  assert.equal(contactQueries(["003000000000001AAA", "003000000000002AAA", "bad' OR 1=1"], 1).length, 2);
+  assert.ok(!contactQueries(["bad' OR 1=1"]).length);
+  assert.ok(orgSearchSoql("account", "Dyna trace")!.includes("Name LIKE '%Dyna%' AND Name LIKE '%trace%'"));
+  assert.ok(!orgSearchSoql("opportunity", "x' OR Name != '")!.includes("OR Name != '"));
+  assert.equal(orgSearchSoql("account", "a"), null);
+  assert.equal(isAccountId("00106000023pfLMAAY"), true); assert.equal(isAccountId("006000000000001AAA"), false);
+});
