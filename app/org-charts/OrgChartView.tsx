@@ -152,9 +152,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [influences, setInfluences] = useState<OrgInfluence[]>(initialInfluences);
   const [lineMode, setLineMode] = useState<"selected" | "all" | "off">("all");
   const [pdfLines, setPdfLines] = useState(true);
-  const [colorHover, setColorHover] = useState(false); // "Who influences who" hovered: all lines in colour
-  const [colorPinned, setColorPinned] = useState(false); // clicked: colours stay
-  const colored = colorHover || colorPinned;
+  const [colored, setColored] = useState(false); // "Who influences who" switched on: all lines in the colour of their kind
+  const colorPinned = colored;
   const [segs, setSegs] = useState<Seg[]>([]);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   const [hoverCard, setHoverCard] = useState<string | null>(null);
@@ -286,7 +285,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     return true;
   }
   // Which lines show: those of the selected person (default), all of them, or none.
-  const shown = useMemo(() => lineMode === "all" || colorHover ? influences : lineMode === "off" ? [] : influences.filter(l => l.from === selected || l.to === selected || l.id === lineMenu?.id), [influences, lineMode, colorHover, selected, lineMenu?.id]);
+  const shown = useMemo(() => lineMode === "all" || colored ? influences : lineMode === "off" ? [] : influences.filter(l => l.from === selected || l.to === selected || l.id === lineMenu?.id), [influences, lineMode, colored, selected, lineMenu?.id]);
   const lineKey = shown.map(l => `${l.id}${l.from}${l.to}${l.strength}${l.tone || ""}`).join(",");
   useEffect(() => {
     const el = canvas.current; if (!el) return;
@@ -457,7 +456,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
         {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
         <label className="oc-sel">Influence lines <select value={lineMode} onChange={e => setLineMode(e.target.value as "selected" | "all" | "off")}><option value="all">All ({influences.length})</option><option value="selected">Selected person only</option><option value="off">Off</option></select></label>
-        <button type="button" className={`oc-who${colorPinned ? " on" : ""}`} aria-pressed={colorPinned} title="Hover to see all lines in colour, click to keep the colours" onMouseEnter={() => setColorHover(true)} onMouseLeave={() => setColorHover(false)} onFocus={() => setColorHover(true)} onBlur={() => setColorHover(false)} onClick={() => setColorPinned(v => !v)}>Who influences who</button>
+        <label className="oc-switch" title="Show who influences whom in colour: red negative, blue neutral, green positive"><input type="checkbox" role="switch" checked={colored} onChange={e => setColored(e.target.checked)} /><span className="oc-track" aria-hidden="true" />Who influences who</label>
 
         <label className="oc-sel"><input type="checkbox" checked={pdfLines} onChange={e => setPdfLines(e.target.checked)} /> Lines in PDF</label>
         <button type="button" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}>{printing ? "Preparing PDF…" : "Export PDF"}</button>
