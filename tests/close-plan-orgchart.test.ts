@@ -208,6 +208,10 @@ test("team layout rules: row, ladder, deep levels, wide teams, manual override",
   assert.equal(planTeam(person("m", null, { layout: "row" }), 3, make([boss, ...leaves(5)])).layout, "row");
   assert.equal(planTeam(person("m", null, { layout: "ladder" }), 1, make(lead)).layout, "ladder");
   assert.equal(planTeam(person("m", null, { layout: "auto" }), 1, make([boss, ...leaves(4)])).layout, "ladder");
+  // a choice for the whole chart ("all rows" / "all hanging") beats the rules, but not a person set by hand
+  assert.equal(planTeam(boss, 1, make([boss, ...leaves(5)]), "row").layout, "row");
+  assert.equal(planTeam(boss, 1, make(lead), "ladder").layout, "ladder");
+  assert.equal(planTeam(person("m", null, { layout: "row" }), 1, make([boss, ...leaves(5)]), "ladder").layout, "row");
   const { applyOrgEdit } = await import("../app/lib/org-chart-edit");
   const chart = { nodes: [boss], roots: ["m"], issues: [] };
   assert.equal((applyOrgEdit(chart, { op: "update", key: "m", layout: "ladder" }) as { chart: typeof chart }).chart.nodes[0].layout, "ladder");

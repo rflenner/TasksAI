@@ -73,6 +73,34 @@ const arcPath = (g: Seg) => `M${g.x1} ${g.y1} Q${g.cx} ${g.cy} ${g.x2} ${g.y2}`;
 // Light grey so the lines stay quiet; the lines of the selected or hovered person are a darker grey. Colour when asked for.
 const lineColor = (g: Seg, colored: boolean, focus = true) => colored ? TONE[g.tone] : focus ? GREY : LIGHT;
 const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>${star(g.x1, g.y1, g.blue)}`).join("");
+// Control rail on the right of the chart, like the one in Salesforce: add contact, check for updates, import, zoom, PDF,
+// fit, layout and sync. Line icons; the tooltips come from data-tip.
+const IC: Record<string, React.ReactNode> = {
+  add: <><circle cx="9.5" cy="8" r="3.6" /><path d="M2.8 20c0-3.9 3-6 6.7-6s6.7 2.1 6.7 6" /><path d="M19 7.5v6M16 10.5h6" /></>,
+  check: <><path d="M20 12a8 8 0 0 1-13.7 5.6M4 12a8 8 0 0 1 13.7-5.6" /><path d="M17.7 3v3.6H14M6.3 21v-3.6H10" /></>,
+  import: <><path d="M5 12v7a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V9.5L14.5 4H9" /><path d="M2.5 12.5H12M9 9.5l3 3-3 3" /></>,
+  zin: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6" /></>,
+  zout: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21M7.5 10.5h6" /></>,
+  pdf: <><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M4 16v3.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V16" /></>,
+  fit: <><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /><path d="M4 4l5.5 5.5M20 4l-5.5 5.5M4 20l5.5-5.5M20 20l-5.5-5.5" /></>,
+  rows: <><rect x="8.5" y="3" width="7" height="4.5" rx="1" /><rect x="2.5" y="16" width="6" height="4.5" rx="1" /><rect x="15.5" y="16" width="6" height="4.5" rx="1" /><path d="M12 7.5v4M5.5 16v-4.5h13V16" /></>,
+  ladder: <><rect x="3" y="3" width="7" height="4.5" rx="1" /><rect x="10" y="10" width="7" height="4.5" rx="1" /><rect x="10" y="17" width="7" height="4.5" rx="1" /><path d="M6.5 7.5v11H10M6.5 12.2H10" /></>,
+  sync: <><path d="M7 18.5a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 8.6a4.2 4.2 0 0 1-.5 9.9H7z" /><path d="M12 16v-5M9.5 13.2 12 10.7l2.5 2.5" /></>,
+};
+const Icon = ({ n }: { n: string }) => <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{IC[n]}</svg>;
+function AddPopover({ nodes, defaultParent, busy, onAdd, onClose }: { nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null) => void; onClose: () => void }) {
+  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent);
+  return (
+    <form className="oc-pop" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null); }}>
+      <b>Add a person</b>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" aria-label="Name" maxLength={80} ref={el => el?.focus()} />
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Job title (optional)" aria-label="Job title" maxLength={120} />
+      <label>Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
+      <div className="oc-row"><button type="submit" className="on" disabled={busy || !name.trim()}>Add</button><button type="button" onClick={onClose}>Cancel</button></div>
+      <p className="oc-hint">A placeholder for now; later this will search Salesforce contacts.</p>
+    </form>
+  );
+}
 // Four bars like a signal meter; `level` 0 to 4 fills them, 0 = no activity matched (all light grey).
 function Meter({ level }: { level: number }) {
   return <span className="oc-meter" role="img" aria-label={level ? `Activity ${level} of 4` : "No activity matched"} title={level ? `Activity ${level} of 4` : "No activity matched"}>{[1, 2, 3, 4].map(i => <i key={i} className={i <= level ? "on" : ""} style={{ height: 4 + i * 3 }} />)}</span>;
@@ -134,7 +162,7 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
   );
 }
 
-export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged, influences: initialInfluences }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void; influences: OrgInfluence[] }) {
+export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged, onImport, influences: initialInfluences }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void; onImport: () => void; influences: OrgInfluence[] }) {
   const [chart, setChart] = useState<ChartData>(initial);
   const [edited, setEdited] = useState(wasEdited);
   const [editing, setEditing] = useState(startEditing);
@@ -165,6 +193,10 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const printCanvas = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
+  const [railOpen, setRailOpen] = useState(true);
+  const [layoutForce, setLayoutForce] = useState<"auto" | "row" | "ladder">("auto");
+  const [addOpen, setAddOpen] = useState(false);
+  const [info, setInfo] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const wrap = useRef<HTMLDivElement>(null);
@@ -191,6 +223,18 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   // eslint-disable-next-line @next/next/no-img-element
   const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
 
+  // Zoom in steps of 5 %. Fit shrinks the whole chart to the visible area.
+  const stepZoom = (d: number) => setZoom(z => Math.max(0.25, Math.min(2, Math.round((z + d) * 20) / 20)));
+  function fitChart() {
+    const el = wrap.current, tree = el?.querySelector<HTMLElement>(".oc-tree"); if (!el || !tree) return;
+    const r = tree.getBoundingClientRect(), w = r.width / zoom, h = r.height / zoom;
+    setZoom(Math.max(0.25, Math.min(1, Math.floor(Math.min((el.clientWidth - 24) / w, (el.clientHeight - 70) / h) * 20) / 20)));
+    el.scrollTo(0, 0);
+  }
+  function checkUpdates() {
+    const linked = chart.nodes.filter(n => n.linkedin).length;
+    setInfo(linked ? `${linked} of ${chart.nodes.length} people have a LinkedIn profile that can be checked. The check against LinkedIn (is the person still with the company?) is not connected yet.` : "Nobody in this chart has a LinkedIn profile yet, so there is nothing to check. The check against LinkedIn is not connected yet.");
+  }
   function open(key: string) {
     setSelected(key);
     if (!/^003/.test(key) || tasks[key]) return;
@@ -376,7 +420,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   // every team open, nothing clickable.
   const node = (n: OrgNode, level: number, inLadder: boolean, plain: boolean): React.ReactNode => {
     const k = kids.get(n.key) || [], shut = !plain && collapsed.has(n.key);
-    const plan: TeamPlan = planTeam(n, level, key => kids.get(key) || []);
+    const plan: TeamPlan = planTeam(n, level, key => kids.get(key) || [], layoutForce === "auto" ? undefined : layoutForce);
     const deeper = (list: OrgNode[]) => list.map(c => node(c, level + 1, list === plan.ladder, plain));
     return (
       <li key={n.key}>
@@ -449,17 +493,12 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   return (
     <div>
       <div className="oc-bar">
-        <button type="button" aria-label="Zoom out" onClick={() => setZoom(z => Math.max(0.4, Math.round((z - 0.1) * 10) / 10))}>−</button>
-        <span>{Math.round(zoom * 100)}%</span>
-        <button type="button" aria-label="Zoom in" onClick={() => setZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}>+</button>
-        <button type="button" onClick={() => setZoom(1)}>Reset</button>
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
         {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
         <label className="oc-sel">Influence lines <select value={lineMode} onChange={e => setLineMode(e.target.value as "selected" | "all" | "off")}><option value="all">All ({influences.length})</option><option value="selected">Selected person only</option><option value="off">Off</option></select></label>
         <label className="oc-switch" title="Show who influences whom in colour: red negative, blue neutral, green positive"><input type="checkbox" role="switch" checked={colored} onChange={e => setColored(e.target.checked)} /><span className="oc-track" aria-hidden="true" />Who influences who</label>
 
         <label className="oc-sel"><input type="checkbox" checked={pdfLines} onChange={e => setPdfLines(e.target.checked)} /> Lines in PDF</label>
-        <button type="button" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}>{printing ? "Preparing PDF…" : "Export PDF"}</button>
         <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { onEditing(!editing); setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
         {edited && (confirm === "reset"
           ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => void reset()}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
@@ -492,7 +531,32 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <div className="oc-legendrow">{colored ? <span className="oc-legend" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative (enemy)<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive (champion, coach)</span> : <span className="oc-hint">Influence lines: a dotted arrow from the influencer to the influenced person. Switch on “Who influences who” to see the kind in colour.</span>}</div>
       <div className="oc-main">
         
+        <div className="oc-stage">
         <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => { if (!editing || !dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}><div className="oc-canvas" ref={canvas}>{editing && dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul>{overlay}</div></div>
+        <div className="oc-rail-wrap">
+          <button type="button" className="oc-rail-toggle" aria-label={railOpen ? "Hide the controls" : "Show the controls"} aria-expanded={railOpen} onClick={() => setRailOpen(v => !v)} title={railOpen ? "Hide the controls" : "Show the controls"}><svg viewBox="0 0 24 24" width="30" height="30" fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railOpen ? "none" : "rotate(180deg)" }} aria-hidden="true"><path d="M5 5l7 7-7 7" stroke="#c9ced6" /><path d="M12 5l7 7-7 7" stroke="#f5b942" /></svg></button>
+          {railOpen && (
+            <div className="oc-rail" role="toolbar" aria-label="Org chart controls">
+              <button type="button" data-tip="Add contact" aria-label="Add contact" onClick={() => { setAddOpen(v => !v); setInfo(""); }}><Icon n="add" /></button>
+              <button type="button" data-tip="Check for updates" aria-label="Check for updates" onClick={() => { setAddOpen(false); checkUpdates(); }}><Icon n="check" /></button>
+              <button type="button" data-tip="Import org chart" aria-label="Import org chart" onClick={onImport}><Icon n="import" /></button>
+              <button type="button" data-tip="Zoom in (5%)" aria-label="Zoom in" onClick={() => stepZoom(0.05)}><Icon n="zin" /></button>
+              <button type="button" data-tip="Zoom out (5%)" aria-label="Zoom out" onClick={() => stepZoom(-0.05)}><Icon n="zout" /></button>
+              <button type="button" className="oc-pct" data-tip="Back to 100%" aria-label={`Zoom ${Math.round(zoom * 100)} percent, back to 100 percent`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+              <button type="button" data-tip="Download as PDF" aria-label="Download as PDF" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}><Icon n="pdf" /></button>
+              <hr />
+              <button type="button" data-tip="Fit the chart to the screen" aria-label="Fit the chart to the screen" onClick={fitChart}><Icon n="fit" /></button>
+              <hr />
+              <button type="button" className={layoutForce === "row" ? "on" : ""} aria-pressed={layoutForce === "row"} data-tip="All teams side by side" aria-label="All teams side by side" onClick={() => setLayoutForce(v => v === "row" ? "auto" : "row")}><Icon n="rows" /></button>
+              <button type="button" className={layoutForce === "ladder" ? "on" : ""} aria-pressed={layoutForce === "ladder"} data-tip="All teams hanging" aria-label="All teams hanging" onClick={() => setLayoutForce(v => v === "ladder" ? "auto" : "ladder")}><Icon n="ladder" /></button>
+              <hr />
+              <button type="button" data-tip="Sync with Salesforce: not available yet" aria-label="Sync with Salesforce, not available yet" disabled><Icon n="sync" /></button>
+            </div>
+          )}
+          {addOpen && <AddPopover nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey) => { if (await send({ op: "add", name, title, parentKey })) setAddOpen(false); }} />}
+          {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
+        </div>
+        </div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
