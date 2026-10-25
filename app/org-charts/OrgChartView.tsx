@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart";
 import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
 import "./org-charts.css";
@@ -13,12 +14,10 @@ type TaskState = { busy?: boolean; items?: OrgTaskItem[]; error?: string };
 
 type Zone = Exclude<DropPosition, "root">;
 type Pending = { key: string; targetKey: string | null; position: DropPosition };
-// The card is split like in Salesforce: the left and right edges put the person beside it, the upper part above it (the person
-// becomes its manager), the rest below it (the person reports to it).
-const zoneAt = (e: React.DragEvent): Zone => {
-  const r = e.currentTarget.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-  return x < 0.2 ? "left" : x > 0.8 ? "right" : y < 0.35 ? "top" : "bottom";
-};
+// While a card is dragged, every other card shows four drop areas just outside it, so they stay visible next to the dragged
+// card: above (the person becomes its manager), below (reports to it), left and right (a peer beside it). The card itself counts as below.
+const PADS: Array<{ zone: Zone; label: string }> = [{ zone: "top", label: "▲ Manager" }, { zone: "bottom", label: "▼ Reports to" }, { zone: "left", label: "◀ Peer" }, { zone: "right", label: "Peer ▶" }];
+const zoneOf = (e: React.DragEvent): Zone => (e.target as HTMLElement).closest<HTMLElement>("[data-zone]")?.dataset.zone as Zone | undefined || "bottom";
 const TYPES = ["Champion", "Coach", "Enemy", "Influencer", "Neutral"];
 const EDGE: Record<string, string> = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
 const LI = "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z";
@@ -71,7 +70,7 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
   );
 }
 
-export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, onChanged }: { chartId: string; chart: ChartData; edited: boolean; onChanged: (people: number, edited: boolean) => void }) {
+export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, onChanged }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; onChanged: (people: number, edited: boolean) => void }) {
   const [chart, setChart] = useState<ChartData>(initial);
   const [edited, setEdited] = useState(wasEdited);
   const [editing, setEditing] = useState(false);
@@ -80,6 +79,9 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [hover, setHover] = useState<{ key: string; zone: Zone } | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const [printScale, setPrintScale] = useState(1);
+  const sheet = useRef<HTMLDivElement>(null);
   const [confirm, setConfirm] = useState<"remove" | "reset" | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
@@ -94,7 +96,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   }, [chart]);
   const below = (n: OrgNode): number => (kids.get(n.key) || []).reduce((sum, k) => sum + 1 + below(k), 0);
   // eslint-disable-next-line @next/next/no-img-element
-  const photo = (n: OrgNode) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading="lazy" onError={e => e.currentTarget.remove()} /> : null;
+  const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
 
   function open(key: string) {
     setSelected(key);
@@ -163,15 +165,28 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
   }
 
-  const card = (n: OrgNode) => (
-    <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${hover?.key === n.key ? ` z-${hover.zone}` : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
-      draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => { setDragKey(null); setHover(null); }}
-      onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); const zone = zoneAt(e); setHover(h => h?.key === n.key && h.zone === zone ? h : { key: n.key, zone }); } }}
-      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(h => h?.key === n.key ? null : h); }}
-      onDrop={e => editing && dragKey && dragKey !== n.key && drop(e, n.key, zoneAt(e))}
-      onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
+  // PDF: the whole chart (every team open, no side panel) is drawn in a hidden sheet, scaled to fit a landscape page, and the
+  // browser's print dialog opens so it can be saved as PDF (same way as the Close Plan report, with real vector text).
+  useEffect(() => {
+    if (!printing) return;
+    const el = sheet.current; if (!el) return;
+    const tree = el.querySelector<HTMLElement>(".oc-tree"); if (!tree) return;
+    const w = tree.scrollWidth, h = tree.scrollHeight, pageW = 1040, pageH = 620; // landscape A4 inside 10 mm margins, minus the heading
+    const fit = Math.min(1, pageW / w, pageH / h), scale = fit >= 0.4 ? fit : Math.min(1, pageW / w);
+    setPrintScale(scale);
+    const oldTitle = document.title; document.title = `Org chart ${title}`; document.body.classList.add("oc-printing");
+    let done = false;
+    const finish = () => { if (done) return; done = true; document.title = oldTitle; document.body.classList.remove("oc-printing"); window.removeEventListener("afterprint", finish); setPrinting(false); };
+    window.addEventListener("afterprint", finish);
+    const images = [...el.querySelectorAll("img")].filter(i => !i.complete).map(i => new Promise<void>(ok => { i.onload = i.onerror = () => ok(); }));
+    void Promise.race([Promise.all(images), new Promise(ok => window.setTimeout(ok, 5000))]).then(() => window.setTimeout(() => { if (!done) { window.print(); finish(); } }, 150));
+    return () => { done = true; window.removeEventListener("afterprint", finish); document.body.classList.remove("oc-printing"); document.title = oldTitle; };
+  }, [printing, title]);
+
+  const inner = (n: OrgNode, eager = false) => (
+    <>
       {n.provisional && <span className="oc-tmp">Temp</span>}
-      <div className="oc-av">{initials(n.name)}{photo(n)}</div>
+      <div className="oc-av">{initials(n.name)}{photo(n, eager)}</div>
       <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span></div></div>
       <div className="oc-rp">
         <div className="oc-top">{n.powerBase && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
@@ -186,6 +201,18 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           </div>
         )}
       </div>
+    </>
+  );
+
+  const card = (n: OrgNode) => (
+    <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
+      draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => { setDragKey(null); setHover(null); }}
+      onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); const zone = zoneOf(e); setHover(h => h?.key === n.key && h.zone === zone ? h : { key: n.key, zone }); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(h => h?.key === n.key ? null : h); }}
+      onDrop={e => editing && dragKey && dragKey !== n.key && drop(e, n.key, zoneOf(e))}
+      onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
+      {editing && dragKey && dragKey !== n.key && PADS.map(p => <span key={p.zone} data-zone={p.zone} className={`oc-pad ${p.zone}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
+      {inner(n)}
     </div>
   );
 
@@ -205,6 +232,16 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     );
   };
 
+  const plainBranch = (n: OrgNode): React.ReactNode => {
+    const k = kids.get(n.key) || [];
+    return (
+      <li key={n.key}>
+        <div className="oc-card" style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}>{inner(n, true)}</div>
+        {k.length > 0 && <ul>{k.map(plainBranch)}</ul>}
+      </li>
+    );
+  };
+
   const sel = selected ? byKey.get(selected) : null;
   const t = sel ? tasks[sel.key] : undefined;
   const parent = sel?.parentKey ? byKey.get(sel.parentKey) : null;
@@ -220,6 +257,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         <button type="button" aria-label="Zoom in" onClick={() => setZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}>+</button>
         <button type="button" onClick={() => setZoom(1)}>Reset</button>
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
+        <button type="button" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}>{printing ? "Preparing PDF…" : "Export PDF"}</button>
         <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
         {edited && (confirm === "reset"
           ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => void reset()}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
@@ -250,7 +288,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         );
       })()}
       <div className="oc-main">
-        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null, "root")}><ul className="oc-tree" style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
+        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null, "root")}><ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
@@ -273,6 +311,12 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         )}
       </div>
       <p className="oc-hint">{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}. Click a card for details, drag the background to move around.{edited ? "" : " Press Edit chart to change this copy."}</p>
+      {printing && createPortal(
+        <div className="oc-print-root" ref={sheet}>
+          <h1>{title}</h1>
+          <p>{subtitle}{subtitle ? " · " : ""}{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}{edited ? " · edited in Task AI, not saved in Salesforce" : ""}</p>
+          <ul className="oc-tree" style={{ zoom: printScale }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(plainBranch)}</ul>
+        </div>, document.body)}
       {chart.issues.length > 0 && <details className="oc-hint"><summary>{chart.issues.length} {chart.issues.length === 1 ? "thing" : "things"} to check in Salesforce</summary><ul style={{ paddingLeft: 18 }}>{chart.issues.map((i, k) => <li key={k}>{i.text}</li>)}</ul></details>}
     </div>
   );
