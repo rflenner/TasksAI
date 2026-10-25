@@ -145,3 +145,42 @@ test("org chart edits: move, loops, reorder, add, remove", async () => {
   assert.ok("error" in applyOrgEdit(chart, { op: "update", key: "a", type: "Boss" }));
   assert.equal(ok(applyOrgEdit(chart, { op: "update", key: "a", type: "Champion", powerBase: true })).nodes[0].type, "Champion");
 });
+
+test("org chart drop zones: above, below, beside, with or without the team", async () => {
+  const { applyOrgEdit } = await import("../app/lib/org-chart-edit");
+  const node = (key: string, parentKey: string | null, order: number) => ({ key, roleId: "r" + key, name: key.toUpperCase(), title: "", email: "", phone: "", description: "", provisional: false, type: "Neutral", dealRole: "", powerBase: false, parentKey, order, linkedin: "", left: false, openTasks: 0, photo: "" });
+  // a -> (b -> c, d), e (top level)
+  const chart = { nodes: [node("a", null, 0), node("e", null, 1), node("b", "a", 0), node("d", "a", 1), node("c", "b", 0)], roots: ["a", "e"], issues: [] };
+  type C = typeof chart;
+  const run = (key: string, targetKey: string | null, position: "top" | "bottom" | "left" | "right" | "root", withTeam: boolean) => applyOrgEdit(chart, { op: "drop", key, targetKey, position, withTeam });
+  const ok = (r: ReturnType<typeof run>) => { assert.ok(!("error" in r), "error" in r ? r.error : ""); return (r as { chart: C }).chart; };
+  const kids = (c: C, p: string | null) => c.nodes.filter(n => n.parentKey === p).sort((x, y) => x.order - y.order).map(n => n.key);
+  // beside: d left of b, then e right of a at top level
+  assert.deepEqual(kids(ok(run("d", "b", "left", true)), "a"), ["d", "b"]);
+  assert.deepEqual(kids(ok(run("d", "b", "right", true)), "a"), ["b", "d"]);
+  assert.deepEqual(ok(run("c", "a", "right", true)).roots, ["a", "c", "e"]);
+  // below: c under d
+  assert.equal(ok(run("c", "d", "bottom", true)).nodes.find(n => n.key === "c")!.parentKey, "d");
+  // above: e becomes the manager of a; e takes a's place
+  const above = ok(run("e", "a", "top", true));
+  assert.deepEqual(above.roots, ["e"]);
+  assert.equal(above.nodes.find(n => n.key === "a")!.parentKey, "e");
+  // above a middle manager: d above b -> d reports to a, b reports to d, c stays with b
+  const mid = ok(run("d", "b", "top", true));
+  assert.deepEqual(kids(mid, "a"), ["d"]);
+  assert.deepEqual(kids(mid, "d"), ["b"]);
+  assert.deepEqual(kids(mid, "b"), ["c"]);
+  // with team: a manager cannot land inside their own team; alone it can, and the team moves up
+  assert.match((run("b", "c", "bottom", true) as { error: string }).error, /team/);
+  const alone = ok(run("b", "c", "bottom", false));
+  assert.equal(alone.nodes.find(n => n.key === "c")!.parentKey, "a");
+  assert.equal(alone.nodes.find(n => n.key === "b")!.parentKey, "c");
+  // moving alone takes the team up; with the team it travels along
+  assert.deepEqual(kids(ok(run("b", "e", "bottom", false)), "a"), ["c", "d"]);
+  assert.deepEqual(kids(ok(run("b", "e", "bottom", true)), "b"), ["c"]);
+  // top level, and bad input
+  assert.deepEqual(ok(run("b", null, "root", false)).roots, ["a", "e", "b"]);
+  assert.ok("error" in run("a", "a", "top", true));
+  assert.ok("error" in run("a", "e", "root", true));
+  assert.ok("error" in run("a", null, "left", true));
+});
