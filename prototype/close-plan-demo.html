@@ -1626,13 +1626,44 @@ function renderOrgChart() {
   if (!root) { root = document.createElement("div"); root.id = "orgchart-root"; document.body.appendChild(root); }
   const q = ui.orgchart, c = q.chart;
   const kids = new Map(); if (c) c.nodes.forEach(n => kids.set(n.parentKey, [...(kids.get(n.parentKey) || []), n]));
-  const tags = n => [n.type, n.dealRole && n.dealRole !== n.type ? n.dealRole : "", n.powerBase ? "Power base" : "", n.provisional ? "Not a contact yet" : ""].filter(Boolean).map(t => `<em style="font-style:normal;font-size:11px;border:1px solid var(--line,#ddd);border-radius:10px;padding:1px 7px;margin-left:6px">${esc(t)}</em>`).join("");
-  const branch = n => `<li style="margin:6px 0"><b>${esc(n.name)}</b>${n.title ? ` <small>${esc(n.title)}</small>` : ""}${tags(n)}${(kids.get(n.key) || []).length ? `<ul style="list-style:none;margin:0;padding-left:20px;border-left:1px solid var(--line,#ddd)">${kids.get(n.key).map(branch).join("")}</ul>` : ""}</li>`;
-  root.innerHTML = `<div class="notify-modal-overlay" data-orgchart-close>
-    <div class="notify-modal" role="dialog" aria-modal="true" aria-label="Org chart from Salesforce" onclick="event.stopPropagation()" style="max-width:640px">
+  // Same look as the iSEEit chart in Salesforce: cards with a coloured left edge by type, gold elbow connectors, star for power base.
+  const edge = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
+  const star = n => n.powerBase ? `<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Power base"><path fill="${/Economic Buyer/.test(n.dealRole) ? "#8fb8e8" : "#f5c400"}" d="M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z"/></svg>` : "";
+  const initials = n => n.name.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const card = n => `<div class="oc-card" style="border-left-color:${edge[n.type] || "#c4c4c4"}">${n.provisional ? `<span class="oc-tmp">Temp</span>` : ""}<div class="oc-av">${esc(initials(n))}</div><div class="oc-tx"><div class="oc-nm">${esc(n.name)}</div><div class="oc-ds">${esc(n.title)}</div><div class="oc-rl">${esc(n.dealRole)}</div></div><div class="oc-rp">${star(n)}</div></div>`;
+  const branch = n => { const k = kids.get(n.key) || []; return `<li>${card(n)}${k.length ? `<span class="oc-chev">⌃</span><ul>${k.map(branch).join("")}</ul>` : ""}</li>`; };
+  const css = `<style>
+    .oc-wrap{overflow:auto;max-height:62vh;padding:6px 4px 14px}
+    .oc-tree,.oc-tree ul{list-style:none;margin:0;padding:0;display:flex;justify-content:center}
+    .oc-tree ul{padding-top:34px;position:relative}
+    .oc-tree li{position:relative;padding:34px 8px 0;display:flex;flex-direction:column;align-items:center}
+    .oc-tree>li{padding-top:0}
+    .oc-tree li::before,.oc-tree li::after{content:"";position:absolute;top:0;width:50%;height:34px;border-top:2px solid #f5b942}
+    .oc-tree li::before{left:0}.oc-tree li::after{right:0}
+    .oc-tree>li::before,.oc-tree>li::after{display:none}
+    .oc-tree li:only-child::before,.oc-tree li:only-child::after{border-top:none}
+    .oc-tree li:first-child::before,.oc-tree li:last-child::after{border-top:none}
+    .oc-tree li:not(:only-child)>.oc-card::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+    .oc-tree li:only-child>.oc-card::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+    .oc-tree>li>.oc-card::before{display:none}
+    .oc-tree ul::before{content:"";position:absolute;top:0;left:50%;height:34px;border-left:2px solid #f5b942}
+    .oc-chev{z-index:1;margin-top:8px;margin-bottom:-14px;width:22px;height:22px;border:2px solid #f5b942;border-radius:50%;background:#fff;color:#f5b942;font-size:13px;line-height:26px;text-align:center;box-sizing:border-box}
+    .oc-tree ul{padding-top:20px}
+    .oc-tree ul::before{height:20px}
+    .oc-card{position:relative;display:flex;gap:10px;align-items:flex-start;width:230px;min-height:100px;box-sizing:border-box;background:#fff;border-left:5px solid #c4c4c4;border-radius:4px;padding:12px 8px 8px 10px;box-shadow:0 1px 6px rgba(0,0,0,.18);text-align:left}
+    .oc-av{flex:none;width:46px;height:46px;border-radius:50%;background:#dfe3e8;color:#5b6573;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+    .oc-tx{flex:1;min-width:0;display:flex;flex-direction:column;min-height:80px}
+    .oc-nm{font-weight:700;font-size:15px;line-height:1.2;color:#1c3a73}
+    .oc-ds{font-size:12px;line-height:1.3;color:#5b6573;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .oc-rl{margin-top:auto;font-size:12px;font-style:italic;color:#5b6573}
+    .oc-rp{flex:none;width:24px;display:flex;flex-direction:column;align-items:center;border-left:1px solid #eee;padding-left:8px;align-self:stretch}
+    .oc-tmp{position:absolute;top:-8px;right:8px;background:#fdf0c9;color:#7a5a00;font-size:10px;padding:0 7px;border-radius:8px}
+  </style>`;
+  root.innerHTML = `${css}<div class="notify-modal-overlay" data-orgchart-close>
+    <div class="notify-modal" role="dialog" aria-modal="true" aria-label="Org chart from Salesforce" onclick="event.stopPropagation()" style="max-width:min(1100px,94vw);width:94vw">
       <button type="button" class="notify-modal-close" aria-label="Close" data-orgchart-close>×</button>
       <div class="notify-modal-header"><div><h2>Org chart from Salesforce</h2><p>Read-only preview. Nothing is saved here or in Salesforce.</p></div></div>
-      ${q.busy ? `<p class="hint">Reading Salesforce…</p>` : q.error ? `<p class="notify-result err">${esc(q.error)}</p>` : c && !c.nodes.length ? `<p class="hint">This opportunity has no org chart in Salesforce yet.</p>` : c ? `<div style="max-height:360px;overflow:auto"><ul style="list-style:none;margin:0;padding:0">${c.roots.map(k => branch(c.nodes.find(n => n.key === k))).join("")}</ul></div>
+      ${q.busy ? `<p class="hint">Reading Salesforce…</p>` : q.error ? `<p class="notify-result err">${esc(q.error)}</p>` : c && !c.nodes.length ? `<p class="hint">This opportunity has no org chart in Salesforce yet.</p>` : c ? `<div class="oc-wrap"><ul class="oc-tree" style="justify-content:flex-start">${c.roots.map(k => branch(c.nodes.find(n => n.key === k))).join("")}</ul></div>
         <p class="hint">${c.nodes.length} ${c.nodes.length === 1 ? "person" : "people"}</p>
         ${c.issues.length ? `<details><summary>${c.issues.length} ${c.issues.length === 1 ? "thing" : "things"} to check in Salesforce</summary><ul>${c.issues.map(i => `<li>${esc(i.text)}</li>`).join("")}</ul></details>` : ""}` : ""}
       <div class="notify-modal-actions" style="margin-top:20px"><button type="button" class="btn" data-orgchart-close>Close</button></div></div></div>`;
