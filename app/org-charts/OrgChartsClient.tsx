@@ -35,6 +35,17 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
     if (!r.ok) { setNotice(res.error || "The org chart could not be opened"); return; }
     setOpened(res);
   }
+  // Temporary: copy the chart from Salesforce again (replaces the saved copy and throws away the edits made to it).
+  const [refreshing, setRefreshing] = useState(false);
+  const [askRefresh, setAskRefresh] = useState(false);
+  async function pull(row: ChartRow) {
+    setAskRefresh(false); setRefreshing(true); setNotice("");
+    const r = await fetch("/api/org-charts", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ items: [{ kind: row.kind, sfdcId: row.sfdcId }] }) }).catch(() => null);
+    const res = r ? await r.json().catch(() => ({})) : {};
+    if (!r?.ok) { setRefreshing(false); setNotice(res.error || res.results?.[0]?.error || "Salesforce could not be reached"); return; }
+    await refresh(); await open(row); setRefreshing(false);
+    setNotice(`Copied “${row.name}” from Salesforce again.`);
+  }
   async function remove(row: ChartRow) {
     const r = await fetch(`/api/org-charts/${encodeURIComponent(row.id)}`, { method: "DELETE", credentials: "same-origin" });
     const res = await r.json().catch(() => ({}));
@@ -56,9 +67,17 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
             <h1 className="text-2xl font-bold text-[#102f59] mt-1">{opened.name}</h1>
             <p className="text-sm text-[#697181]">{opened.kind === "opportunity" && opened.accountName ? `${opened.accountName} · ` : ""}Copied from Salesforce {when(opened.importedAt)}. Changes you make here stay in Task AI and are never sent to Salesforce.</p>
           </div>
-          {row && <button type="button" className={btn} onClick={() => setDeleting(row)}>Delete</button>}
+          {row && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {askRefresh
+                ? <span className="text-sm text-[#2b3445]">{row.editedAt ? "This replaces the copy and throws away your edits. " : "This replaces the copy. "}<button type="button" className={btn} onClick={() => void pull(row)}>Yes, copy again</button> <button type="button" className={btn} onClick={() => setAskRefresh(false)}>No</button></span>
+                : <button type="button" className={btn} disabled={refreshing} onClick={() => setAskRefresh(true)} title="Temporary: copy this chart from Salesforce again">{refreshing ? "Copying…" : "Pull from Salesforce"}</button>}
+              <button type="button" className={btn} onClick={() => setDeleting(row)}>Delete</button>
+            </div>
+          )}
         </div>
-        <OrgChartView key={opened.id} chartId={opened.id} chart={opened.chart} edited={opened.edited} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
+        {notice && <p className="text-sm text-[#2b3445] bg-[#eef2f8] rounded-lg px-4 py-2 mb-3" role="status">{notice}</p>}
+        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
         {deleting && <DeleteDialog row={deleting} onCancel={() => setDeleting(null)} onConfirm={() => void remove(deleting)} />}
       </div>
     );

@@ -79,13 +79,14 @@
 .oc-ed .oc-del{margin-top:12px;color:#b3261e;border-color:#e3b8b4}
 .oc-card.drag{opacity:.45}
 .oc-card.target:hover{outline:2px dashed #173f76}
-/* Drop zones on a card while dragging, like Salesforce */
-.oc-card::after{content:"";position:absolute;pointer-events:none;display:none;font:600 11px/1 sans-serif;color:#fff;text-align:center;box-sizing:border-box}
-.oc-card[class*=" z-"]::after{display:flex;align-items:center;justify-content:center;background:rgba(23,63,118,.78);border-radius:4px}
-.oc-card.z-top::after{content:"Above: becomes manager";left:20%;right:20%;top:0;height:35%}
-.oc-card.z-bottom::after{content:"Below: reports to them";left:20%;right:20%;top:35%;bottom:0}
-.oc-card.z-left::after{content:"Beside";left:0;top:0;bottom:0;width:20%}
-.oc-card.z-right::after{content:"Beside";right:0;top:0;bottom:0;width:20%}
+/* Drop areas just outside a card while dragging, so the dragged card does not cover them */
+.oc-tree.editing li{padding-left:30px;padding-right:30px}
+.oc-pad{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;box-sizing:border-box;font:600 11px/1 sans-serif;color:#173f76;background:rgba(23,63,118,.08);border:1.5px dashed #9db4d6;border-radius:6px;white-space:nowrap}
+.oc-pad.on{background:#173f76;border:1.5px solid #173f76;color:#fff}
+.oc-pad.top{left:0;right:0;top:-28px;height:22px}
+.oc-pad.bottom{left:0;right:0;bottom:-28px;height:22px}
+.oc-pad.left{left:-28px;width:22px;top:0;bottom:0;writing-mode:vertical-rl;transform:rotate(180deg)}
+.oc-pad.right{right:-28px;width:22px;top:0;bottom:0;writing-mode:vertical-rl}
 .oc-modal{position:fixed;inset:0;z-index:50;background:rgba(16,47,89,.35);display:flex;align-items:center;justify-content:center;padding:16px}
 .oc-modal>div{width:min(420px,100%);background:#fff;border-radius:12px;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
 .oc-modal h4{margin:0 0 8px;font-size:16px;color:#102f59}
@@ -93,3 +94,16 @@
 .oc-modal .oc-row{display:flex;gap:8px;flex-wrap:wrap}
 .oc-modal button{padding:6px 12px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px;cursor:pointer}
 .oc-modal .oc-save{background:#173f76;color:#fff;border-color:#173f76}
+/* PDF export: a hidden sheet that only shows when printing */
+.oc-print-root{position:fixed;left:-99999px;top:0;width:max-content;background:#fff;page:orgchart}
+.oc-print-root h1{margin:0;font:700 20px/1.2 sans-serif;color:#102f59}
+.oc-print-root p{margin:2px 0 12px;font:13px/1.3 sans-serif;color:#5b6573}
+.oc-print-root .oc-card{cursor:default;box-shadow:0 0 0 1px #d8dde4}
+@page orgchart{size:A4 landscape;margin:10mm}
+@media print{
+  body.oc-printing>*:not(.oc-print-root){display:none!important}
+  body.oc-printing{background:#fff}
+  .oc-print-root{position:static;width:auto}
+  .oc-print-root,.oc-print-root *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .oc-print-root li{break-inside:avoid}
+}
