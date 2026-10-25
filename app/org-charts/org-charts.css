@@ -246,3 +246,5 @@
 .oc-menu hr{width:100%;border:0;border-top:1px solid #e3e6ea;margin:4px 0}
 .oc-bar .oc-menu button{width:100%;text-align:left;border:0;background:none;padding:7px 8px;border-radius:6px;min-width:0}
 .oc-bar .oc-menu button:hover:not(:disabled){background:#eef2f8}
+.oc-panel .oc-disc{display:inline-block;margin-left:8px;padding:2px 8px;border:1px solid #e3b8b4;border-radius:6px;background:#fff;color:#b3261e;font:600 12px/1.4 sans-serif;cursor:pointer}
+.oc-panel .oc-disc:hover{background:#fdf1f0}
