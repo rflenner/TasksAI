@@ -225,12 +225,14 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const fit = Math.min(1, pageW / w, pageH / h), scale = fit >= 0.4 ? fit : Math.min(1, pageW / w);
     setPrintScale(scale);
     const oldTitle = document.title; document.title = `Org chart ${title}`; document.body.classList.add("oc-printing");
+    // Landscape only for this print: a named page would start the sheet on a second page after an empty portrait one.
+    const pageRule = document.createElement("style"); pageRule.textContent = "@page{size:A4 landscape;margin:10mm}"; document.head.appendChild(pageRule);
     let done = false;
-    const finish = () => { if (done) return; done = true; document.title = oldTitle; document.body.classList.remove("oc-printing"); window.removeEventListener("afterprint", finish); setPrinting(false); };
+    const finish = () => { if (done) return; done = true; pageRule.remove(); document.title = oldTitle; document.body.classList.remove("oc-printing"); window.removeEventListener("afterprint", finish); setPrinting(false); };
     window.addEventListener("afterprint", finish);
     const images = [...el.querySelectorAll("img")].filter(i => !i.complete).map(i => new Promise<void>(ok => { i.onload = i.onerror = () => ok(); }));
     void Promise.race([Promise.all(images), new Promise(ok => window.setTimeout(ok, 5000))]).then(() => window.setTimeout(() => { if (!done) { window.print(); finish(); } }, 150));
-    return () => { done = true; window.removeEventListener("afterprint", finish); document.body.classList.remove("oc-printing"); document.title = oldTitle; };
+    return () => { done = true; pageRule.remove(); window.removeEventListener("afterprint", finish); document.body.classList.remove("oc-printing"); document.title = oldTitle; };
   }, [printing, title]);
 
   const inner = (n: OrgNode, eager = false) => (
