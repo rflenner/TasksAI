@@ -18,7 +18,7 @@ export default async function OrgChartsPage() {
     .from(orgCharts).leftJoin(users, eq(users.id, orgCharts.importedBy)).orderBy(desc(orgCharts.importedAt));
   const charts = rows.map(r => ({ ...r, importedAt: r.importedAt.toISOString(), importedBy: r.importedBy || "", editedAt: r.editedAt ? r.editedAt.toISOString() : null }));
   return (
-    <div className="max-w-[1400px] mx-auto p-8">
+    <div className="max-w-[2000px] mx-auto px-3 py-4 sm:px-6 sm:py-6">
       <Link href="/" className="text-sm text-[#697181]">← Back to Task AI</Link>
       <OrgChartsClient initialCharts={charts as never} />
     </div>

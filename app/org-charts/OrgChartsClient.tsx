@@ -70,15 +70,15 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
     const row = charts.find(c => c.id === opened.id);
     return (
       <div>
-        <button type="button" className="text-sm text-[#697181] mt-4" onClick={() => setOpened(null)}>← All org charts</button>
-        <div className="flex items-start justify-between gap-4 mt-2 mb-4">
+        <button type="button" className="text-sm text-[#697181] mt-1 sm:mt-2" onClick={() => setOpened(null)}>← All org charts</button>
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mt-1 mb-2 sm:mb-3">
           <div>
-            <div className="text-[11px] font-extrabold tracking-widest text-[#173f76]">{KIND_LABEL[opened.kind].toUpperCase()} ORG CHART</div>
-            <div className="flex items-center gap-3 mt-1">{opened.logo && <Logo src={opened.logo} size={44} />}<h1 className="text-2xl font-bold text-[#102f59]">{opened.name}</h1></div>
-            <p className="text-sm text-[#697181]">{opened.kind === "opportunity" && opened.accountName ? `${opened.accountName} · ` : ""}Copied from Salesforce {when(opened.importedAt)}. Changes you make here stay in Task AI and are never sent to Salesforce.</p>
+            <div className="hidden sm:block text-[11px] font-extrabold tracking-widest text-[#173f76]">{KIND_LABEL[opened.kind].toUpperCase()} ORG CHART</div>
+            <div className="flex items-center gap-3 sm:mt-1">{opened.logo && <Logo src={opened.logo} size={36} />}<h1 className="text-xl sm:text-2xl font-bold text-[#102f59]">{opened.name}</h1></div>
+            <p className="hidden sm:block text-sm text-[#697181]">{opened.kind === "opportunity" && opened.accountName ? `${opened.accountName} · ` : ""}Copied from Salesforce {when(opened.importedAt)}. Changes you make here stay in Task AI and are never sent to Salesforce.</p>
           </div>
           {row && (
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2 max-sm:[&_button]:!px-3 max-sm:[&_button]:!py-1 max-sm:[&_button]:!text-xs">
               {askRefresh && row.editedAt
                 ? <span className="text-sm text-[#2b3445]">You changed this chart in Task AI. Pulling brings in what is in Salesforce now and throws your changes away. <button type="button" className={btn} onClick={() => void pull(row)}>Pull and discard my changes</button> <button type="button" className={btn} onClick={() => setAskRefresh(false)}>Cancel</button></span>
                 : <button type="button" className={btn} disabled={refreshing} onClick={() => row.editedAt ? setAskRefresh(true) : void pull(row)} title="Temporary: copy this chart from Salesforce again">{refreshing ? "Pulling…" : "Pull from Salesforce"}</button>}
