@@ -18,6 +18,7 @@ type Pending = { key: string; targetKey: string | null; position: DropPosition }
 // While a card is dragged, the card it is held over (the target) shows four drop areas just outside it, so they stay visible next
 // to the dragged card: above (the person becomes its manager), below (reports to it), left and right (a peer beside it). The target
 // is the card the dragged card overlaps most, and the side the dragged card sits towards picks the area; centred means below.
+const ROOT = "__root"; // the "make top level" bar shown while dragging someone who has a manager
 type Pad = { spot: "top" | "bottom" | "left" | "right"; zone: Zone; label: string };
 const PADS: Pad[] = [{ spot: "top", zone: "top", label: "▲ Manager" }, { spot: "bottom", zone: "bottom", label: "▼ Reports to" }, { spot: "left", zone: "left", label: "◀ Peer" }, { spot: "right", zone: "right", label: "Peer ▶" }];
 // In a ladder the people are stacked, so above and below mean before and after: the manager and reports-to areas move to the sides.
@@ -81,10 +82,10 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
   );
 }
 
-export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, onChanged }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; onChanged: (people: number, edited: boolean) => void }) {
+export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void }) {
   const [chart, setChart] = useState<ChartData>(initial);
   const [edited, setEdited] = useState(wasEdited);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -174,7 +175,9 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       const el = wrap.current; if (!el || !dragKey) return;
       const wr = el.getBoundingClientRect();
       let best: { key: string; zone: Zone } | null = null;
-      if (x >= wr.left && x <= wr.right && y >= wr.top && y <= wr.bottom) {
+      const rz = el.querySelector(".oc-rootzone")?.getBoundingClientRect();
+      if (rz && x >= rz.left && x <= rz.right && y >= rz.top && y <= rz.bottom) best = { key: ROOT, zone: "top" };
+      else if (x >= wr.left && x <= wr.right && y >= wr.top && y <= wr.bottom) {
         const g = grab.current, gl = x - g.dx, gt = y - g.dy, margin = 28;
         let most = g.w * g.h * 0.12;
         for (const c of el.querySelectorAll<HTMLElement>(".oc-card[data-key]")) {
@@ -309,7 +312,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
         {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
         <button type="button" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}>{printing ? "Preparing PDF…" : "Export PDF"}</button>
-        <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
+        <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { onEditing(!editing); setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
         {edited && (confirm === "reset"
           ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => void reset()}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
           : <button type="button" disabled={busy} onClick={() => setConfirm("reset")}>Reset to Salesforce copy</button>)}
@@ -317,7 +320,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       {edited && <p className="oc-note">Edited in Task AI. These changes are saved here only and are not in Salesforce.</p>}
       {editing && (
         <div className="oc-edit">
-          <p className="oc-hint">Drag a card over another card: hold it above to make them its manager, to the left or right to put them beside it, or centred to make them report to it. The card and the area light up before you let go. Drop it on empty background to make them top level. Click a card to change type, role and notes, move it left or right, or remove it.</p>
+          <p className="oc-hint">Drag a card over another card: hold it above to make them its manager, to the left or right to put them beside it, or centred to make them report to it. The card and the area light up before you let go. Drop it on the bar at the top to make them top level; dropped anywhere else, nothing changes. Click a card to change type, role and notes, move it left or right, or remove it.</p>
           <AddForm parentKey={null} busy={busy} onAdd={(name, title) => void send({ op: "add", name, title, parentKey: null })} />
         </div>
       )}
@@ -339,7 +342,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         );
       })()}
       <div className="oc-main">
-        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, hoverRef.current?.key ?? null, hoverRef.current?.zone ?? "root")}><ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul></div>
+        <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => { if (!editing || !dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}>{editing && dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>

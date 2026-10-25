@@ -128,3 +128,7 @@
 .oc-tree li.oc-group>ul.oc-ladder{margin-top:6px}
 .oc-tree li.oc-group>ul.oc-ladder::before{top:-6px;height:6px}
 .oc-card.active{background:#eef4ff;outline:3px solid #173f76;box-shadow:0 0 0 6px rgba(23,63,118,.18)}
+.oc-rootzone-wrap{position:sticky;top:0;left:0;height:0;z-index:6}
+.oc-rootzone{position:absolute;left:8px;right:8px;top:6px;height:34px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:2px dashed #9db4d6;border-radius:8px;background:rgba(255,255,255,.92);color:#173f76;font:600 13px/1 sans-serif}
+.oc-rootzone.on{background:#173f76;border:2px solid #173f76;color:#fff}
+.oc-wrap.editing{padding-top:48px}

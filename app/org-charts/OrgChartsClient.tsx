@@ -21,6 +21,7 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState<ChartRow | null>(null);
   const [notice, setNotice] = useState("");
+  const [editMode, setEditMode] = useState(false); // stays on when the chart is pulled again or another one is opened
   const client = useClient();
 
   async function refresh() {
@@ -82,7 +83,7 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
           )}
         </div>
         {notice && <p className="text-sm text-[#2b3445] bg-[#eef2f8] rounded-lg px-4 py-2 mb-3" role="status">{notice}</p>}
-        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
+        <OrgChartView key={`${opened.id}-${opened.importedAt}`} chartId={opened.id} chart={opened.chart} edited={opened.edited} startEditing={editMode} onEditing={setEditMode} title={opened.name} subtitle={[opened.kind === "opportunity" ? opened.accountName : "", `${KIND_LABEL[opened.kind]} org chart`, `copied from Salesforce ${when(opened.importedAt)}`].filter(Boolean).join(" · ")} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
         {deleting && <DeleteDialog row={deleting} onCancel={() => setDeleting(null)} onConfirm={() => void remove(deleting)} />}
       </div>
     );
