@@ -3,9 +3,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import OrgChartView, { type ChartData } from "./OrgChartView";
 
 type Kind = "account" | "opportunity";
-export type ChartRow = { id: string; kind: Kind; sfdcId: string; name: string; accountName: string; people: number; importedAt: string; importedBy: string };
+export type ChartRow = { id: string; kind: Kind; sfdcId: string; name: string; accountName: string; people: number; importedAt: string; importedBy: string; editedAt: string | null };
 type Hit = { id: string; name: string; accountId: string; account: string; detail: string; owner: string };
-type Opened = { id: string; kind: Kind; name: string; accountName: string; importedAt: string; chart: ChartData };
+type Opened = { id: string; kind: Kind; name: string; accountName: string; importedAt: string; edited: boolean; chart: ChartData };
 
 const btn = "border border-[#c9d3e0] rounded-lg px-3 py-1.5 text-sm text-[#2b3445] bg-white hover:bg-[#f4f7fb] disabled:opacity-40";
 const primary = "rounded-lg px-4 py-1.5 text-sm font-semibold text-white bg-[#173f76] hover:bg-[#102f59] disabled:opacity-40";
@@ -54,11 +54,11 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
           <div>
             <div className="text-[11px] font-extrabold tracking-widest text-[#173f76]">{KIND_LABEL[opened.kind].toUpperCase()} ORG CHART</div>
             <h1 className="text-2xl font-bold text-[#102f59] mt-1">{opened.name}</h1>
-            <p className="text-sm text-[#697181]">{opened.kind === "opportunity" && opened.accountName ? `${opened.accountName} · ` : ""}Copied from Salesforce {when(opened.importedAt)}. Read-only.</p>
+            <p className="text-sm text-[#697181]">{opened.kind === "opportunity" && opened.accountName ? `${opened.accountName} · ` : ""}Copied from Salesforce {when(opened.importedAt)}. Changes you make here stay in Task AI and are never sent to Salesforce.</p>
           </div>
           {row && <button type="button" className={btn} onClick={() => setDeleting(row)}>Delete</button>}
         </div>
-        <OrgChartView key={opened.id} chartId={opened.id} chart={opened.chart} />
+        <OrgChartView key={opened.id} chartId={opened.id} chart={opened.chart} edited={opened.edited} onChanged={(people, edited) => setCharts(list => list.map(c => c.id === opened.id ? { ...c, people, editedAt: edited ? new Date().toISOString() : null } : c))} />
         {deleting && <DeleteDialog row={deleting} onCancel={() => setDeleting(null)} onConfirm={() => void remove(deleting)} />}
       </div>
     );
@@ -200,10 +200,10 @@ function ImportDialog({ existing, onClose, onDone }: { existing: ChartRow[]; onC
           <div className="flex items-start justify-between gap-2"><div><div className="text-sm font-semibold text-[#102f59]">{picked.name}</div><div className="text-xs text-[#697181]">{[kind === "opportunity" ? picked.account : "", picked.detail].filter(Boolean).join(" · ")}</div></div><button type="button" className="text-sm text-[#173f76]" onClick={() => setPicked(null)}>Change</button></div>
           {kind === "opportunity" ? (
             <div className="mt-3 flex flex-col gap-2 text-sm">
-              <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={wantOpportunity} onChange={e => setWantOpportunity(e.target.checked)} /><span>Opportunity org chart{have("opportunity", picked.id) ? <em className="not-italic text-[#697181]"> — replaces the copy from {when(have("opportunity", picked.id)!.importedAt)}</em> : ""}</span></label>
-              <label className={`flex items-start gap-2 ${picked.accountId ? "" : "opacity-50"}`}><input type="checkbox" className="mt-1" disabled={!picked.accountId} checked={wantAccount} onChange={e => setWantAccount(e.target.checked)} /><span>Account org chart{picked.account ? ` of ${picked.account}` : ""}{picked.accountId && have("account", picked.accountId) ? <em className="not-italic text-[#697181]"> — replaces the copy from {when(have("account", picked.accountId)!.importedAt)}</em> : ""}</span></label>
+              <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={wantOpportunity} onChange={e => setWantOpportunity(e.target.checked)} /><span>Opportunity org chart{have("opportunity", picked.id) ? <em className="not-italic text-[#697181]"> — replaces the copy from {when(have("opportunity", picked.id)!.importedAt)}{have("opportunity", picked.id)!.editedAt ? " and discards your edits" : ""}</em> : ""}</span></label>
+              <label className={`flex items-start gap-2 ${picked.accountId ? "" : "opacity-50"}`}><input type="checkbox" className="mt-1" disabled={!picked.accountId} checked={wantAccount} onChange={e => setWantAccount(e.target.checked)} /><span>Account org chart{picked.account ? ` of ${picked.account}` : ""}{picked.accountId && have("account", picked.accountId) ? <em className="not-italic text-[#697181]"> — replaces the copy from {when(have("account", picked.accountId)!.importedAt)}{have("account", picked.accountId)!.editedAt ? " and discards your edits" : ""}</em> : ""}</span></label>
             </div>
-          ) : have("account", picked.id) ? <p className="text-xs text-[#697181] mt-2">Replaces the copy from {when(have("account", picked.id)!.importedAt)}.</p> : null}
+          ) : have("account", picked.id) ? <p className="text-xs text-[#697181] mt-2">Replaces the copy from {when(have("account", picked.id)!.importedAt)}{have("account", picked.id)!.editedAt ? " and discards your edits" : ""}.</p> : null}
         </div>
       )}
       {error && <p className="text-sm text-[#b3261e] mt-3" role="alert">{error}</p>}
