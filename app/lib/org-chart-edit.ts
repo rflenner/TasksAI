@@ -10,7 +10,7 @@ export type OrgEdit =
   | { op: "move"; key: string; parentKey: string | null; index?: number }
   | { op: "drop"; key: string; targetKey: string | null; position: DropPosition; withTeam: boolean }
   | { op: "shift"; key: string; by: -1 | 1 }
-  | { op: "update"; key: string; type?: string; layout?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string }
+  | { op: "update"; key: string; type?: string; layout?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string; name?: string; email?: string; phone?: string }
   | { op: "add"; name: string; title?: string; parentKey: string | null }
   | { op: "remove"; key: string };
 // Where a dragged card lands on the card it is dropped on, like the iSEEit chart in Salesforce: "top" = above it, so the dragged
@@ -106,6 +106,9 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
       if (edit.powerBase !== undefined) next.powerBase = Boolean(edit.powerBase);
       if (edit.description !== undefined) next.description = typeof edit.description === "string" ? edit.description.slice(0, 2000) : "";
       if (edit.title !== undefined) next.title = text(edit.title, 120);
+      if (edit.name !== undefined) { const name = text(edit.name, 80); if (!name) return { error: "Give the person a name" }; next.name = name; }
+      if (edit.email !== undefined) next.email = text(edit.email, 120);
+      if (edit.phone !== undefined) next.phone = text(edit.phone, 40);
       return { chart: { ...chart, nodes: chart.nodes.map(n => n.key === node.key ? next : n) }, key: node.key };
     }
     case "add": {
