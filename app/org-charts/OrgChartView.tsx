@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart";
 import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
+import { planTeam, type TeamPlan } from "../lib/org-chart-layout";
 import "./org-charts.css";
 
 // The interactive org chart, same behaviour as the iSEEit chart in Salesforce: click a card for its details, the task icon for
@@ -16,7 +17,10 @@ type Zone = Exclude<DropPosition, "root">;
 type Pending = { key: string; targetKey: string | null; position: DropPosition };
 // While a card is dragged, every other card shows four drop areas just outside it, so they stay visible next to the dragged
 // card: above (the person becomes its manager), below (reports to it), left and right (a peer beside it). The card itself counts as below.
-const PADS: Array<{ zone: Zone; label: string }> = [{ zone: "top", label: "▲ Manager" }, { zone: "bottom", label: "▼ Reports to" }, { zone: "left", label: "◀ Peer" }, { zone: "right", label: "Peer ▶" }];
+type Pad = { spot: "top" | "bottom" | "left" | "right"; zone: Zone; label: string };
+const PADS: Pad[] = [{ spot: "top", zone: "top", label: "▲ Manager" }, { spot: "bottom", zone: "bottom", label: "▼ Reports to" }, { spot: "left", zone: "left", label: "◀ Peer" }, { spot: "right", zone: "right", label: "Peer ▶" }];
+// In a ladder the people are stacked, so above and below mean before and after: the manager and reports-to areas move to the sides.
+const LADDER_PADS: Pad[] = [{ spot: "top", zone: "left", label: "▲ Before" }, { spot: "bottom", zone: "right", label: "▼ After" }, { spot: "left", zone: "top", label: "◀ Manager" }, { spot: "right", zone: "bottom", label: "Reports to ▶" }];
 const zoneOf = (e: React.DragEvent): Zone => (e.target as HTMLElement).closest<HTMLElement>("[data-zone]")?.dataset.zone as Zone | undefined || "bottom";
 const TYPES = ["Champion", "Coach", "Enemy", "Influencer", "Neutral"];
 const EDGE: Record<string, string> = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
@@ -57,6 +61,13 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
         <button type="button" disabled={busy} onClick={() => void onEdit({ op: "shift", key: node.key, by: -1 })}>← Move left</button>
         <button type="button" disabled={busy} onClick={() => void onEdit({ op: "shift", key: node.key, by: 1 })}>Move right →</button>
       </div>
+      {nodes.some(n => n.parentKey === node.key) && (
+        <label>Team layout
+          <select value={node.layout || "auto"} disabled={busy} onChange={e => void onEdit({ op: "update", key: node.key, layout: e.target.value })}>
+            <option value="auto">Automatic</option><option value="row">Row (side by side)</option><option value="ladder">Ladder (hanging)</option>
+          </select>
+        </label>
+      )}
       <label>Type<select value={type} onChange={e => setType(e.target.value)}>{TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
       <label>Deal role<input value={dealRole} maxLength={80} onChange={e => setDealRole(e.target.value)} /></label>
       <label className="oc-chk"><input type="checkbox" checked={powerBase} onChange={e => setPowerBase(e.target.checked)} /> Power base</label>
@@ -217,43 +228,43 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     </>
   );
 
-  const card = (n: OrgNode) => (
+  const card = (n: OrgNode, ladder = false) => (
     <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
       draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => { setDragKey(null); setHover(null); }}
       onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); const zone = zoneOf(e); setHover(h => h?.key === n.key && h.zone === zone ? h : { key: n.key, zone }); } }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(h => h?.key === n.key ? null : h); }}
       onDrop={e => editing && dragKey && dragKey !== n.key && drop(e, n.key, zoneOf(e))}
       onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
-      {editing && dragKey && dragKey !== n.key && PADS.map(p => <span key={p.zone} data-zone={p.zone} className={`oc-pad ${p.zone}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
+      {editing && dragKey && dragKey !== n.key && (ladder ? LADDER_PADS : PADS).map(p => <span key={p.spot} data-zone={p.zone} className={`oc-pad ${p.spot}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
       {inner(n)}
     </div>
   );
 
-  const branch = (n: OrgNode): React.ReactNode => {
-    const k = kids.get(n.key) || [], shut = collapsed.has(n.key);
+  // One person and, under them, their team: a row, or a ladder (see app/lib/org-chart-layout.ts). `plain` is the PDF sheet:
+  // every team open, nothing clickable.
+  const node = (n: OrgNode, level: number, inLadder: boolean, plain: boolean): React.ReactNode => {
+    const k = kids.get(n.key) || [], shut = !plain && collapsed.has(n.key);
+    const plan: TeamPlan = planTeam(n, level, key => kids.get(key) || []);
+    const deeper = (list: OrgNode[]) => list.map(c => node(c, level + 1, list === plan.ladder, plain));
     return (
       <li key={n.key}>
-        {card(n)}
-        {k.length > 0 && (
+        {plain ? <div className="oc-card" style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}>{inner(n, true)}</div> : card(n, inLadder)}
+        {!plain && k.length > 0 && (
           <button type="button" className={`oc-chev${shut ? " shut" : ""}`} aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} the team of ${n.name}`} title={shut ? `Show all ${below(n)} below (Shift: only the next level)` : `Hide all ${below(n)} below`}
             onClick={e => { e.stopPropagation(); toggleTeam(n, e.shiftKey); }}>
             {shut ? <b>+{below(n)}</b> : "⌃"}
           </button>
         )}
-        {k.length > 0 && !shut && <ul>{k.map(branch)}</ul>}
+        {k.length > 0 && !shut && (plan.layout === "ladder"
+          ? <ul className="oc-ladder">{deeper(plan.ladder)}</ul>
+          : <ul>
+              {deeper(plan.row)}
+              {plan.ladder.length > 0 && <li key="group" className="oc-group"><div className="oc-grp">{plan.ladder.length} people without a team</div><ul className="oc-ladder">{deeper(plan.ladder)}</ul></li>}
+            </ul>)}
       </li>
     );
   };
-
-  const plainBranch = (n: OrgNode): React.ReactNode => {
-    const k = kids.get(n.key) || [];
-    return (
-      <li key={n.key}>
-        <div className="oc-card" style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}>{inner(n, true)}</div>
-        {k.length > 0 && <ul>{k.map(plainBranch)}</ul>}
-      </li>
-    );
-  };
+  const treeOf = (plain: boolean) => chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(n => node(n, 1, false, plain));
 
   const sel = selected ? byKey.get(selected) : null;
   const t = sel ? tasks[sel.key] : undefined;
@@ -302,7 +313,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         );
       })()}
       <div className="oc-main">
-        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null, "root")}><ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
+        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null, "root")}><ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
@@ -329,7 +340,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         <div className="oc-print-root" ref={sheet}>
           <h1>{title}</h1>
           <p>{subtitle}{subtitle ? " · " : ""}{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}{edited ? " · edited in Task AI, not saved in Salesforce" : ""}</p>
-          <ul className="oc-tree" style={{ zoom: printScale }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(plainBranch)}</ul>
+          <ul className="oc-tree" style={{ zoom: printScale }}>{treeOf(true)}</ul>
         </div>, document.body)}
       {chart.issues.length > 0 && <details className="oc-hint"><summary>{chart.issues.length} {chart.issues.length === 1 ? "thing" : "things"} to check in Salesforce</summary><ul style={{ paddingLeft: 18 }}>{chart.issues.map((i, k) => <li key={k}>{i.text}</li>)}</ul></details>}
     </div>

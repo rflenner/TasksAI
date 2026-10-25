@@ -10,7 +10,7 @@ export type OrgEdit =
   | { op: "move"; key: string; parentKey: string | null; index?: number }
   | { op: "drop"; key: string; targetKey: string | null; position: DropPosition; withTeam: boolean }
   | { op: "shift"; key: string; by: -1 | 1 }
-  | { op: "update"; key: string; type?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string }
+  | { op: "update"; key: string; type?: string; layout?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string }
   | { op: "add"; name: string; title?: string; parentKey: string | null }
   | { op: "remove"; key: string };
 // Where a dragged card lands on the card it is dropped on, like the iSEEit chart in Salesforce: "top" = above it, so the dragged
@@ -98,7 +98,9 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
       const node = find(edit.key);
       if (!node) return { error: "That person is not in the chart" };
       if (edit.type !== undefined && !(ORG_TYPES as readonly string[]).includes(edit.type)) return { error: "Unknown type" };
+      if (edit.layout !== undefined && !["auto", "row", "ladder"].includes(edit.layout)) return { error: "Unknown layout" };
       const next: OrgNode = { ...node };
+      if (edit.layout !== undefined) next.layout = edit.layout as OrgNode["layout"];
       if (edit.type !== undefined) next.type = edit.type;
       if (edit.dealRole !== undefined) next.dealRole = text(edit.dealRole, 80);
       if (edit.powerBase !== undefined) next.powerBase = Boolean(edit.powerBase);

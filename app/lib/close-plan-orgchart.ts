@@ -43,6 +43,7 @@ export type OrgNode = {
   linkedin: string; // the Contact's LinkedIn profile link, or ""
   left: boolean; // Salesforce says the Contact has left the company (iseeit__Is_Company_Left__c)
   openTasks: number; // open Tasks plus upcoming Events on this opportunity with the Contact
+  layout?: "auto" | "row" | "ladder"; // how this person's team is drawn, set in Task AI (see org-chart-layout.ts); missing = auto
   photo: string; // Salesforce Attachment Id of the Contact's Profile_Picture.jpg, or "" (set by the route, see close-plan-photos.ts)
 };
 export type OrgChartIssue = { kind: "duplicate" | "unknown-person" | "parent-missing" | "cycle" | "persona"; roleId: string; text: string };
