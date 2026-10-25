@@ -523,14 +523,9 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         {edited && (confirm === "reset"
           ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => void reset()}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
           : <button type="button" disabled={busy} onClick={() => setConfirm("reset")}>Reset to Salesforce copy</button>)}
+              {edited && <span className="oc-edited" title="This copy was changed in Task AI. The changes are saved here only and are not in Salesforce.">Edited in Task AI</span>}
+        {colored && <span className="oc-legend end" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative (enemy)<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive (champion, coach)</span>}
       </div>
-      {edited && <p className="oc-note">Edited in Task AI. These changes are saved here only and are not in Salesforce.</p>}
-      {editing && (
-        <div className="oc-edit">
-          <p className="oc-hint">Drag a card over another card: hold it above to make them its manager, to the left or right to put them beside it, or centred to make them report to it. The card and the area light up before you let go. Drop it on the bar at the top to make them top level; dropped anywhere else, nothing changes. Click a card to change type, role and notes, move it left or right, or remove it.</p>
-          <AddForm parentKey={null} busy={busy} onAdd={(name, title) => void send({ op: "add", name, title, parentKey: null })} />
-        </div>
-      )}
       {msg && <p className="oc-err" role="alert">{msg}</p>}
       {pending && (() => {
         const who = byKey.get(pending.key), team = (kids.get(pending.key) || []).length, boss = who?.parentKey ? byKey.get(who.parentKey)?.name : "";
@@ -548,7 +543,6 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           </div>
         );
       })()}
-      <div className="oc-legendrow">{colored ? <span className="oc-legend" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative (enemy)<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive (champion, coach)</span> : <span className="oc-hint">Influence lines: a dotted arrow from the influencer to the influenced person. Switch on “Who influences who” to see the kind in colour.</span>}</div>
       <div className="oc-main">
         
         <div className="oc-stage">
@@ -613,7 +607,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           </aside>
         )}
       </div>
-      <p className="oc-hint">{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}. Click a card for details, drag the background to move around.{edited ? "" : " Press Edit chart to change this copy."}</p>
+      <p className="oc-hint">{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}. Click a card for details; drag the background or swipe to move around, pinch to zoom.</p>
       {printing && createPortal(
         <div className="oc-print-root" ref={sheet}>
           <h1>{logo && <PrintLogo src={logo} />}{title}</h1>
