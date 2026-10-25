@@ -1498,6 +1498,7 @@ function render() {
   growAll();
   renderVoice();
   renderSfImport();
+  renderOrgChart();
 }
 
 function sellerShell() {
@@ -1600,7 +1601,7 @@ function titleBlock() {
       ${IN_APP && !LINK && APP_ME && !state._demo ? `<button type="button" class="btn icon-btn" data-vx-title aria-label="Live Voice Assistant" data-tip="Live Voice Assistant">${WAVE(18)}</button>` : ""}
       ${ui.mode === "seller" ? `<button type="button" class="btn icon-btn" data-report aria-label="Download PDF" data-tip="Download as PDF">${DOWNLOAD}</button><button type="button" class="btn primary" id="share-all"><span class="i i-mail" style="width:16px;height:16px"></span>Share with ${esc(B())}</button>` : `<button type="button" class="btn primary pdf-btn" data-report>${DOWNLOAD}Download PDF</button>`}
       ${ui.mode === "seller" ? `<div class="ph-tools plan-tools"><button type="button" class="ph-btn ${ui.planMenu ? "on" : ""}" data-planmenu aria-haspopup="menu" aria-expanded="${Boolean(ui.planMenu)}" aria-label="Plan options" data-tip="More plan options">${DOTS}</button>
-        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">${ico(ICO.print)}</span>Export PDF for ${esc(B())}</button>${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-sfplay><span class="mi">${ico(ICO.external)}</span>Open Salesforce close plan</button>` : ""}${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-demofill><span class="mi">${ico(ICO.sparkle)}</span>Fill with demo content</button>${state.demo && state.demo.anchor ? `<button type="button" role="menuitem" data-demoreset><span class="mi">${ico(ICO.calendar)}</span>Reset demo dates to today</button>` : ""}` : ""}${(IN_APP || SFPREVIEW) && !state._demo && canDeleteThisPlan() ? `<button type="button" role="menuitem" ${sfConnected() ? "data-sfresync" : "data-sfsync"}><span class="mi">${ico(ICO.refresh)}</span>${sfConnected() ? "Sync with Salesforce" : "Connect to Salesforce…"}</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">${ico(ICO.trash)}</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
+        ${ui.planMenu ? `<div class="ph-menu" role="menu"><button type="button" role="menuitem" data-report><span class="mi">${ico(ICO.print)}</span>Export PDF for ${esc(B())}</button>${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-sfplay><span class="mi">${ico(ICO.external)}</span>Open Salesforce close plan</button>` : ""}${(IN_APP || SFPREVIEW) && !state._demo && (SFPREVIEW || (APP_ME && APP_ME.role === "site_admin")) ? `<button type="button" role="menuitem" data-demofill><span class="mi">${ico(ICO.sparkle)}</span>Fill with demo content</button>${state.demo && state.demo.anchor ? `<button type="button" role="menuitem" data-demoreset><span class="mi">${ico(ICO.calendar)}</span>Reset demo dates to today</button>` : ""}` : ""}${IN_APP && !state._demo && canDeleteThisPlan() && ((state.sfdc && state.sfdc.opportunityId) || state.sfdcOpportunityId) ? `<button type="button" role="menuitem" data-orgchart><span class="mi">${ico(ICO.people || ICO.external)}</span>Org chart from Salesforce</button>` : ""}${(IN_APP || SFPREVIEW) && !state._demo && canDeleteThisPlan() ? `<button type="button" role="menuitem" ${sfConnected() ? "data-sfresync" : "data-sfsync"}><span class="mi">${ico(ICO.refresh)}</span>${sfConnected() ? "Sync with Salesforce" : "Connect to Salesforce…"}</button>` : ""}${canDeleteThisPlan() ? `<button type="button" role="menuitem" class="danger-item" data-plandelete><span class="mi">${ico(ICO.trash)}</span>Delete close plan</button>` : ""}</div>` : ""}</div>` : ""}
     </div>
   </div>
   ${ui.deletePlan ? deletePlanBox() : ""}${ui.sfsync ? sfSyncBox() : ""}${ui.demoFill ? demoFillBox() : ""}`;
@@ -1609,6 +1610,174 @@ function titleBlock() {
 // Deleting a whole plan (e.g. a demo draft): the iSEEit plan owner or an administrator (Site or Area Admin in
 // Task AI), and only after a second confirmation. The server checks the same rule.
 function canDeleteThisPlan() { return me() === state.planOwners.seller || Boolean(APP_ME && (APP_ME.role === "site_admin" || APP_ME.role === "area_admin")); }
+// Read-only org chart of the plan's opportunity in Salesforce (POST .../orgchart reads Salesforce, saves nothing).
+// Interactions, as in the iSEEit chart: click a card for its details, the task icon for the person's open tasks and events,
+// the chevron under a manager to collapse the team, drag the background to pan, and the zoom buttons.
+async function openOrgChart() {
+  ui.orgchart = { busy: true, collapsed: new Set(), zoom: 1, selected: null, tasks: {} }; render();
+  const q = ui.orgchart;
+  try {
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/orgchart`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" }), res = await r.json().catch(() => ({}));
+    if (r.ok) q.chart = res; else q.error = res.error || "The org chart could not be read";
+  } catch (e) { q.error = "Salesforce could not be reached."; }
+  q.busy = false; if (ui.orgchart === q) renderOrgChart();
+}
+async function loadOrgTasks(key) {
+  const q = ui.orgchart; if (!q || !/^003/.test(key) || q.tasks[key]) return;
+  const t = q.tasks[key] = { busy: true };
+  try {
+    const r = await fetch(`/api/close-plans/store/${encodeURIComponent(state.id)}/orgchart/tasks?contact=${encodeURIComponent(key)}`, { credentials: "same-origin" }), res = await r.json().catch(() => ({}));
+    if (r.ok) t.items = res.items || []; else t.error = res.error || "The tasks could not be read";
+  } catch (e) { t.error = "Salesforce could not be reached."; }
+  t.busy = false; if (ui.orgchart === q) renderOrgChart();
+}
+function renderOrgChart() {
+  let root = document.getElementById("orgchart-root");
+  if (!ui.orgchart) { if (root) root.remove(); return; }
+  if (!root) { root = document.createElement("div"); root.id = "orgchart-root"; document.body.appendChild(root); }
+  const q = ui.orgchart, c = q.chart;
+  const oldWrap = root.querySelector(".oc-wrap"), keep = oldWrap ? [oldWrap.scrollLeft, oldWrap.scrollTop] : null;
+  const kids = new Map(), byKey = new Map(); if (c) c.nodes.forEach(n => { byKey.set(n.key, n); kids.set(n.parentKey, [...(kids.get(n.parentKey) || []), n]); });
+  const below = n => (kids.get(n.key) || []).reduce((sum, k) => sum + 1 + below(k), 0);
+  // The plan's own People: matched to the chart by Salesforce Contact id (or a Sales AI id that is one), then by email.
+  const mailOf = x => (x.email || "").trim().toLowerCase();
+  const match = new Map();
+  if (c) c.nodes.forEach(n => {
+    if (n.provisional) return;
+    const hit = state.people.find(x => x.sfdcContactId === n.key || (x.contactIds || []).includes(n.key)) || (mailOf(n) ? state.people.find(x => mailOf(x) === mailOf(n)) : null);
+    if (hit) match.set(n.key, hit);
+  });
+  const planOpen = x => state.tasks.filter(t => visible(t) && t.status !== "Closed" && (t.owner === x.id || (t.coworkers || []).includes(x.id) || (t.recipients || []).includes(x.id)));
+  const planRole = (t, x) => t.owner === x.id ? "Owner" : (t.coworkers || []).includes(x.id) ? "Coworker" : "Requested by";
+  // Same look as the iSEEit chart in Salesforce: cards with a coloured left edge by type, gold elbow connectors, star for power base.
+  const edge = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
+  const star = n => n.powerBase ? `<svg viewBox="0 0 24 24" width="18" height="18" aria-label="Power base"><path fill="${/Economic Buyer/.test(n.dealRole) ? "#8fb8e8" : "#f5c400"}" d="M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z"/></svg>` : "";
+  const LI = "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z";
+  const linkedinIcon = n => n.linkedin ? `<a class="oc-in" href="${esc(n.linkedin)}" target="_blank" rel="noopener noreferrer" title="LinkedIn profile" aria-label="LinkedIn profile" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#0a66c2" d="${LI}"/></svg></a>` : `<span class="oc-in" title="No LinkedIn profile on the contact"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#d0d4da" d="${LI}"/></svg></span>`;
+  const initials = n => n.name.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const photo = n => n.photo ? `<img src="/api/close-plans/store/${encodeURIComponent(state.id)}/orgchart/photo/${encodeURIComponent(n.photo)}" alt="" loading="lazy" onerror="this.remove()">` : "";
+  const warn = `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#b3261e" d="M12 2 1 21h22z"/><path fill="#fff" d="M11 9h2v6h-2zm0 7h2v2h-2z"/></svg>`;
+  const taskSvg = `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#44546f" d="M9 2h6v2h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3zm1.5 2v2h3V4zM9 12h6v2H9zm0 4h4v2H9z"/></svg>`;
+  const card = n => `<div class="oc-card${q.selected === n.key ? " sel" : ""}" data-ocnode="${esc(n.key)}" tabindex="0" role="button" aria-label="${esc(n.name)}, show details" style="border-left-color:${edge[n.type] || "#c4c4c4"}">${n.provisional ? `<span class="oc-tmp">Temp</span>` : ""}<div class="oc-av">${esc(initials(n))}${photo(n)}</div><div class="oc-tx"><div class="oc-nm">${esc(n.name)}</div><div class="oc-ds">${esc(n.title)}</div><div class="oc-ft"><span class="oc-rl">${esc(n.dealRole)}</span>${match.has(n.key) ? `<span class="oc-plan" title="On this plan: ${planOpen(match.get(n.key)).length} open tasks">${planOpen(match.get(n.key)).length ? planOpen(match.get(n.key)).length + " on plan" : "On plan"}</span>` : ""}</div></div><div class="oc-rp"><div class="oc-top">${star(n)}${n.left ? `<span class="oc-warn" tabindex="0">${warn}<i>Contact left the organization</i></span>` : ""}</div>${n.provisional ? "" : `<div class="oc-bot"><span class="oc-ic" data-octasks="${esc(n.key)}" title="Open tasks and events on this opportunity">${taskSvg}<b>${Number(n.openTasks) || 0}</b></span>${linkedinIcon(n)}</div>`}</div></div>`;
+  const branch = n => {
+    const k = kids.get(n.key) || [], shut = q.collapsed.has(n.key);
+    return `<li>${card(n)}${k.length ? `<button type="button" class="oc-chev${shut ? " shut" : ""}" data-occollapse="${esc(n.key)}" aria-expanded="${!shut}" aria-label="${shut ? "Show" : "Hide"} the team of ${esc(n.name)}" title="${shut ? "Show" : "Hide"} ${below(n)} below">${shut ? `<b>+${below(n)}</b>` : "⌃"}</button>${shut ? "" : `<ul>${k.map(branch).join("")}</ul>`}` : ""}</li>`;
+  };
+  const sel = c && q.selected ? byKey.get(q.selected) : null;
+  const dateText = d => { if (!d) return "No date"; const x = new Date(d + "T00:00:00"); return isNaN(x) ? d : x.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); };
+  const taskList = n => {
+    const t = q.tasks[n.key];
+    if (n.provisional) return `<p class="hint">A placeholder contact has no tasks in Salesforce.</p>`;
+    if (!t || t.busy) return `<p class="hint">Reading Salesforce…</p>`;
+    if (t.error) return `<p class="notify-result err">${esc(t.error)}</p>`;
+    if (!t.items.length) return `<p class="hint">No open tasks or upcoming events with this person on this opportunity.</p>`;
+    return `<ul class="oc-tl">${t.items.map(i => `<li><b>${esc(i.subject)}</b><small>${esc(i.kind)} · ${esc(dateText(i.when))}${i.status && i.kind === "Task" ? " · " + esc(i.status) : ""}${i.owner ? " · " + esc(i.owner) : ""}</small></li>`).join("")}</ul>`;
+  };
+  const planSection = n => {
+    const x = match.get(n.key);
+    if (!x) return `<div class="oc-pl"><b>Not on this plan yet</b><p class="hint">${n.provisional ? "A placeholder contact can't be matched." : "No one on the plan's People has this Salesforce contact or email."}</p></div>`;
+    const items = planOpen(x).sort((a, b) => (isOver(a) ? 0 : 1) - (isOver(b) ? 0 : 1) || (a.due || "9999").localeCompare(b.due || "9999"));
+    return `<h4>On this plan <em>${items.length}</em></h4><p class="hint" style="margin:0 0 4px">${esc(x.name)}${x.role ? " · " + esc(x.role) : ""}${x.side === "buyer" ? " · " + esc(B()) : ""}</p>
+      ${items.length ? `<ul class="oc-pt">${items.map(t => `<li><button type="button" data-ocplantask="${esc(t.id)}">${esc(t.title)}</button><small class="${isOver(t) ? "late" : ""}">${esc(planRole(t, x))} · ${isOver(t) ? "Overdue · " + esc(fmt(t.due)) : t.due ? esc(fmt(t.due)) : "No date"}</small></li>`).join("")}</ul>` : `<p class="hint">No open tasks on the plan for this person.</p>`}
+      <div class="oc-links"><button type="button" class="oc-btn" data-ocpeople style="background:#fff;cursor:pointer">Show in People</button></div>`;
+  };
+  const row = (label, value) => value ? `<div class="oc-r"><span>${label}</span><div>${value}</div></div>` : "";
+  const panel = n => {
+    const parent = n.parentKey ? byKey.get(n.parentKey) : null, team = (kids.get(n.key) || []).length;
+    const sf = c.salesforceBase && /^003/.test(n.key) ? `<a class="oc-btn" href="${esc(c.salesforceBase)}/lightning/r/Contact/${encodeURIComponent(n.key)}/view" target="_blank" rel="noopener noreferrer">Go to contact in Salesforce ↗</a>` : "";
+    return `<aside class="oc-panel" aria-label="${esc(n.name)}"><button type="button" class="oc-x" data-ocpanel-close aria-label="Close details">×</button>
+      <div class="oc-ph"><div class="oc-av big">${esc(initials(n))}${photo(n)}</div><div><h3>${esc(n.name)}</h3><p>${esc(n.title)}</p></div></div>
+      ${n.left ? `<p class="oc-left">${warn} Salesforce says this contact left the organization.</p>` : ""}
+      ${row("Type", esc(n.type))}${row("Deal role", esc(n.dealRole))}${row("Power base", n.powerBase ? "Yes" : "")}${row("Reports to", parent ? esc(parent.name) : "")}${row("Direct reports", team ? String(team) : "")}
+      ${row("Email", n.email ? `<a href="mailto:${esc(n.email)}">${esc(n.email)}</a>` : "")}${row("Phone", esc(n.phone))}${row("Notes", esc(n.description))}
+      <div class="oc-links">${sf}${n.linkedin ? `<a class="oc-btn" href="${esc(n.linkedin)}" target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>` : ""}</div>
+      ${planSection(n)}
+      <h4>Open tasks and events in Salesforce <em>${n.provisional ? "" : Number(n.openTasks) || 0}</em></h4>${taskList(n)}</aside>`;
+  };
+  const css = `<style>
+    .oc-bar{display:flex;gap:8px;align-items:center;margin:2px 0 10px}.oc-bar button{min-width:30px;padding:3px 9px}.oc-bar span{font-size:13px;color:#5b6573;min-width:44px;text-align:center}
+    .oc-main{display:flex;gap:16px;align-items:flex-start}
+    .oc-wrap{flex:1;min-width:0;overflow:auto;max-height:62vh;padding:6px 4px 14px;cursor:grab}.oc-wrap.pan{cursor:grabbing;user-select:none}
+    .oc-tree,.oc-tree ul{list-style:none;margin:0;padding:0;display:flex;justify-content:center}
+    .oc-tree ul{padding-top:20px;position:relative}
+    .oc-tree li{position:relative;padding:34px 8px 0;display:flex;flex-direction:column;align-items:center}
+    .oc-tree>li{padding-top:0}
+    .oc-tree li::before,.oc-tree li::after{content:"";position:absolute;top:0;width:50%;height:34px;border-top:2px solid #f5b942}
+    .oc-tree li::before{left:0}.oc-tree li::after{right:0}
+    .oc-tree>li::before,.oc-tree>li::after{display:none}
+    .oc-tree li:only-child::before,.oc-tree li:only-child::after{border-top:none}
+    .oc-tree li:first-child::before,.oc-tree li:last-child::after{border-top:none}
+    .oc-tree li>.oc-card::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+    .oc-tree>li>.oc-card::before{display:none}
+    .oc-tree ul::before{content:"";position:absolute;top:0;left:50%;height:20px;border-left:2px solid #f5b942}
+    .oc-chev{z-index:1;margin-top:8px;margin-bottom:-14px;min-width:22px;height:22px;padding:0 4px;border:2px solid #f5b942;border-radius:11px;background:#fff;color:#f5b942;font:600 13px/18px sans-serif;text-align:center;box-sizing:border-box;cursor:pointer}
+    .oc-chev b{font-size:11px;color:#8a6a00}.oc-chev.shut{background:#fff6dc;margin-bottom:0}
+    .oc-card{position:relative;display:flex;gap:10px;align-items:flex-start;width:230px;min-height:100px;box-sizing:border-box;background:#fff;border-left:5px solid #c4c4c4;border-radius:4px;padding:12px 8px 8px 10px;box-shadow:0 1px 6px rgba(0,0,0,.18);text-align:left;cursor:pointer}
+    .oc-card:hover,.oc-card:focus-visible{box-shadow:0 2px 10px rgba(0,0,0,.3);outline:none}.oc-card.sel{outline:2px solid #26406e}
+    .oc-av{position:relative;overflow:hidden;flex:none;width:46px;height:46px;border-radius:50%;background:#dfe3e8;color:#5b6573;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+    .oc-av.big{width:60px;height:60px;font-size:18px}
+    .oc-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+    .oc-tx{flex:1;min-width:0;display:flex;flex-direction:column;min-height:80px}
+    .oc-nm{font-weight:700;font-size:15px;line-height:1.2;color:#1c3a73}
+    .oc-ds{font-size:12px;line-height:1.3;color:#5b6573;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .oc-ft{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:6px}
+    .oc-rl{font-size:12px;font-style:italic;color:#5b6573}
+    .oc-plan{flex:none;font-size:10px;font-weight:700;color:#fff;background:#26406e;border-radius:9px;padding:1px 7px;white-space:nowrap}
+    .oc-rp{flex:none;width:24px;display:flex;flex-direction:column;align-items:center;border-left:1px solid #eee;padding-left:8px;align-self:stretch;justify-content:space-between;gap:6px}
+    .oc-top,.oc-bot{display:flex;flex-direction:column;align-items:center;gap:6px}
+    .oc-ic{position:relative;display:flex;flex-direction:column;align-items:center;line-height:1;cursor:pointer}
+    .oc-ic b{font-size:9px;color:#fff;position:absolute;top:8px;font-weight:700}
+    .oc-in{display:block;line-height:0}
+    .oc-warn{position:relative;display:block;line-height:0;cursor:default}
+    .oc-warn i{display:none;position:absolute;right:-6px;top:26px;z-index:5;width:170px;background:#26406e;color:#fff;font:600 12px/1.35 sans-serif;font-style:normal;padding:8px 10px;border-radius:6px;text-align:left}
+    .oc-warn:hover i,.oc-warn:focus i{display:block}
+    .oc-tmp{position:absolute;top:-8px;right:8px;background:#fdf0c9;color:#7a5a00;font-size:10px;padding:0 7px;border-radius:8px}
+    .oc-panel{position:relative;flex:none;width:310px;max-height:62vh;overflow:auto;box-sizing:border-box;padding:16px;border:1px solid #e1e4e8;border-radius:8px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+    .oc-panel h3{margin:0;font-size:17px;color:#1c3a73}.oc-panel p{margin:2px 0 0;font-size:13px;color:#5b6573}.oc-panel h4{margin:16px 0 6px;font-size:13px;color:#1c3a73}.oc-panel h4 em{font-style:normal;color:#5b6573}
+    .oc-x{position:absolute;right:8px;top:6px;border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:#5b6573}
+    .oc-ph{display:flex;gap:12px;align-items:center;margin-bottom:10px;padding-right:18px}
+    .oc-left{display:flex;gap:6px;align-items:center;margin:6px 0!important;color:#b3261e!important}
+    .oc-r{display:flex;gap:10px;font-size:13px;padding:5px 0;border-top:1px solid #f0f1f3}.oc-r span{flex:none;width:92px;color:#5b6573}.oc-r div{min-width:0;overflow-wrap:anywhere}
+    .oc-links{display:flex;flex-direction:column;gap:6px;margin-top:10px}.oc-btn{display:block;text-align:center;padding:7px 10px;border:1px solid #26406e;border-radius:6px;color:#26406e;font-size:13px;font-weight:600;text-decoration:none}.oc-btn:hover{background:#eef2f8}
+    .oc-tl{list-style:none;margin:0;padding:0}.oc-tl li{padding:7px 0;border-top:1px solid #f0f1f3;font-size:13px;display:flex;flex-direction:column}.oc-tl small{color:#5b6573;font-size:12px;margin-top:2px}
+    .oc-pt{list-style:none;margin:0;padding:0}.oc-pt li{padding:7px 0;border-top:1px solid #f0f1f3;font-size:13px}.oc-pt button{display:block;width:100%;text-align:left;border:0;background:none;padding:0;font:600 13px sans-serif;color:#1c3a73;cursor:pointer}.oc-pt button:hover{text-decoration:underline}.oc-pt small{display:block;color:#5b6573;font-size:12px;margin-top:2px}.oc-pt .late{color:#b3261e}
+    .oc-pl{margin-top:14px;padding:10px 12px;border-radius:8px;background:#eef2f8}.oc-pl b{color:#1c3a73;font-size:13px}.oc-pl p{margin:2px 0 0}
+    @media(max-width:760px){.oc-main{flex-direction:column}.oc-panel{width:100%;max-height:none}}
+  </style>`;
+  const body = q.busy ? `<p class="hint">Reading Salesforce…</p>` : q.error ? `<p class="notify-result err">${esc(q.error)}</p>` : c && !c.nodes.length ? `<p class="hint">This opportunity has no org chart in Salesforce yet.</p>` : c ? `
+    <div class="oc-bar"><button type="button" class="btn" data-ocz="-1" aria-label="Zoom out">−</button><span>${Math.round(q.zoom * 100)}%</span><button type="button" class="btn" data-ocz="1" aria-label="Zoom in">+</button><button type="button" class="btn" data-ocz="0">Reset</button>${q.collapsed.size ? `<button type="button" class="btn" data-ocexpand>Show all teams</button>` : ""}</div>
+    <div class="oc-main"><div class="oc-wrap"><ul class="oc-tree" style="justify-content:flex-start;zoom:${q.zoom}">${c.roots.map(k => branch(byKey.get(k))).join("")}</ul></div>${sel ? panel(sel) : ""}</div>
+    <p class="hint">${c.nodes.length} ${c.nodes.length === 1 ? "person" : "people"}. Click a card for details, drag the background to move around.</p>
+    ${(() => { const have = new Set([...match.values()].map(x => x.id)); const left = state.people.filter(x => x.side === "buyer" && !have.has(x.id) && !/Shared mailbox/.test(x.title || "")); return left.length ? `<details><summary>${left.length} ${left.length === 1 ? "person" : "people"} on the plan ${left.length === 1 ? "is" : "are"} not on this org chart</summary><ul>${left.map(x => `<li>${esc(x.name)}${x.title ? " · " + esc(x.title) : ""}</li>`).join("")}</ul></details>` : ""; })()}
+    ${c.issues.length ? `<details><summary>${c.issues.length} ${c.issues.length === 1 ? "thing" : "things"} to check in Salesforce</summary><ul>${c.issues.map(i => `<li>${esc(i.text)}</li>`).join("")}</ul></details>` : ""}` : "";
+  root.innerHTML = `${css}<div class="notify-modal-overlay" data-orgchart-close>
+    <div class="notify-modal" role="dialog" aria-modal="true" aria-label="Org chart from Salesforce" onclick="event.stopPropagation()" style="max-width:min(1200px,94vw);width:94vw">
+      <button type="button" class="notify-modal-close" aria-label="Close" data-orgchart-close>×</button>
+      <div class="notify-modal-header"><div><h2>Org chart from Salesforce</h2><p>Read-only preview. Nothing is saved here or in Salesforce.</p></div></div>
+      ${body}
+      <div class="notify-modal-actions" style="margin-top:20px"><button type="button" class="btn" data-orgchart-close>Close</button></div></div></div>`;
+  const wrap = root.querySelector(".oc-wrap"); if (wrap && keep) { wrap.scrollLeft = keep[0]; wrap.scrollTop = keep[1]; }
+  const open = key => { q.selected = key; renderOrgChart(); void loadOrgTasks(key); };
+  root.querySelectorAll("[data-orgchart-close]").forEach(b => b.onclick = () => { ui.orgchart = null; renderOrgChart(); });
+  root.querySelectorAll("[data-ocnode]").forEach(el => {
+    el.onclick = () => open(el.dataset.ocnode);
+    el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(el.dataset.ocnode); } };
+  });
+  root.querySelectorAll("[data-octasks]").forEach(el => el.onclick = e => { e.stopPropagation(); open(el.dataset.octasks); });
+  root.querySelectorAll("[data-occollapse]").forEach(el => el.onclick = e => { e.stopPropagation(); const k = el.dataset.occollapse; if (q.collapsed.has(k)) q.collapsed.delete(k); else q.collapsed.add(k); renderOrgChart(); });
+  root.querySelectorAll("[data-ocz]").forEach(el => el.onclick = () => { const d = Number(el.dataset.ocz); q.zoom = d === 0 ? 1 : Math.min(1.6, Math.max(0.4, Math.round((q.zoom + d * 0.1) * 10) / 10)); renderOrgChart(); });
+  root.querySelectorAll("[data-ocplantask]").forEach(el => el.onclick = () => { const id = el.dataset.ocplantask; ui.orgchart = null; renderOrgChart(); ui.open = id; ui.addSub = false; render(); });
+  const ppl = root.querySelector("[data-ocpeople]"); if (ppl) ppl.onclick = () => { ui.orgchart = null; renderOrgChart(); ui.tab = "people"; render(); };
+  const expand = root.querySelector("[data-ocexpand]"); if (expand) expand.onclick = () => { q.collapsed.clear(); renderOrgChart(); };
+  const close = root.querySelector("[data-ocpanel-close]"); if (close) close.onclick = () => { q.selected = null; renderOrgChart(); };
+  if (wrap) wrap.onmousedown = e => {
+    if (e.button !== 0 || e.target.closest(".oc-card, .oc-chev")) return;
+    const x = e.clientX, y = e.clientY, l = wrap.scrollLeft, t = wrap.scrollTop; wrap.classList.add("pan");
+    const move = m => { wrap.scrollLeft = l - (m.clientX - x); wrap.scrollTop = t - (m.clientY - y); };
+    const up = () => { wrap.classList.remove("pan"); document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+  };
+}
 // Admins: create a plan from an opportunity's close plan in Salesforce (search by name, then import).
 function renderSfImport() {
   let root = document.getElementById("sfimport-root");
@@ -3542,6 +3711,7 @@ function wirePage() {
   app.querySelectorAll("[data-report]").forEach(b => b.onclick = openReport);
   app.querySelectorAll("[data-sfplay]").forEach(b => b.onclick = openSalesforcePlan);
   app.querySelectorAll("[data-vx-title]").forEach(b => b.onclick = () => { if (voice.open) { voice.min = false; renderVoice(); return; } voice.open = true; voice.min = false; voiceStart(); });
+  app.querySelectorAll("[data-orgchart]").forEach(b => b.onclick = () => { ui.planMenu = false; void openOrgChart(); });
   app.querySelectorAll("[data-sfimport]").forEach(b => b.onclick = () => { ui.sfimport = { text: "" }; renderSfImport(); });
   app.querySelectorAll("[data-demofill]").forEach(b => b.onclick = () => { ui.planMenu = false; ui.demoFill = { replace: false, customers: true, sellers: false, tidy: true, anchor: true }; render(); });
   app.querySelectorAll("[data-demoreset]").forEach(b => b.onclick = demoResetDates);
