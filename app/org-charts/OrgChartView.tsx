@@ -25,6 +25,7 @@ const PADS: Pad[] = [{ spot: "top", zone: "top", label: "▲ Manager" }, { spot:
 // In a ladder the people are stacked, so above and below mean before and after: the manager and reports-to areas move to the sides.
 const LADDER_PADS: Pad[] = [{ spot: "top", zone: "left", label: "▲ Before" }, { spot: "bottom", zone: "right", label: "▼ After" }, { spot: "left", zone: "top", label: "◀ Manager" }, { spot: "right", zone: "bottom", label: "Reports to ▶" }];
 // Mindset of a contact (the "type" in Salesforce): colours the bar on the left of the tile. Nothing set counts as Neutral (grey).
+const ROLE_HINTS = ["Economic Buyer", "Technical Buyer", "Evaluator", "Influencer", "End User", "Legal", "Procurement", "Sponsor"];
 const MINDSETS = ["Champion", "Coach", "Neutral", "Enemy"];
 const EDGE: Record<string, string> = { Champion: "#3f9d3a", Coach: "#f2c500", Neutral: "#c4c4c4", Enemy: "#e03a3a" };
 const mindset = (n: { type: string }) => n.type || "Neutral";
@@ -127,13 +128,18 @@ function AddForm({ parentKey, busy, onAdd }: { parentKey: string | null; busy: b
 
 function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }: { node: OrgNode; nodes: OrgNode[]; busy: boolean; confirmRemove: boolean; onAsk: () => void; onCancel: () => void; onEdit: (edit: OrgEdit) => Promise<boolean | undefined> }) {
   const [type, setType] = useState(mindset(node)), [dealRole, setDealRole] = useState(node.dealRole), [powerBase, setPowerBase] = useState(node.powerBase), [description, setDescription] = useState(node.description);
-  const changed = type !== mindset(node) || dealRole !== node.dealRole || powerBase !== node.powerBase || description !== node.description;
+  const [name, setName] = useState(node.name), [title, setTitle] = useState(node.title), [email, setEmail] = useState(node.email), [phone, setPhone] = useState(node.phone);
+  const changed = (type !== mindset(node) || dealRole !== node.dealRole || powerBase !== node.powerBase || description !== node.description || name !== node.name || title !== node.title || email !== node.email || phone !== node.phone) && !!name.trim();
   // Not themselves and not anyone below them: that would make a loop.
   const under = new Set<string>([node.key]);
   for (let grew = true; grew;) { grew = false; for (const n of nodes) if (n.parentKey && under.has(n.parentKey) && !under.has(n.key)) { under.add(n.key); grew = true; } }
   return (
     <div className="oc-ed">
       <h4>Edit in Task AI</h4>
+      <label>Name<input value={name} maxLength={80} onChange={e => setName(e.target.value)} /></label>
+      <label>Position<input value={title} maxLength={120} onChange={e => setTitle(e.target.value)} /></label>
+      <label>Email<input type="email" value={email} maxLength={120} onChange={e => setEmail(e.target.value)} /></label>
+      <label>Phone<input type="tel" value={phone} maxLength={40} onChange={e => setPhone(e.target.value)} /></label>
       <label>Reports to
         <select value={node.parentKey || ""} disabled={busy} onChange={e => void onEdit({ op: "move", key: node.key, parentKey: e.target.value || null })}>
           <option value="">Nobody (top level)</option>
@@ -152,10 +158,10 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
         </label>
       )}
       <label>Mindset<select value={type} onChange={e => setType(e.target.value)}>{(MINDSETS.includes(type) ? MINDSETS : [...MINDSETS, type]).map(t => <option key={t}>{t}</option>)}</select></label>
-      <label>Deal role<input value={dealRole} maxLength={80} onChange={e => setDealRole(e.target.value)} /></label>
+      <label>Deal role<input list="oc-roles" value={dealRole} maxLength={80} onChange={e => setDealRole(e.target.value)} /><datalist id="oc-roles">{ROLE_HINTS.map(r => <option key={r} value={r} />)}</datalist></label>
       <label className="oc-chk"><input type="checkbox" checked={powerBase} onChange={e => setPowerBase(e.target.checked)} /> Power base</label>
       <label>Notes<textarea rows={3} value={description} maxLength={2000} onChange={e => setDescription(e.target.value)} /></label>
-      <button type="button" className="oc-save" disabled={busy || !changed} onClick={() => void onEdit({ op: "update", key: node.key, type, dealRole, powerBase, description })}>Save changes</button>
+      <button type="button" className="oc-save" disabled={busy || !changed} onClick={() => void onEdit({ op: "update", key: node.key, type, dealRole, powerBase, description, name, title, email, phone })}>Save changes</button>
       <AddForm parentKey={node.key} busy={busy} onAdd={(name, title) => void onEdit({ op: "add", name, title, parentKey: node.key })} />
       {confirmRemove
         ? <p className="oc-ask">Remove {node.name}? Their team moves up one level. <button type="button" disabled={busy} onClick={() => void onEdit({ op: "remove", key: node.key })}>Yes, remove</button><button type="button" onClick={onCancel}>No</button></p>
@@ -201,6 +207,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [addOpen, setAddOpen] = useState(false);
   const [info, setInfo] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [contactEditKey, setContactEditKey] = useState<string | null>(null); // the Edit button in the details: change this person without the whole chart in edit mode
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -556,6 +563,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
 
   const sel = selected ? byKey.get(selected) : null;
   const t = sel ? tasks[sel.key] : undefined;
+  const contactEdit = !!selected && contactEditKey === selected; // follows the selection: another person starts closed
+  const canEdit = editing || contactEdit;
   const parent = sel?.parentKey ? byKey.get(sel.parentKey) : null;
   const team = sel ? (kids.get(sel.key) || []).length : 0;
 
@@ -639,6 +648,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
+            {!editing && <button type="button" className={`oc-pen${contactEdit ? " on" : ""}`} aria-pressed={contactEdit} onClick={() => setContactEditKey(contactEdit ? null : selected)}>{contactEdit ? "Done" : "Edit"}</button>}
             <div className="oc-ph"><div className="oc-av big">{initials(sel.name)}{photo(sel)}</div><div><h3>{sel.name}</h3><p>{sel.title}</p>{parent && <p className="oc-rep">Reports to <button type="button" className="oc-lk" onClick={() => setSelected(parent.key)}>{parent.name}</button></p>}</div></div>
             {sel.left && <p className="oc-left"><Warn /> Salesforce says this contact left the organization.</p>}
             <div className="oc-chips">
@@ -646,9 +656,10 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               {sel.dealRole.split(/[;,]/).map(r => r.trim()).filter(Boolean).map(r => <span key={r} className="oc-chip role" title="Deal role">{r}</span>)}
               {sel.powerBase && <span className="oc-chip" title="Power base"><Star blue={/Economic Buyer/.test(sel.dealRole)} />Power base</span>}
             </div>
-            {(sel.email || sel.phone || sel.linkedin) && <div className="oc-contact">
+            {(sel.email || sel.phone || sel.linkedin || (chart.salesforceBase && /^003/.test(sel.key))) && <div className="oc-contact">
               {sel.email && <a href={`mailto:${sel.email}`}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>{sel.email}</a>}
               {sel.phone && <span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" /></svg>{sel.phone}</span>}
+              {chart.salesforceBase && /^003/.test(sel.key) && <a href={`${chart.salesforceBase}/lightning/r/Contact/${encodeURIComponent(sel.key)}/view`} target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" width="16" height="16" fill="#00a1e0" aria-hidden="true"><path d="M10 6.5a4 4 0 017 1.5 3.2 3.2 0 011.6 6 3 3 0 01-3.1 2.4 4 4 0 01-6 .5 3.6 3.6 0 01-5.3-1.7A3.700 3.700 0 015.600 9.200 4 4 0 0110 6.500z" /></svg>Open contact in Salesforce</a>}
               {sel.linkedin && <a href={sel.linkedin} target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" width="16" height="16" fill="#2f6fb5" aria-hidden="true"><path d={LI} /></svg>LinkedIn profile</a>}
             </div>}
             <div className="oc-tiles">
@@ -657,15 +668,29 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               <div><small>Direct reports</small><b>{team}</b></div>
               <div><small>Influence lines</small><b>{influences.filter(l => l.from === sel.key).length} out · {influences.filter(l => l.to === sel.key).length} in</b></div>
             </div>
-            {chart.salesforceBase && /^003/.test(sel.key) && <a className="oc-btn primary" href={`${chart.salesforceBase}/lightning/r/Contact/${encodeURIComponent(sel.key)}/view`} target="_blank" rel="noopener noreferrer">Open contact in Salesforce ↗</a>}
             {sel.description && <><h4>Notes</h4><p className="oc-notes">{sel.description}</p></>}
-            {editing && <EditPanel key={sel.key} node={sel} nodes={chart.nodes} busy={busy} confirmRemove={confirm === "remove"} onAsk={() => setConfirm("remove")} onCancel={() => setConfirm(null)} onEdit={edit => send(edit)} />}
+            {canEdit && <EditPanel key={sel.key} node={sel} nodes={chart.nodes} busy={busy} confirmRemove={confirm === "remove"} onAsk={() => setConfirm("remove")} onCancel={() => setConfirm(null)} onEdit={edit => send(edit)} />}
             <h4>Influence</h4>
             {(() => {
               const out = influences.filter(l => l.from === sel.key), into = influences.filter(l => l.to === sel.key);
               const taken = new Set([sel.key, ...out.map(l => l.to), ...into.map(l => l.from)]);
-              const line = (l: OrgInfluence, other: string) => <li key={l.id}><button type="button" className="oc-lk" onClick={() => setSelected(other)}>{byKey.get(other)?.name}</button><small><i className="oc-dot" style={{ borderColor: TONE[lineTone(l, mindset(byKey.get(l.from) || { type: "" }))] }} />{TONE_LABEL[lineTone(l, mindset(byKey.get(l.from) || { type: "" }))]} · {l.strength === 3 ? "strong" : l.strength === 2 ? "medium" : "weak"}{l.note ? ` · ${l.note}` : ""}</small>{editing && <button type="button" className="oc-disc" aria-label={`Disconnect the influence line with ${byKey.get(other)?.name}`} onClick={() => void sendLine({ op: "remove", id: l.id })}>Disconnect</button>}</li>;
-              const add = (label: string, make: (k: string) => InfluenceEdit) => editing && <select aria-label={label} value="" onChange={e => { if (e.target.value) void sendLine(make(e.target.value)); }}><option value="">{label}</option>{chart.nodes.filter(n => !taken.has(n.key)).map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select>;
+              const line = (l: OrgInfluence, other: string) => {
+                const tone = lineTone(l, mindset(byKey.get(l.from) || { type: "" }));
+                return (
+                  <li key={l.id} className="oc-infrow">
+                    <div className="oc-infhead"><button type="button" className="oc-lk" onClick={() => setSelected(other)}>{byKey.get(other)?.name}</button><button type="button" className="oc-disc" aria-label={`Disconnect the influence line with ${byKey.get(other)?.name}`} disabled={busy} onClick={() => void sendLine({ op: "remove", id: l.id })}>Disconnect</button></div>
+                    <small><i className="oc-dot" style={{ borderColor: TONE[tone] }} />{TONE_LABEL[tone]} · {l.strength === 3 ? "strong" : l.strength === 2 ? "medium" : "weak"}{l.note ? ` · ${l.note}` : ""}</small>
+                    {canEdit && (
+                      <div className="oc-infed">
+                        <select aria-label="Strength" value={l.strength} onChange={e => void sendLine({ op: "update", id: l.id, strength: Number(e.target.value) })}><option value={3}>Strong</option><option value={2}>Medium</option><option value={1}>Weak</option></select>
+                        <select aria-label="Kind" value={l.tone || "auto"} onChange={e => void sendLine({ op: "update", id: l.id, tone: e.target.value })}><option value="auto">Auto ({TONE_LABEL[tone]})</option><option value="positive">Positive</option><option value="neutral">Neutral</option><option value="negative">Negative</option></select>
+                        <input defaultValue={l.note} maxLength={300} placeholder="Note" aria-label="Note" onBlur={e => { if (e.target.value !== l.note) void sendLine({ op: "update", id: l.id, note: e.target.value }); }} />
+                      </div>
+                    )}
+                  </li>
+                );
+              };
+              const add = (label: string, make: (k: string) => InfluenceEdit) => canEdit && <select aria-label={label} value="" onChange={e => { if (e.target.value) void sendLine(make(e.target.value)); }}><option value="">{label}</option>{chart.nodes.filter(n => !taken.has(n.key)).map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select>;
               return (
                 <div className="oc-inf">
                   <p><b>Influences</b></p>{out.length ? <ul>{out.map(l => line(l, l.to))}</ul> : <p className="oc-hint">Nobody yet.</p>}{add("+ Add someone they influence", k => ({ op: "add", from: sel.key, to: k }))}

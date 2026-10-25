@@ -144,6 +144,10 @@ test("org chart edits: move, loops, reorder, add, remove", async () => {
   assert.ok(!removed.nodes.some(n => n.key === "b"));
   assert.ok("error" in applyOrgEdit(chart, { op: "update", key: "a", type: "Boss" }));
   assert.equal(ok(applyOrgEdit(chart, { op: "update", key: "a", type: "Champion", powerBase: true })).nodes[0].type, "Champion");
+  // Name, position and contact lines can be changed here; the name can not be emptied.
+  const who = ok(applyOrgEdit(chart, { op: "update", key: "a", name: "  Ann   Lee ", title: "CFO", email: "ann@x.com", phone: "123" })).nodes[0];
+  assert.deepEqual([who.name, who.title, who.email, who.phone], ["Ann Lee", "CFO", "ann@x.com", "123"]);
+  assert.ok("error" in applyOrgEdit(chart, { op: "update", key: "a", name: "   " }));
 });
 
 test("org chart drop zones: above, below, beside, with or without the team", async () => {
