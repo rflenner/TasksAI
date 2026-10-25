@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart";
 import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
-import type { InfluenceEdit, OrgInfluence } from "../lib/org-chart-influence";
+import type { InfluenceEdit, InfluenceTone, OrgInfluence } from "../lib/org-chart-influence";
 import { planTeam, type TeamPlan } from "../lib/org-chart-layout";
 import "./org-charts.css";
 
@@ -30,26 +30,48 @@ const EDGE: Record<string, string> = { Champion: "#3f9d3a", Coach: "#f2c500", Ne
 const mindset = (n: { type: string }) => n.type || "Neutral";
 const edge = (n: { type: string }) => EDGE[mindset(n)] || EDGE.Neutral;
 const ACTIVITY_NOTE = "How well this person is covered, from the meetings and action items with them. Not matched yet: nothing is counted so far.";
-// Influence lines: a dotted arrow from the influencer to the influenced person, starting with a star (yellow; blue when the
-// influencer is the Economic Buyer, like the star on the tile). Thickness shows the strength. Drawn over the chart from the
-// positions of the cards, so it follows collapsing, zoom, ladders and the PDF sheet.
-type Seg = { id: string; x1: number; y1: number; x2: number; y2: number; strength: number; blue: boolean; from: string; to: string; note: string };
-const LINE = "#2f6fb5", STAR = "M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z";
-const lineWidth = (s: number) => s === 3 ? 3 : s === 2 ? 2 : 1.2;
+// Influence lines: a dotted arrow from the influencer to the influenced person, bent as an arc that steers clear of the other
+// cards where it can. Grey by default; "Who influences who" shows them in the colour of the kind of influence (red negative,
+// blue neutral, green positive). Thickness shows the strength. The line starts with a star (yellow; blue when the influencer
+// is the Economic Buyer, like the star on the tile). Drawn over the chart from the positions of the cards, so it follows
+// collapsing, zoom, ladders and the PDF sheet.
+type Seg = { id: string; x1: number; y1: number; cx: number; cy: number; x2: number; y2: number; strength: number; tone: InfluenceTone; blue: boolean; from: string; to: string; note: string };
+const GREY = "#9aa3af", TONE: Record<InfluenceTone, string> = { negative: "#d64545", neutral: "#2f6fb5", positive: "#3f9d3a" };
+const TONE_LABEL: Record<InfluenceTone, string> = { negative: "Negative", neutral: "Neutral", positive: "Positive" };
+const STAR = "M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z";
+const lineWidth = (s: number) => s === 3 ? 3 : s === 2 ? 2 : 1.4;
+type Box = { key: string; l: number; t: number; r: number; b: number; cx: number; cy: number; w: number; h: number };
+const quad = (p0: { x: number; y: number }, c: { x: number; y: number }, p1: { x: number; y: number }, t: number) => ({ x: (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * c.x + t * t * p1.x, y: (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * c.y + t * t * p1.y });
+const toward = (a: Box, to: { x: number; y: number }, pad: number) => { const dx = to.x - a.cx, dy = to.y - a.cy, k = Math.min((a.w / 2 + pad) / Math.abs(dx || 1e-9), (a.h / 2 + pad) / Math.abs(dy || 1e-9)); return { x: a.cx + dx * Math.min(k, 1), y: a.cy + dy * Math.min(k, 1) }; };
 function lineSegs(canvas: HTMLElement, list: OrgInfluence[], byKey: Map<string, OrgNode>): Seg[] {
   const cr = canvas.getBoundingClientRect(), out: Seg[] = [];
-  const box = (key: string) => { const el = canvas.querySelector<HTMLElement>(`.oc-card[data-key="${CSS.escape(key)}"]`); if (!el) return null; const r = el.getBoundingClientRect(); return { cx: r.left - cr.left + r.width / 2, cy: r.top - cr.top + r.height / 2, w: r.width, h: r.height }; };
-  const edge = (a: NonNullable<ReturnType<typeof box>>, b: NonNullable<ReturnType<typeof box>>, pad: number) => { const dx = b.cx - a.cx, dy = b.cy - a.cy, k = Math.min((a.w / 2 + pad) / Math.abs(dx || 1e-9), (a.h / 2 + pad) / Math.abs(dy || 1e-9)); return { x: a.cx + dx * Math.min(k, 1), y: a.cy + dy * Math.min(k, 1) }; };
+  const boxes = new Map<string, Box>();
+  canvas.querySelectorAll<HTMLElement>(".oc-card[data-key]").forEach(el => { const r = el.getBoundingClientRect(); boxes.set(el.dataset.key!, { key: el.dataset.key!, l: r.left - cr.left, t: r.top - cr.top, r: r.right - cr.left, b: r.bottom - cr.top, cx: r.left - cr.left + r.width / 2, cy: r.top - cr.top + r.height / 2, w: r.width, h: r.height }); });
   for (const l of list) {
-    const a = box(l.from), b = box(l.to); if (!a || !b) continue; // someone folded away: no line
-    const p0 = edge(a, b, 9), p1 = edge(b, a, 6);
-    out.push({ id: l.id, x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, strength: l.strength, blue: /Economic Buyer/.test(byKey.get(l.from)?.dealRole || ""), from: l.from, to: l.to, note: l.note });
+    const a = boxes.get(l.from), b = boxes.get(l.to); if (!a || !b) continue; // someone folded away: no line
+    const dx = b.cx - a.cx, dy = b.cy - a.cy, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.cx + b.cx) / 2, my = (a.cy + b.cy) / 2;
+    // Try gentle arcs first, then wider ones on either side; keep the first that touches no other card, else the one touching fewest.
+    let best: { p0: { x: number; y: number }; c: { x: number; y: number }; p1: { x: number; y: number }; hits: number } | null = null;
+    for (const k of [0.25, -0.25, 0.45, -0.45, 0.7, -0.7, 1, -1]) {
+      const c = { x: mx + nx * len * k, y: my + ny * len * k }, p0 = toward(a, c, 9), p1 = toward(b, c, 6);
+      let hits = 0;
+      for (const o of boxes.values()) {
+        if (o === a || o === b) continue;
+        for (let i = 1; i < 24; i++) { const q = quad(p0, c, p1, i / 24); if (q.x > o.l - 3 && q.x < o.r + 3 && q.y > o.t - 3 && q.y < o.b + 3) { hits++; break; } }
+      }
+      if (!best || hits < best.hits) best = { p0, c, p1, hits };
+      if (!hits) break;
+    }
+    if (!best) continue;
+    out.push({ id: l.id, x1: best.p0.x, y1: best.p0.y, cx: best.c.x, cy: best.c.y, x2: best.p1.x, y2: best.p1.y, strength: l.strength, tone: l.tone || "neutral", blue: /Economic Buyer/.test(byKey.get(l.from)?.dealRole || ""), from: l.from, to: l.to, note: l.note });
   }
   return out;
 }
 const star = (x: number, y: number, blue: boolean) => `<path transform="translate(${x - 7} ${y - 7}) scale(0.58)" d="${STAR}" fill="${blue ? "#8fb8e8" : "#f5c400"}" stroke="#fff" stroke-width="1.5" paint-order="stroke"/>`;
 const arrowhead = (x1: number, y1: number, x2: number, y2: number) => { const a = Math.atan2(y2 - y1, x2 - x1), c = Math.cos(a), s = Math.sin(a); return `${x2},${y2} ${x2 - 9 * c + 5 * s},${y2 - 9 * s - 5 * c} ${x2 - 9 * c - 5 * s},${y2 - 9 * s + 5 * c}`; };
-const lineMarkup = (segs: Seg[]) => segs.map(g => `<line x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="${LINE}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.x1, g.y1, g.x2, g.y2)}" fill="${LINE}"/>${star(g.x1, g.y1, g.blue)}`).join("");
+const arcPath = (g: Seg) => `M${g.x1} ${g.y1} Q${g.cx} ${g.cy} ${g.x2} ${g.y2}`;
+const lineColor = (g: Seg, colored: boolean) => colored ? TONE[g.tone] : GREY;
+const lineMarkup = (segs: Seg[], colored: boolean) => segs.map(g => `<path d="${arcPath(g)}" fill="none" stroke="${lineColor(g, colored)}" stroke-width="${lineWidth(g.strength)}" stroke-dasharray="1 5" stroke-linecap="round"/><polygon points="${arrowhead(g.cx, g.cy, g.x2, g.y2)}" fill="${lineColor(g, colored)}"/>${star(g.x1, g.y1, g.blue)}`).join("");
 // Four bars like a signal meter; `level` 0 to 4 fills them, 0 = no activity matched (all light grey).
 function Meter({ level }: { level: number }) {
   return <span className="oc-meter" role="img" aria-label={level ? `Activity ${level} of 4` : "No activity matched"} title={level ? `Activity ${level} of 4` : "No activity matched"}>{[1, 2, 3, 4].map(i => <i key={i} className={i <= level ? "on" : ""} style={{ height: 4 + i * 3 }} />)}</span>;
@@ -129,6 +151,9 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [influences, setInfluences] = useState<OrgInfluence[]>(initialInfluences);
   const [lineMode, setLineMode] = useState<"selected" | "all" | "off">("selected");
   const [pdfLines, setPdfLines] = useState(true);
+  const [colorHover, setColorHover] = useState(false); // "Who influences who" hovered: all lines in colour
+  const [colorPinned, setColorPinned] = useState(false); // clicked: colours stay
+  const colored = colorHover || colorPinned;
   const [segs, setSegs] = useState<Seg[]>([]);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   const [hoverCard, setHoverCard] = useState<string | null>(null);
@@ -260,8 +285,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     return true;
   }
   // Which lines show: those of the selected person (default), all of them, or none.
-  const shown = useMemo(() => lineMode === "all" ? influences : lineMode === "off" ? [] : influences.filter(l => l.from === selected || l.to === selected || l.id === lineMenu?.id), [influences, lineMode, selected, lineMenu?.id]);
-  const lineKey = shown.map(l => `${l.id}${l.from}${l.to}${l.strength}`).join(",");
+  const shown = useMemo(() => lineMode === "all" || colorHover ? influences : lineMode === "off" ? [] : influences.filter(l => l.from === selected || l.to === selected || l.id === lineMenu?.id), [influences, lineMode, colorHover, selected, lineMenu?.id]);
+  const lineKey = shown.map(l => `${l.id}${l.from}${l.to}${l.strength}${l.tone || ""}`).join(",");
   useEffect(() => {
     const el = canvas.current; if (!el) return;
     const measure = () => { setSegs(lineSegs(el, shown, byKey)); setCanvasSize({ w: el.scrollWidth, h: el.scrollHeight }); };
@@ -311,7 +336,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const finish = () => { if (done) return; done = true; pageRule.remove(); document.title = oldTitle; document.body.classList.remove("oc-printing"); window.removeEventListener("afterprint", finish); setPrinting(false); };
     window.addEventListener("afterprint", finish);
     const images = [...el.querySelectorAll("img")].filter(i => !i.complete).map(i => new Promise<void>(ok => { i.onload = i.onerror = () => ok(); }));
-    void Promise.race([Promise.all(images), new Promise(ok => window.setTimeout(ok, 5000))]).then(() => window.setTimeout(() => { if (done) return; const box = printCanvas.current, layer = box?.querySelector<HTMLElement>(".oc-print-lines"); if (box && layer && pdfLines && influences.length) layer.innerHTML = `<svg width="${box.scrollWidth}" height="${box.scrollHeight}">${lineMarkup(lineSegs(box, influences, byKey))}</svg>`; window.print(); finish(); }, 250));
+    void Promise.race([Promise.all(images), new Promise(ok => window.setTimeout(ok, 5000))]).then(() => window.setTimeout(() => { if (done) return; const box = printCanvas.current, layer = box?.querySelector<HTMLElement>(".oc-print-lines"); if (box && layer && pdfLines && influences.length) layer.innerHTML = `<svg width="${box.scrollWidth}" height="${box.scrollHeight}">${lineMarkup(lineSegs(box, influences, byKey), colorPinned)}</svg>`; window.print(); finish(); }, 250));
     return () => { done = true; pageRule.remove(); window.removeEventListener("afterprint", finish); document.body.classList.remove("oc-printing"); document.title = oldTitle; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printing, title]);
@@ -387,16 +412,16 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <svg className="oc-lines" width={canvasSize.w} height={canvasSize.h} aria-hidden="true">
         {segs.map(g => (
           <g key={g.id}>
-            <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke={LINE} strokeWidth={lineWidth(g.strength)} strokeDasharray="1 5" strokeLinecap="round" />
-            <polygon points={arrowhead(g.x1, g.y1, g.x2, g.y2)} fill={LINE} />
+            <path d={arcPath(g)} fill="none" stroke={lineColor(g, colored)} strokeWidth={lineWidth(g.strength)} strokeDasharray="1 5" strokeLinecap="round" />
+            <polygon points={arrowhead(g.cx, g.cy, g.x2, g.y2)} fill={lineColor(g, colored)} />
             <path transform={`translate(${g.x1 - 7} ${g.y1 - 7}) scale(0.58)`} d={STAR} fill={g.blue ? "#8fb8e8" : "#f5c400"} stroke="#fff" strokeWidth="1.5" paintOrder="stroke" />
-            <line className="oc-line" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="transparent" strokeWidth="14" onClick={e => { const cr = canvas.current?.getBoundingClientRect(); setLineMenu({ id: g.id, x: e.clientX - (cr?.left || 0), y: e.clientY - (cr?.top || 0) }); }}><title>{`${byKey.get(g.from)?.name} influences ${byKey.get(g.to)?.name}${g.note ? `: ${g.note}` : ""}`}</title></line>
+            <path className="oc-line" d={arcPath(g)} fill="none" stroke="transparent" strokeWidth="14" onClick={e => { const cr = canvas.current?.getBoundingClientRect(); setLineMenu({ id: g.id, x: e.clientX - (cr?.left || 0), y: e.clientY - (cr?.top || 0) }); }}><title>{`${byKey.get(g.from)?.name} influences ${byKey.get(g.to)?.name} (${TONE_LABEL[g.tone].toLowerCase()})${g.note ? `: ${g.note}` : ""}`}</title></path>
           </g>
         ))}
-        {linking && handleAt && <line x1={handleAt.x} y1={handleAt.y} x2={linking.x} y2={linking.y} stroke={LINE} strokeWidth="2" strokeDasharray="1 5" strokeLinecap="round" />}
+        {linking && handleAt && <line x1={handleAt.x} y1={handleAt.y} x2={linking.x} y2={linking.y} stroke={GREY} strokeWidth="2" strokeDasharray="1 5" strokeLinecap="round" />}
         {editing && handleAt && (
           <g className="oc-handle" onMouseEnter={() => window.clearTimeout(leaveTimer.current)} onMouseLeave={() => { if (!linking) setHoverCard(null); }} onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setLinking({ from: handleAt.from, x: handleAt.x, y: handleAt.y }); }}>
-            <circle cx={handleAt.x} cy={handleAt.y} r="9" fill="#fff" stroke={LINE} strokeWidth="2" /><path transform={`translate(${handleAt.x - 6} ${handleAt.y - 6}) scale(0.5)`} d={STAR} fill="#f5c400" /><title>Drag onto another person: this person influences them</title>
+            <circle cx={handleAt.x} cy={handleAt.y} r="9" fill="#fff" stroke={GREY} strokeWidth="2" /><path transform={`translate(${handleAt.x - 6} ${handleAt.y - 6}) scale(0.5)`} d={STAR} fill="#f5c400" /><title>Drag onto another person: this person influences them</title>
           </g>
         )}
       </svg>
@@ -404,6 +429,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         <div className="oc-linemenu" style={{ left: Math.max(4, lineMenu.x - 100), top: lineMenu.y + 8 }} role="dialog" aria-label="Influence line">
           <b>{byKey.get(menuLine.from)?.name} → {byKey.get(menuLine.to)?.name}</b>
           <div className="oc-row">{([3, 2, 1] as const).map(v => <button key={v} type="button" className={menuLine.strength === v ? "on" : ""} disabled={!editing} onClick={() => void sendLine({ op: "update", id: menuLine.id, strength: v })}>{v === 3 ? "Strong" : v === 2 ? "Medium" : "Weak"}</button>)}</div>
+          <div className="oc-row">{(["positive", "neutral", "negative"] as const).map(t => <button key={t} type="button" className={`oc-tone ${t}${(menuLine.tone || "neutral") === t ? " on" : ""}`} disabled={!editing} onClick={() => void sendLine({ op: "update", id: menuLine.id, tone: t })}>{TONE_LABEL[t]}</button>)}</div>
           <input defaultValue={menuLine.note} maxLength={300} placeholder="Note, for example how they influence" aria-label="Note" disabled={!editing} onBlur={e => { if (e.target.value !== menuLine.note) void sendLine({ op: "update", id: menuLine.id, note: e.target.value }); }} />
           <div className="oc-row">{editing && <button type="button" onClick={() => void sendLine({ op: "reverse", id: menuLine.id })}>Reverse</button>}{editing && <button type="button" className="oc-del" onClick={() => void sendLine({ op: "remove", id: menuLine.id })}>Delete</button>}<button type="button" onClick={() => setLineMenu(null)}>Close</button></div>
           {!editing && <p className="oc-hint">Press Edit chart to change this line.</p>}
@@ -429,6 +455,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
         {chart.nodes.some(n => n.parentKey) && <button type="button" onClick={() => setCollapsed(new Set(chart.nodes.filter(n => !n.parentKey && (kids.get(n.key) || []).length).map(n => n.key)))}>Collapse all</button>}
         <label className="oc-sel">Influence lines <select value={lineMode} onChange={e => setLineMode(e.target.value as "selected" | "all" | "off")}><option value="selected">Selected person</option><option value="all">All ({influences.length})</option><option value="off">Off</option></select></label>
+        <button type="button" className={`oc-who${colorPinned ? " on" : ""}`} aria-pressed={colorPinned} title="Hover to see all lines in colour, click to keep the colours" onMouseEnter={() => setColorHover(true)} onMouseLeave={() => setColorHover(false)} onFocus={() => setColorHover(true)} onBlur={() => setColorHover(false)} onClick={() => setColorPinned(v => !v)}>Who influences who</button>
+
         <label className="oc-sel"><input type="checkbox" checked={pdfLines} onChange={e => setPdfLines(e.target.checked)} /> Lines in PDF</label>
         <button type="button" disabled={printing || !chart.nodes.length} onClick={() => setPrinting(true)}>{printing ? "Preparing PDF…" : "Export PDF"}</button>
         <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { onEditing(!editing); setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
@@ -461,6 +489,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         );
       })()}
       <div className="oc-main">
+                {colored && <span className="oc-legend float" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive</span>}
         <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => { if (!editing || !dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}><div className="oc-canvas" ref={canvas}>{editing && dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul>{overlay}</div></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
@@ -478,7 +507,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
             {(() => {
               const out = influences.filter(l => l.from === sel.key), into = influences.filter(l => l.to === sel.key);
               const taken = new Set([sel.key, ...out.map(l => l.to), ...into.map(l => l.from)]);
-              const line = (l: OrgInfluence, other: string) => <li key={l.id}><button type="button" className="oc-lk" onClick={() => setSelected(other)}>{byKey.get(other)?.name}</button><small>{l.strength === 3 ? "Strong" : l.strength === 2 ? "Medium" : "Weak"}{l.note ? ` · ${l.note}` : ""}</small>{editing && <button type="button" className="oc-x2" aria-label={`Remove the line with ${byKey.get(other)?.name}`} onClick={() => void sendLine({ op: "remove", id: l.id })}>×</button>}</li>;
+              const line = (l: OrgInfluence, other: string) => <li key={l.id}><button type="button" className="oc-lk" onClick={() => setSelected(other)}>{byKey.get(other)?.name}</button><small><i className="oc-dot" style={{ borderColor: TONE[l.tone || "neutral"] }} />{TONE_LABEL[l.tone || "neutral"]} · {l.strength === 3 ? "strong" : l.strength === 2 ? "medium" : "weak"}{l.note ? ` · ${l.note}` : ""}</small>{editing && <button type="button" className="oc-x2" aria-label={`Remove the line with ${byKey.get(other)?.name}`} onClick={() => void sendLine({ op: "remove", id: l.id })}>×</button>}</li>;
               const add = (label: string, make: (k: string) => InfluenceEdit) => editing && <select aria-label={label} value="" onChange={e => { if (e.target.value) void sendLine(make(e.target.value)); }}><option value="">{label}</option>{chart.nodes.filter(n => !taken.has(n.key)).map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select>;
               return (
                 <div className="oc-inf">
