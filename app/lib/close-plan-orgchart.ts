@@ -73,14 +73,16 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
   const ocrById = new Map(contactRoles.map(r => [r.Id, r]));
   const provisionalById = new Map(provisional.map(p => [p.Id, p]));
   const nodes = new Map<string, OrgNode>();
+  const unknown: string[] = [];
+  const duplicates = new Map<string, { roleId: string; extra: number }>();
 
   for (const role of roles) {
     if (role.iseeit__Is_Org_Chart_Persona__c) { issues.push({ kind: "persona", roleId: role.Id, text: "Persona template entry, left out" }); continue; }
     const ocr = role.iseeit__OpportunityContactRole__c ? ocrById.get(role.iseeit__OpportunityContactRole__c) : undefined;
     const prov = role.iseeit__Provisional_Contact__c ? provisionalById.get(role.iseeit__Provisional_Contact__c) : undefined;
     const key = ocr?.ContactId || (prov ? prov.Id : null);
-    if (!key) { issues.push({ kind: "unknown-person", roleId: role.Id, text: "No contact or provisional contact could be found for this entry, left out" }); continue; }
-    if (nodes.has(key)) { issues.push({ kind: "duplicate", roleId: role.Id, text: `${nodes.get(key)!.name} appears twice in the org chart, the first entry is used` }); continue; }
+    if (!key) { unknown.push(role.Id); continue; }
+    if (nodes.has(key)) { const d = duplicates.get(key) || { roleId: role.Id, extra: 0 }; d.extra++; duplicates.set(key, d); continue; }
     nodes.set(key, {
       key, roleId: role.Id, provisional: !ocr,
       name: (ocr ? ocr.Contact?.Name : prov?.Name) || "(no name)",
@@ -92,6 +94,9 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
     });
   }
 
+  // One line per person or kind of problem, not one per row: a real chart can repeat the same person many times.
+  for (const [key, d] of duplicates) issues.push({ kind: "duplicate", roleId: d.roleId, text: `${nodes.get(key)!.name} is in the org chart ${d.extra + 1} times, the first entry is used` });
+  if (unknown.length) issues.push({ kind: "unknown-person", roleId: unknown[0], text: `${unknown.length} ${unknown.length === 1 ? "entry has" : "entries have"} no contact or provisional contact in Salesforce, left out` });
   // A manager who has no entry of their own: show them as a node if we know who they are, otherwise the person becomes a top-level entry.
   for (const contact of parentContacts) {
     if (nodes.has(contact.Id) || ![...nodes.values()].some(n => n.parentKey === contact.Id)) continue;
