@@ -5,6 +5,7 @@ import { orgCharts, users } from "../../../db/schema";
 import { isAccountId, type OrgChart } from "../../lib/close-plan-orgchart";
 import { diffOrgCharts, type OrgDiff } from "../../lib/org-chart-edit";
 import { keepInfluences } from "../../lib/org-chart-influence";
+import { fetchAccountLogo } from "../../lib/sales-ai-account-logo";
 import { OrgChartNotFoundError, loadOrgChart, type OrgChartKind } from "../../lib/org-chart-load";
 import { orgChartActor } from "../../lib/org-charts-store";
 import { requireSameOrigin } from "../../lib/request";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 // The org charts saved in Task AI, newest import first (without their data).
 export async function GET() {
   const auth = await orgChartActor(); if ("response" in auth) return auth.response;
-  const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name, editedAt: orgCharts.editedAt })
+  const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name, editedAt: orgCharts.editedAt, logo: orgCharts.logo })
     .from(orgCharts).leftJoin(users, eq(users.id, orgCharts.importedBy)).orderBy(desc(orgCharts.importedAt));
   return Response.json({ charts: rows });
 }
@@ -36,12 +37,13 @@ export async function POST(request: Request) {
     if (!((kind === "opportunity" && isOpportunityId(item.sfdcId)) || (kind === "account" && isAccountId(item.sfdcId)))) { results.push({ ...item, ok: false, error: "Not a Salesforce id" }); continue; }
     try {
       const loaded = await loadOrgChart(kind, item.sfdcId);
-      const [previous] = await getDb().select({ data: orgCharts.data, influences: orgCharts.influences }).from(orgCharts).where(and(eq(orgCharts.kind, kind), eq(orgCharts.sfdcId, item.sfdcId))).limit(1);
+      const [previous] = await getDb().select({ data: orgCharts.data, influences: orgCharts.influences, logo: orgCharts.logo }).from(orgCharts).where(and(eq(orgCharts.kind, kind), eq(orgCharts.sfdcId, item.sfdcId))).limit(1);
       // Influence lines are not in Salesforce, so a pull keeps them (for the people who are still in the chart).
       const kept = previous ? keepInfluences(previous.influences, loaded.chart.nodes.map(n => n.key)) : [];
-      const row = { id: "oc" + randomUUID().replace(/-/g, "").slice(0, 16), kind, sfdcId: item.sfdcId, name: loaded.name, accountId: loaded.accountId, accountName: loaded.accountName, data: loaded.chart, influences: kept, people: loaded.chart.nodes.length, importedBy: auth.actor.id, importedAt: new Date() };
+      const logo = (await fetchAccountLogo(loaded.accountId || (kind === "account" ? item.sfdcId : ""))) || previous?.logo || "";
+      const row = { id: "oc" + randomUUID().replace(/-/g, "").slice(0, 16), kind, sfdcId: item.sfdcId, name: loaded.name, accountId: loaded.accountId, accountName: loaded.accountName, data: loaded.chart, influences: kept, logo, people: loaded.chart.nodes.length, importedBy: auth.actor.id, importedAt: new Date() };
       const [saved] = await getDb().insert(orgCharts).values(row)
-        .onConflictDoUpdate({ target: [orgCharts.kind, orgCharts.sfdcId], set: { name: row.name, accountId: row.accountId, accountName: row.accountName, data: row.data, people: row.people, importedBy: row.importedBy, importedAt: row.importedAt, edited: null, editedAt: null, editedBy: null, influences: kept } })
+        .onConflictDoUpdate({ target: [orgCharts.kind, orgCharts.sfdcId], set: { name: row.name, accountId: row.accountId, accountName: row.accountName, data: row.data, people: row.people, importedBy: row.importedBy, importedAt: row.importedAt, edited: null, editedAt: null, editedBy: null, influences: kept, logo } })
         .returning({ id: orgCharts.id });
       results.push({ ...item, ok: true, id: saved.id, name: loaded.name, people: row.people, changes: previous ? diffOrgCharts(previous.data as OrgChart, loaded.chart) : undefined });
     } catch (error) {

@@ -88,6 +88,9 @@ const IC: Record<string, React.ReactNode> = {
   sync: <><path d="M7 18.5a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 8.6a4.2 4.2 0 0 1-.5 9.9H7z" /><path d="M12 16v-5M9.5 13.2 12 10.7l2.5 2.5" /></>,
 };
 const Icon = ({ n }: { n: string }) => <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{IC[n]}</svg>;
+// The company logo at the top of the PDF sheet (eager: the print waits for it).
+// eslint-disable-next-line @next/next/no-img-element
+const PrintLogo = ({ src }: { src: string }) => <img src={src} alt="" referrerPolicy="no-referrer" loading="eager" className="oc-print-logo" onError={e => e.currentTarget.remove()} />;
 function AddPopover({ nodes, defaultParent, busy, onAdd, onClose }: { nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null) => void; onClose: () => void }) {
   const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent);
   return (
@@ -162,7 +165,7 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
   );
 }
 
-export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged, onImport, influences: initialInfluences }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void; onImport: () => void; influences: OrgInfluence[] }) {
+export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged, onImport, logo, influences: initialInfluences }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void; onImport: () => void; logo: string; influences: OrgInfluence[] }) {
   const [chart, setChart] = useState<ChartData>(initial);
   const [edited, setEdited] = useState(wasEdited);
   const [editing, setEditing] = useState(startEditing);
@@ -224,6 +227,23 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
 
   // Zoom in steps of 5 %. Fit shrinks the whole chart to the visible area.
+  // Pinch on a trackpad (or Ctrl + wheel) zooms the chart around the pointer; two-finger swipes scroll it as usual.
+  const zoomNow = useRef(1);
+  useEffect(() => { zoomNow.current = zoom; }, [zoom]);
+  useEffect(() => {
+    const el = wrap.current; if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const z = zoomNow.current, next = Math.max(0.25, Math.min(2, Math.round(z * (1 - e.deltaY / 100) * 100) / 100));
+      if (next === z) return;
+      const r = el.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, cx = (el.scrollLeft + px) / z, cy = (el.scrollTop + py) / z;
+      zoomNow.current = next; setZoom(next);
+      requestAnimationFrame(() => { el.scrollLeft = cx * next - px; el.scrollTop = cy * next - py; });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
   const stepZoom = (d: number) => setZoom(z => Math.max(0.25, Math.min(2, Math.round((z + d) * 20) / 20)));
   function fitChart() {
     const el = wrap.current, tree = el?.querySelector<HTMLElement>(".oc-tree"); if (!el || !tree) return;
@@ -596,7 +616,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <p className="oc-hint">{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}. Click a card for details, drag the background to move around.{edited ? "" : " Press Edit chart to change this copy."}</p>
       {printing && createPortal(
         <div className="oc-print-root" ref={sheet}>
-          <h1>{title}</h1>
+          <h1>{logo && <PrintLogo src={logo} />}{title}</h1>
           <p>{subtitle}{subtitle ? " · " : ""}{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}{edited ? " · edited in Task AI, not saved in Salesforce" : ""}</p>
           <div className="oc-print-canvas" ref={printCanvas}><ul className="oc-tree" style={{ zoom: printScale }}>{treeOf(true)}</ul><div className="oc-print-lines" /></div>
         </div>, document.body)}

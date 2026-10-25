@@ -255,3 +255,14 @@ test("influence lines: one direction, no duplicates, kept only for people still 
   assert.equal(keepInfluences(added.influences, ["a", "b"]).length, 1);
   assert.deepEqual((applyInfluenceEdit(added.influences, people, { op: "remove", id: added.id }) as { influences: unknown[] }).influences, []);
 });
+
+test("the account logo is the enrichment profile picture, only as a plain https link", async () => {
+  const { logoFromAccount } = await import("../app/lib/sales-ai-account-logo");
+  assert.equal(logoFromAccount({ enrich_json: { profile_pic_url: "https://assets.example.com/pp/abc" } }), "https://assets.example.com/pp/abc");
+  assert.equal(logoFromAccount({ enrich_json: { profile_pic_url: "http://assets.example.com/pp/abc" } }), "");
+  assert.equal(logoFromAccount({ enrich_json: { profile_pic_url: "https://user:pw@assets.example.com/x" } }), "");
+  assert.equal(logoFromAccount({ enrich_json: { profile_pic_url: "javascript:alert(1)" } }), "");
+  assert.equal(logoFromAccount({ enrich_json: { profile_pic_url: "x".repeat(600) } }), "");
+  assert.equal(logoFromAccount({ enrich_json: null }), "");
+  assert.equal(logoFromAccount(undefined), "");
+});
