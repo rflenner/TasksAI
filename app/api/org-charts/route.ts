@@ -14,14 +14,14 @@ export const dynamic = "force-dynamic";
 // The org charts saved in Task AI, newest import first (without their data).
 export async function GET() {
   const auth = await orgChartActor(); if ("response" in auth) return auth.response;
-  const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name })
+  const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name, editedAt: orgCharts.editedAt })
     .from(orgCharts).leftJoin(users, eq(users.id, orgCharts.importedBy)).orderBy(desc(orgCharts.importedAt));
   return Response.json({ charts: rows });
 }
 
 type Item = { kind?: string; sfdcId?: string };
 // Imports account and/or opportunity org charts from Salesforce: { items: [{ kind, sfdcId }] }. Importing something that was
-// imported before replaces the saved copy. Reads Salesforce only.
+// imported before replaces the saved copy, and throws away the edits made to it in Task AI. Reads Salesforce only.
 export async function POST(request: Request) {
   const invalid = requireSameOrigin(request); if (invalid) return invalid;
   const auth = await orgChartActor(); if ("response" in auth) return auth.response;
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       const loaded = await loadOrgChart(kind, item.sfdcId);
       const row = { id: "oc" + randomUUID().replace(/-/g, "").slice(0, 16), kind, sfdcId: item.sfdcId, name: loaded.name, accountId: loaded.accountId, accountName: loaded.accountName, data: loaded.chart, people: loaded.chart.nodes.length, importedBy: auth.actor.id, importedAt: new Date() };
       const [saved] = await getDb().insert(orgCharts).values(row)
-        .onConflictDoUpdate({ target: [orgCharts.kind, orgCharts.sfdcId], set: { name: row.name, accountId: row.accountId, accountName: row.accountName, data: row.data, people: row.people, importedBy: row.importedBy, importedAt: row.importedAt } })
+        .onConflictDoUpdate({ target: [orgCharts.kind, orgCharts.sfdcId], set: { name: row.name, accountId: row.accountId, accountName: row.accountName, data: row.data, people: row.people, importedBy: row.importedBy, importedAt: row.importedAt, edited: null, editedAt: null, editedBy: null } })
         .returning({ id: orgCharts.id });
       results.push({ ...item, ok: true, id: saved.id, name: loaded.name, people: row.people });
     } catch (error) {

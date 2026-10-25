@@ -1,14 +1,17 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
 import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart";
+import type { OrgEdit } from "../lib/org-chart-edit";
 import "./org-charts.css";
 
-// The interactive org chart, same behaviour as the iSEEit chart in Salesforce but read-only: click a card for its details,
-// the task icon for the person's open tasks and events, the chevron under a manager to collapse the team, drag the
-// background to pan, and the zoom buttons.
+// The interactive org chart, same behaviour as the iSEEit chart in Salesforce: click a card for its details, the task icon for
+// the person's open tasks and events, the chevron under a manager to collapse the team, drag the background to pan, and the
+// zoom buttons. "Edit chart" lets you drag a card onto a new manager, change type, role and notes, add a placeholder person and
+// remove someone. Edits are saved on the copy in Task AI only; nothing is written to Salesforce.
 export type ChartData = OrgChart & { salesforceBase: string };
 type TaskState = { busy?: boolean; items?: OrgTaskItem[]; error?: string };
 
+const TYPES = ["Champion", "Coach", "Enemy", "Influencer", "Neutral"];
 const EDGE: Record<string, string> = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
 const LI = "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z";
 const initials = (name: string) => name.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
@@ -17,7 +20,57 @@ const dateText = (d: string) => { if (!d) return "No date"; const x = new Date(d
 const Warn = () => <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#b3261e" d="M12 2 1 21h22z" /><path fill="#fff" d="M11 9h2v6h-2zm0 7h2v2h-2z" /></svg>;
 const Star = ({ blue }: { blue: boolean }) => <svg viewBox="0 0 24 24" width="18" height="18" aria-label="Power base"><path fill={blue ? "#8fb8e8" : "#f5c400"} d="M12 2l3 6.6 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.2l1.5-7L2 9.4l7-.8z" /></svg>;
 
-export default function OrgChartView({ chartId, chart }: { chartId: string; chart: ChartData }) {
+function AddForm({ parentKey, busy, onAdd }: { parentKey: string | null; busy: boolean; onAdd: (name: string, title: string) => void }) {
+  const [name, setName] = useState(""), [title, setTitle] = useState("");
+  return (
+    <form className="oc-form" onSubmit={e => { e.preventDefault(); if (name.trim()) { onAdd(name, title); setName(""); setTitle(""); } }}>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" aria-label="Name of the new person" maxLength={80} />
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Job title (optional)" aria-label="Job title of the new person" maxLength={120} />
+      <button type="submit" disabled={busy || !name.trim()}>{parentKey ? "Add below this person" : "Add at the top"}</button>
+    </form>
+  );
+}
+
+function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }: { node: OrgNode; nodes: OrgNode[]; busy: boolean; confirmRemove: boolean; onAsk: () => void; onCancel: () => void; onEdit: (edit: OrgEdit) => Promise<boolean | undefined> }) {
+  const [type, setType] = useState(node.type), [dealRole, setDealRole] = useState(node.dealRole), [powerBase, setPowerBase] = useState(node.powerBase), [description, setDescription] = useState(node.description);
+  const changed = type !== node.type || dealRole !== node.dealRole || powerBase !== node.powerBase || description !== node.description;
+  // Not themselves and not anyone below them: that would make a loop.
+  const under = new Set<string>([node.key]);
+  for (let grew = true; grew;) { grew = false; for (const n of nodes) if (n.parentKey && under.has(n.parentKey) && !under.has(n.key)) { under.add(n.key); grew = true; } }
+  return (
+    <div className="oc-ed">
+      <h4>Edit in Task AI</h4>
+      <label>Reports to
+        <select value={node.parentKey || ""} disabled={busy} onChange={e => void onEdit({ op: "move", key: node.key, parentKey: e.target.value || null })}>
+          <option value="">Nobody (top level)</option>
+          {nodes.filter(n => !under.has(n.key)).map(n => <option key={n.key} value={n.key}>{n.name}</option>)}
+        </select>
+      </label>
+      <div className="oc-row">
+        <button type="button" disabled={busy} onClick={() => void onEdit({ op: "shift", key: node.key, by: -1 })}>← Move left</button>
+        <button type="button" disabled={busy} onClick={() => void onEdit({ op: "shift", key: node.key, by: 1 })}>Move right →</button>
+      </div>
+      <label>Type<select value={type} onChange={e => setType(e.target.value)}>{TYPES.map(t => <option key={t}>{t}</option>)}</select></label>
+      <label>Deal role<input value={dealRole} maxLength={80} onChange={e => setDealRole(e.target.value)} /></label>
+      <label className="oc-chk"><input type="checkbox" checked={powerBase} onChange={e => setPowerBase(e.target.checked)} /> Power base</label>
+      <label>Notes<textarea rows={3} value={description} maxLength={2000} onChange={e => setDescription(e.target.value)} /></label>
+      <button type="button" className="oc-save" disabled={busy || !changed} onClick={() => void onEdit({ op: "update", key: node.key, type, dealRole, powerBase, description })}>Save changes</button>
+      <AddForm parentKey={node.key} busy={busy} onAdd={(name, title) => void onEdit({ op: "add", name, title, parentKey: node.key })} />
+      {confirmRemove
+        ? <p className="oc-ask">Remove {node.name}? Their team moves up one level. <button type="button" disabled={busy} onClick={() => void onEdit({ op: "remove", key: node.key })}>Yes, remove</button><button type="button" onClick={onCancel}>No</button></p>
+        : <button type="button" className="oc-del" disabled={busy} onClick={onAsk}>Remove from this chart</button>}
+    </div>
+  );
+}
+
+export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, onChanged }: { chartId: string; chart: ChartData; edited: boolean; onChanged: (people: number, edited: boolean) => void }) {
+  const [chart, setChart] = useState<ChartData>(initial);
+  const [edited, setEdited] = useState(wasEdited);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"remove" | "reset" | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
@@ -42,6 +95,27 @@ export default function OrgChartView({ chartId, chart }: { chartId: string; char
       .catch(() => setTasks(t => ({ ...t, [key]: { error: "Salesforce could not be reached." } })));
   }
 
+  async function send(edit: OrgEdit) {
+    setBusy(true); setMsg(""); setConfirm(null);
+    const r = await fetch(`/api/org-charts/${encodeURIComponent(chartId)}/edit`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(edit) }).catch(() => null);
+    const res = r ? await r.json().catch(() => ({})) : {};
+    setBusy(false);
+    if (!r?.ok) { setMsg(res.error || "The change could not be saved"); return false; }
+    setChart(res.chart); setEdited(true); onChanged(res.chart.nodes.length, true);
+    if (edit.op === "add" && res.key) setSelected(res.key);
+    if (edit.op === "remove") setSelected(null);
+    return true;
+  }
+  async function reset() {
+    setBusy(true); setMsg(""); setConfirm(null);
+    const r = await fetch(`/api/org-charts/${encodeURIComponent(chartId)}/edit`, { method: "DELETE", credentials: "same-origin" }).catch(() => null);
+    const res = r ? await r.json().catch(() => ({})) : {};
+    setBusy(false);
+    if (!r?.ok) { setMsg(res.error || "The edits could not be undone"); return; }
+    setChart({ ...res.chart, salesforceBase: chart.salesforceBase }); setEdited(false); setSelected(null); onChanged(res.chart.nodes.length, false);
+  }
+  const drop = (e: React.DragEvent, parentKey: string | null) => { e.preventDefault(); e.stopPropagation(); const key = dragKey; setDragKey(null); if (key && key !== parentKey) void send({ op: "move", key, parentKey }); };
+
   function pan(e: React.MouseEvent) {
     const el = wrap.current;
     if (!el || e.button !== 0 || (e.target as HTMLElement).closest(".oc-card, .oc-chev")) return;
@@ -53,7 +127,9 @@ export default function OrgChartView({ chartId, chart }: { chartId: string; char
   }
 
   const card = (n: OrgNode) => (
-    <div className={`oc-card${selected === n.key ? " sel" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
+    <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${editing && dragKey && dragKey !== n.key ? " target" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
+      draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => setDragKey(null)}
+      onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); } }} onDrop={e => editing && drop(e, n.key)}
       onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
       {n.provisional && <span className="oc-tmp">Temp</span>}
       <div className="oc-av">{initials(n.name)}{photo(n)}</div>
@@ -105,9 +181,21 @@ export default function OrgChartView({ chartId, chart }: { chartId: string; char
         <button type="button" aria-label="Zoom in" onClick={() => setZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}>+</button>
         <button type="button" onClick={() => setZoom(1)}>Reset</button>
         {collapsed.size > 0 && <button type="button" onClick={() => setCollapsed(new Set())}>Show all teams</button>}
+        <button type="button" className={editing ? "on" : ""} aria-pressed={editing} onClick={() => { setEditing(v => !v); setMsg(""); setConfirm(null); }}>{editing ? "Done editing" : "Edit chart"}</button>
+        {edited && (confirm === "reset"
+          ? <span className="oc-ask">Throw away all edits? <button type="button" disabled={busy} onClick={() => void reset()}>Yes, reset</button><button type="button" onClick={() => setConfirm(null)}>No</button></span>
+          : <button type="button" disabled={busy} onClick={() => setConfirm("reset")}>Reset to Salesforce copy</button>)}
       </div>
+      {edited && <p className="oc-note">Edited in Task AI. These changes are saved here only and are not in Salesforce.</p>}
+      {editing && (
+        <div className="oc-edit">
+          <p className="oc-hint">Drag a card onto the person they should report to, or drop it on the empty background to make them top level. Click a card to change type, role and notes, move it left or right, or remove it.</p>
+          <AddForm parentKey={null} busy={busy} onAdd={(name, title) => void send({ op: "add", name, title, parentKey: null })} />
+        </div>
+      )}
+      {msg && <p className="oc-err" role="alert">{msg}</p>}
       <div className="oc-main">
-        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan}><ul className="oc-tree" style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
+        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null)}><ul className="oc-tree" style={{ zoom }}>{chart.roots.map(k => byKey.get(k)).filter((n): n is OrgNode => Boolean(n)).map(branch)}</ul></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
@@ -119,6 +207,7 @@ export default function OrgChartView({ chartId, chart }: { chartId: string; char
               {chart.salesforceBase && /^003/.test(sel.key) && <a className="oc-btn" href={`${chart.salesforceBase}/lightning/r/Contact/${encodeURIComponent(sel.key)}/view`} target="_blank" rel="noopener noreferrer">Go to contact in Salesforce ↗</a>}
               {sel.linkedin && <a className="oc-btn" href={sel.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>}
             </div>
+            {editing && <EditPanel key={sel.key} node={sel} nodes={chart.nodes} busy={busy} confirmRemove={confirm === "remove"} onAsk={() => setConfirm("remove")} onCancel={() => setConfirm(null)} onEdit={edit => send(edit)} />}
             <h4>Open tasks and events in Salesforce <em>{sel.provisional ? "" : sel.openTasks || 0}</em></h4>
             {sel.provisional ? <p className="oc-hint">A placeholder contact has no tasks in Salesforce.</p>
               : !t || t.busy ? <p className="oc-hint">Reading Salesforce…</p>
@@ -128,7 +217,7 @@ export default function OrgChartView({ chartId, chart }: { chartId: string; char
           </aside>
         )}
       </div>
-      <p className="oc-hint">{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}. Click a card for details, drag the background to move around.</p>
+      <p className="oc-hint">{chart.nodes.length} {chart.nodes.length === 1 ? "person" : "people"}. Click a card for details, drag the background to move around.{edited ? "" : " Press Edit chart to change this copy."}</p>
       {chart.issues.length > 0 && <details className="oc-hint"><summary>{chart.issues.length} {chart.issues.length === 1 ? "thing" : "things"} to check in Salesforce</summary><ul style={{ paddingLeft: 18 }}>{chart.issues.map((i, k) => <li key={k}>{i.text}</li>)}</ul></details>}
     </div>
   );

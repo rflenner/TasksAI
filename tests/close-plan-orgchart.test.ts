@@ -120,3 +120,28 @@ test("an account's org chart is built from its contact roles", async () => {
   assert.equal(orgSearchSoql("account", "a"), null);
   assert.equal(isAccountId("00106000023pfLMAAY"), true); assert.equal(isAccountId("006000000000001AAA"), false);
 });
+
+test("org chart edits: move, loops, reorder, add, remove", async () => {
+  const { applyOrgEdit } = await import("../app/lib/org-chart-edit");
+  const node = (key: string, parentKey: string | null, order: number) => ({ key, roleId: "r" + key, name: key.toUpperCase(), title: "", email: "", phone: "", description: "", provisional: false, type: "Neutral", dealRole: "", powerBase: false, parentKey, order, linkedin: "", left: false, openTasks: 0, photo: "" });
+  const chart = { nodes: [node("a", null, 0), node("b", "a", 0), node("c", "b", 0), node("d", "a", 1)], roots: ["a"], issues: [] };
+  const ok = (r: ReturnType<typeof applyOrgEdit>) => { assert.ok(!("error" in r), "error" in r ? r.error : ""); return (r as { chart: typeof chart }).chart; };
+  assert.match((applyOrgEdit(chart, { op: "move", key: "a", parentKey: "c" }) as { error: string }).error, /loop/);
+  assert.match((applyOrgEdit(chart, { op: "move", key: "a", parentKey: "a" }) as { error: string }).error, /themselves/);
+  const moved = ok(applyOrgEdit(chart, { op: "move", key: "c", parentKey: "d" }));
+  assert.equal(moved.nodes.find(n => n.key === "c")!.parentKey, "d");
+  const top = ok(applyOrgEdit(chart, { op: "move", key: "d", parentKey: null }));
+  assert.deepEqual(top.roots.sort(), ["a", "d"]);
+  const shifted = ok(applyOrgEdit(chart, { op: "shift", key: "d", by: -1 }));
+  assert.deepEqual(shifted.nodes.filter(n => n.parentKey === "a").map(n => n.key), ["d", "b"]);
+  const added = applyOrgEdit(chart, { op: "add", name: "  New  Person ", title: "CFO", parentKey: "a" }) as { chart: typeof chart; key: string };
+  assert.equal(added.chart.nodes.find(n => n.key === added.key)!.name, "New Person");
+  assert.equal(added.chart.nodes.find(n => n.key === added.key)!.provisional, true);
+  assert.ok("error" in applyOrgEdit(chart, { op: "add", name: "  ", parentKey: null }));
+  const removed = ok(applyOrgEdit(chart, { op: "remove", key: "b" }));
+  assert.equal(removed.nodes.find(n => n.key === "c")!.parentKey, "a");
+  assert.deepEqual(removed.nodes.filter(n => n.parentKey === "a").map(n => n.key), ["c", "d"]);
+  assert.ok(!removed.nodes.some(n => n.key === "b"));
+  assert.ok("error" in applyOrgEdit(chart, { op: "update", key: "a", type: "Boss" }));
+  assert.equal(ok(applyOrgEdit(chart, { op: "update", key: "a", type: "Champion", powerBase: true })).nodes[0].type, "Champion");
+});

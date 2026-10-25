@@ -14,9 +14,9 @@ export default async function OrgChartsPage() {
   const actor = await currentActor();
   if (!actor) redirect("/login?returnTo=/org-charts");
   if (!canCreatePlan(actor)) redirect("/");
-  const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name })
+  const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name, editedAt: orgCharts.editedAt })
     .from(orgCharts).leftJoin(users, eq(users.id, orgCharts.importedBy)).orderBy(desc(orgCharts.importedAt));
-  const charts = rows.map(r => ({ ...r, importedAt: r.importedAt.toISOString(), importedBy: r.importedBy || "" }));
+  const charts = rows.map(r => ({ ...r, importedAt: r.importedAt.toISOString(), importedBy: r.importedBy || "", editedAt: r.editedAt ? r.editedAt.toISOString() : null }));
   return (
     <div className="max-w-[1400px] mx-auto p-8">
       <Link href="/" className="text-sm text-[#697181]">← Back to Task AI</Link>

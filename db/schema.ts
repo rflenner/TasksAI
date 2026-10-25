@@ -481,4 +481,8 @@ export const orgCharts = pgTable("org_charts", {
   people: integer("people").notNull().default(0),
   importedBy: integer("imported_by").references(() => users.id, { onDelete: "set null" }),
   importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+  // The chart as edited in Task AI (NULL = not edited), see app/lib/org-chart-edit.ts. Migration 0034.
+  edited: jsonb("edited"),
+  editedAt: timestamp("edited_at", { withTimezone: true }),
+  editedBy: integer("edited_by").references(() => users.id, { onDelete: "set null" }),
 }, table => [unique("org_charts_source_unique").on(table.kind, table.sfdcId)]);
