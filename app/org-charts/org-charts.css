@@ -177,3 +177,5 @@
 .oc-switch input:checked+.oc-track{background:#2f6fb5}
 .oc-switch input:checked+.oc-track::after{left:16px}
 .oc-switch input:focus-visible+.oc-track{outline:2px solid #173f76;outline-offset:2px}
+.oc-legendrow{min-height:24px;display:flex;align-items:center;margin:0 0 6px}
+.oc-legendrow .oc-hint{margin:0;font-size:12px}

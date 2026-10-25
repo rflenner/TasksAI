@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart";
 import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
-import type { InfluenceEdit, InfluenceTone, OrgInfluence } from "../lib/org-chart-influence";
+import { lineTone, type InfluenceEdit, type InfluenceTone, type OrgInfluence } from "../lib/org-chart-influence";
 import { planTeam, type TeamPlan } from "../lib/org-chart-layout";
 import "./org-charts.css";
 
@@ -63,7 +63,7 @@ function lineSegs(canvas: HTMLElement, list: OrgInfluence[], byKey: Map<string, 
       if (!hits) break;
     }
     if (!best) continue;
-    out.push({ id: l.id, x1: best.p0.x, y1: best.p0.y, cx: best.c.x, cy: best.c.y, x2: best.p1.x, y2: best.p1.y, strength: l.strength, tone: l.tone || "neutral", blue: /Economic Buyer/.test(byKey.get(l.from)?.dealRole || ""), from: l.from, to: l.to, note: l.note });
+    out.push({ id: l.id, x1: best.p0.x, y1: best.p0.y, cx: best.c.x, cy: best.c.y, x2: best.p1.x, y2: best.p1.y, strength: l.strength, tone: lineTone(l, mindset(byKey.get(l.from) || { type: "" })), blue: /Economic Buyer/.test(byKey.get(l.from)?.dealRole || ""), from: l.from, to: l.to, note: l.note });
   }
   return out;
 }
@@ -286,7 +286,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   }
   // Which lines show: those of the selected person (default), all of them, or none.
   const shown = useMemo(() => lineMode === "all" || colored ? influences : lineMode === "off" ? [] : influences.filter(l => l.from === selected || l.to === selected || l.id === lineMenu?.id), [influences, lineMode, colored, selected, lineMenu?.id]);
-  const lineKey = shown.map(l => `${l.id}${l.from}${l.to}${l.strength}${l.tone || ""}`).join(",");
+  const lineKey = shown.map(l => `${l.id}${l.from}${l.to}${l.strength}${l.tone || ""}${byKey.get(l.from)?.type || ""}`).join(",");
   useEffect(() => {
     const el = canvas.current; if (!el) return;
     const measure = () => { setSegs(lineSegs(el, shown, byKey)); setCanvasSize({ w: el.scrollWidth, h: el.scrollHeight }); };
@@ -430,7 +430,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         <div className="oc-linemenu" style={{ left: Math.max(4, lineMenu.x - 100), top: lineMenu.y + 8 }} role="dialog" aria-label="Influence line">
           <b>{byKey.get(menuLine.from)?.name} → {byKey.get(menuLine.to)?.name}</b>
           <div className="oc-row">{([3, 2, 1] as const).map(v => <button key={v} type="button" className={menuLine.strength === v ? "on" : ""} disabled={!editing} onClick={() => void sendLine({ op: "update", id: menuLine.id, strength: v })}>{v === 3 ? "Strong" : v === 2 ? "Medium" : "Weak"}</button>)}</div>
-          <div className="oc-row">{(["positive", "neutral", "negative"] as const).map(t => <button key={t} type="button" className={`oc-tone ${t}${(menuLine.tone || "neutral") === t ? " on" : ""}`} disabled={!editing} onClick={() => void sendLine({ op: "update", id: menuLine.id, tone: t })}>{TONE_LABEL[t]}</button>)}</div>
+          <div className="oc-row">{(["positive", "neutral", "negative"] as const).map(t => <button key={t} type="button" className={`oc-tone ${t}${menuLine.tone === t ? " on" : ""}`} disabled={!editing} onClick={() => void sendLine({ op: "update", id: menuLine.id, tone: t })}>{TONE_LABEL[t]}</button>)}<button type="button" className={menuLine.tone ? "" : "on"} disabled={!editing} title={`Follows the mindset of ${byKey.get(menuLine.from)?.name}: ${mindset(byKey.get(menuLine.from) || { type: "" })}`} onClick={() => void sendLine({ op: "update", id: menuLine.id, tone: "auto" })}>Auto</button></div>
           <input defaultValue={menuLine.note} maxLength={300} placeholder="Note, for example how they influence" aria-label="Note" disabled={!editing} onBlur={e => { if (e.target.value !== menuLine.note) void sendLine({ op: "update", id: menuLine.id, note: e.target.value }); }} />
           <div className="oc-row">{editing && <button type="button" onClick={() => void sendLine({ op: "reverse", id: menuLine.id })}>Reverse</button>}{editing && <button type="button" className="oc-del" onClick={() => void sendLine({ op: "remove", id: menuLine.id })}>Delete</button>}<button type="button" onClick={() => setLineMenu(null)}>Close</button></div>
           {!editing && <p className="oc-hint">Press Edit chart to change this line.</p>}
@@ -489,8 +489,9 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           </div>
         );
       })()}
+      <div className="oc-legendrow">{colored ? <span className="oc-legend" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative (enemy)<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive (champion, coach)</span> : <span className="oc-hint">Influence lines: a dotted arrow from the influencer to the influenced person. Switch on “Who influences who” to see the kind in colour.</span>}</div>
       <div className="oc-main">
-                {colored && <span className="oc-legend float" aria-label="Colours of the influence lines"><i style={{ borderColor: TONE.negative }} />Negative<i style={{ borderColor: TONE.neutral }} />Neutral<i style={{ borderColor: TONE.positive }} />Positive</span>}
+        
         <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => { if (!editing || !dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}><div className="oc-canvas" ref={canvas}>{editing && dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul>{overlay}</div></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
@@ -508,7 +509,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
             {(() => {
               const out = influences.filter(l => l.from === sel.key), into = influences.filter(l => l.to === sel.key);
               const taken = new Set([sel.key, ...out.map(l => l.to), ...into.map(l => l.from)]);
-              const line = (l: OrgInfluence, other: string) => <li key={l.id}><button type="button" className="oc-lk" onClick={() => setSelected(other)}>{byKey.get(other)?.name}</button><small><i className="oc-dot" style={{ borderColor: TONE[l.tone || "neutral"] }} />{TONE_LABEL[l.tone || "neutral"]} · {l.strength === 3 ? "strong" : l.strength === 2 ? "medium" : "weak"}{l.note ? ` · ${l.note}` : ""}</small>{editing && <button type="button" className="oc-x2" aria-label={`Remove the line with ${byKey.get(other)?.name}`} onClick={() => void sendLine({ op: "remove", id: l.id })}>×</button>}</li>;
+              const line = (l: OrgInfluence, other: string) => <li key={l.id}><button type="button" className="oc-lk" onClick={() => setSelected(other)}>{byKey.get(other)?.name}</button><small><i className="oc-dot" style={{ borderColor: TONE[lineTone(l, mindset(byKey.get(l.from) || { type: "" }))] }} />{TONE_LABEL[lineTone(l, mindset(byKey.get(l.from) || { type: "" }))]} · {l.strength === 3 ? "strong" : l.strength === 2 ? "medium" : "weak"}{l.note ? ` · ${l.note}` : ""}</small>{editing && <button type="button" className="oc-x2" aria-label={`Remove the line with ${byKey.get(other)?.name}`} onClick={() => void sendLine({ op: "remove", id: l.id })}>×</button>}</li>;
               const add = (label: string, make: (k: string) => InfluenceEdit) => editing && <select aria-label={label} value="" onChange={e => { if (e.target.value) void sendLine(make(e.target.value)); }}><option value="">{label}</option>{chart.nodes.filter(n => !taken.has(n.key)).map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select>;
               return (
                 <div className="oc-inf">
