@@ -81,7 +81,7 @@
 .oc-card.target:hover{outline:2px dashed #173f76}
 /* Drop areas just outside a card while dragging, so the dragged card does not cover them */
 .oc-tree.editing li{padding-left:30px;padding-right:30px}
-.oc-pad{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;box-sizing:border-box;font:600 11px/1 sans-serif;color:#173f76;background:rgba(23,63,118,.08);border:1.5px dashed #9db4d6;border-radius:6px;white-space:nowrap}
+.oc-pad{pointer-events:none;position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;box-sizing:border-box;font:600 11px/1 sans-serif;color:#173f76;background:rgba(23,63,118,.08);border:1.5px dashed #9db4d6;border-radius:6px;white-space:nowrap}
 .oc-pad.on{background:#173f76;border:1.5px solid #173f76;color:#fff}
 .oc-pad.top{left:0;right:0;top:-28px;height:22px}
 .oc-pad.bottom{left:0;right:0;bottom:-28px;height:22px}
@@ -127,3 +127,4 @@
 .oc-tree li.oc-group>.oc-grp{position:relative}
 .oc-tree li.oc-group>ul.oc-ladder{margin-top:6px}
 .oc-tree li.oc-group>ul.oc-ladder::before{top:-6px;height:6px}
+.oc-card.active{background:#eef4ff;outline:3px solid #173f76;box-shadow:0 0 0 6px rgba(23,63,118,.18)}

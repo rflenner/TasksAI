@@ -15,13 +15,13 @@ type TaskState = { busy?: boolean; items?: OrgTaskItem[]; error?: string };
 
 type Zone = Exclude<DropPosition, "root">;
 type Pending = { key: string; targetKey: string | null; position: DropPosition };
-// While a card is dragged, every other card shows four drop areas just outside it, so they stay visible next to the dragged
-// card: above (the person becomes its manager), below (reports to it), left and right (a peer beside it). The card itself counts as below.
+// While a card is dragged, the card it is held over (the target) shows four drop areas just outside it, so they stay visible next
+// to the dragged card: above (the person becomes its manager), below (reports to it), left and right (a peer beside it). The target
+// is the card the dragged card overlaps most, and the side the dragged card sits towards picks the area; centred means below.
 type Pad = { spot: "top" | "bottom" | "left" | "right"; zone: Zone; label: string };
 const PADS: Pad[] = [{ spot: "top", zone: "top", label: "▲ Manager" }, { spot: "bottom", zone: "bottom", label: "▼ Reports to" }, { spot: "left", zone: "left", label: "◀ Peer" }, { spot: "right", zone: "right", label: "Peer ▶" }];
 // In a ladder the people are stacked, so above and below mean before and after: the manager and reports-to areas move to the sides.
 const LADDER_PADS: Pad[] = [{ spot: "top", zone: "left", label: "▲ Before" }, { spot: "bottom", zone: "right", label: "▼ After" }, { spot: "left", zone: "top", label: "◀ Manager" }, { spot: "right", zone: "bottom", label: "Reports to ▶" }];
-const zoneOf = (e: React.DragEvent): Zone => (e.target as HTMLElement).closest<HTMLElement>("[data-zone]")?.dataset.zone as Zone | undefined || "bottom";
 const TYPES = ["Champion", "Coach", "Enemy", "Influencer", "Neutral"];
 const EDGE: Record<string, string> = { Champion: "#4e9f3d", Coach: "#f5d000", Enemy: "#e8847c" };
 const LI = "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z";
@@ -89,6 +89,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [msg, setMsg] = useState("");
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [hover, setHover] = useState<{ key: string; zone: Zone } | null>(null);
+  const hoverRef = useRef<{ key: string; zone: Zone } | null>(null); // the same, readable in the drop handler
+  const grab = useRef({ dx: 0, dy: 0, w: 0, h: 0 }); // where on the dragged card it was picked up, and its size
   const [pending, setPending] = useState<Pending | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printScale, setPrintScale] = useState(1);
@@ -153,7 +155,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   // Dropping someone who has a team asks whether the team moves along, like Salesforce ("Move with hierarchy?").
   function drop(e: React.DragEvent, targetKey: string | null, position: DropPosition) {
     e.preventDefault(); e.stopPropagation();
-    const key = dragKey; setDragKey(null); setHover(null);
+    const key = dragKey; setDragKey(null); setHover(null); hoverRef.current = null;
     if (!key || key === targetKey) return;
     if ((kids.get(key) || []).length) setPending({ key, targetKey, position });
     else void send({ op: "drop", key, targetKey, position, withTeam: true });
@@ -166,8 +168,32 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   // While a card is dragged, the chart scrolls when the pointer gets near its edge.
   useEffect(() => {
     if (!dragKey) return;
+    // The whole dragged card counts, not just the pointer: the target is the card it overlaps most (with the drop areas around
+    // it), and the side it is held towards picks the area.
+    function locate(x: number, y: number) {
+      const el = wrap.current; if (!el || !dragKey) return;
+      const wr = el.getBoundingClientRect();
+      let best: { key: string; zone: Zone } | null = null;
+      if (x >= wr.left && x <= wr.right && y >= wr.top && y <= wr.bottom) {
+        const g = grab.current, gl = x - g.dx, gt = y - g.dy, margin = 28;
+        let most = g.w * g.h * 0.12;
+        for (const c of el.querySelectorAll<HTMLElement>(".oc-card[data-key]")) {
+          if (c.dataset.key === dragKey) continue;
+          const r = c.getBoundingClientRect();
+          const area = Math.max(0, Math.min(gl + g.w, r.right + margin) - Math.max(gl, r.left - margin)) * Math.max(0, Math.min(gt + g.h, r.bottom + margin) - Math.max(gt, r.top - margin));
+          if (area <= most) continue;
+          most = area;
+          const dxp = gl + g.w / 2 - (r.left + r.width / 2), dyp = gt + g.h / 2 - (r.top + r.height / 2), ax = Math.abs(dxp) / r.width, ay = Math.abs(dyp) / r.height;
+          const spot = ax < 0.25 && ay < 0.25 ? "bottom" : ax > ay ? (dxp < 0 ? "left" : "right") : dyp < 0 ? "top" : "bottom";
+          const zone = (c.dataset.ladder ? LADDER_PADS : PADS).find(p => p.spot === spot)!.zone;
+          best = { key: c.dataset.key!, zone };
+        }
+      }
+      hoverRef.current = best;
+      setHover(h => h?.key === best?.key && h?.zone === best?.zone ? h : best);
+    }
     let x = 0, y = 0;
-    const at = (e: DragEvent) => { x = e.clientX; y = e.clientY; };
+    const at = (e: DragEvent) => { x = e.clientX; y = e.clientY; locate(x, y); };
     const tick = window.setInterval(() => {
       const el = wrap.current; if (!el) return;
       const r = el.getBoundingClientRect(), edge = 70, speed = (d: number) => Math.ceil(Math.min(1, (edge - d) / edge) * 22);
@@ -229,13 +255,11 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   );
 
   const card = (n: OrgNode, ladder = false) => (
-    <div className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
-      draggable={editing && !busy} onDragStart={e => { e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }} onDragEnd={() => { setDragKey(null); setHover(null); }}
-      onDragOver={e => { if (editing && dragKey && dragKey !== n.key) { e.preventDefault(); e.stopPropagation(); const zone = zoneOf(e); setHover(h => h?.key === n.key && h.zone === zone ? h : { key: n.key, zone }); } }}
-      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(h => h?.key === n.key ? null : h); }}
-      onDrop={e => editing && dragKey && dragKey !== n.key && drop(e, n.key, zoneOf(e))}
+    <div data-key={n.key} data-ladder={ladder ? "1" : undefined} className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${hover?.key === n.key ? " active" : ""}`} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: EDGE[n.type] || "#c4c4c4" }}
+      draggable={editing && !busy} onDragStart={e => { const r = e.currentTarget.getBoundingClientRect(); grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height }; e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }}
+      onDragEnd={() => { setDragKey(null); setHover(null); hoverRef.current = null; }}
       onClick={() => open(n.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.key); } }}>
-      {editing && dragKey && dragKey !== n.key && (ladder ? LADDER_PADS : PADS).map(p => <span key={p.spot} data-zone={p.zone} className={`oc-pad ${p.spot}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
+      {editing && dragKey && hover?.key === n.key && (ladder ? LADDER_PADS : PADS).map(p => <span key={p.spot} className={`oc-pad ${p.spot}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
       {inner(n)}
     </div>
   );
@@ -291,7 +315,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       {edited && <p className="oc-note">Edited in Task AI. These changes are saved here only and are not in Salesforce.</p>}
       {editing && (
         <div className="oc-edit">
-          <p className="oc-hint">Drag a card onto another card: on its left or right edge to put them beside it, on its upper part to make them its manager, anywhere else to make them report to it. Drop it on the empty background to make them top level. Click a card to change type, role and notes, move it left or right, or remove it.</p>
+          <p className="oc-hint">Drag a card over another card: hold it above to make them its manager, to the left or right to put them beside it, or centred to make them report to it. The card and the area light up before you let go. Drop it on empty background to make them top level. Click a card to change type, role and notes, move it left or right, or remove it.</p>
           <AddForm parentKey={null} busy={busy} onAdd={(name, title) => void send({ op: "add", name, title, parentKey: null })} />
         </div>
       )}
@@ -313,7 +337,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         );
       })()}
       <div className="oc-main">
-        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, null, "root")}><ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul></div>
+        <div className="oc-wrap" ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => editing && drop(e, hoverRef.current?.key ?? null, hoverRef.current?.zone ?? "root")}><ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul></div>
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
