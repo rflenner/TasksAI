@@ -43,8 +43,13 @@ export default function OrgChartsClient({ initialCharts }: { initialCharts: Char
     const r = await fetch("/api/org-charts", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ items: [{ kind: row.kind, sfdcId: row.sfdcId }] }) }).catch(() => null);
     const res = r ? await r.json().catch(() => ({})) : {};
     if (!r?.ok) { setRefreshing(false); setNotice(res.error || res.results?.[0]?.error || "Salesforce could not be reached"); return; }
+    const done = res.results?.[0] as { people?: number; changes?: { added: string[]; removed: string[]; moved: string[]; same: boolean } } | undefined;
     await refresh(); await open(row); setRefreshing(false);
-    setNotice(`Copied “${row.name}” from Salesforce again.`);
+    const list = (label: string, names: string[]) => names.length ? ` ${label}: ${names.slice(0, 6).join(", ")}${names.length > 6 ? ` and ${names.length - 6} more` : ""}.` : "";
+    const c = done?.changes;
+    setNotice(c && !c.same
+      ? `Copied “${row.name}” from Salesforce just now (${done?.people} people).${list("New", c.added)}${list("Gone", c.removed)}${list("New manager", c.moved)}`
+      : `Copied “${row.name}” from Salesforce just now (${done?.people ?? "?"} people). Nothing has changed in Salesforce since the last copy.`);
   }
   async function remove(row: ChartRow) {
     const r = await fetch(`/api/org-charts/${encodeURIComponent(row.id)}`, { method: "DELETE", credentials: "same-origin" });

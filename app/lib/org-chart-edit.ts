@@ -132,3 +132,13 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
     default: return { error: "Unknown edit" };
   }
 }
+
+// What changed between two copies of a chart (people by key): who is new, who is gone, who has a different manager.
+export type OrgDiff = { added: string[]; removed: string[]; moved: string[]; same: boolean };
+export function diffOrgCharts(before: OrgChart, after: OrgChart): OrgDiff {
+  const was = new Map(before.nodes.map(n => [n.key, n])), now = new Map(after.nodes.map(n => [n.key, n]));
+  const added = after.nodes.filter(n => !was.has(n.key)).map(n => n.name);
+  const removed = before.nodes.filter(n => !now.has(n.key)).map(n => n.name);
+  const moved = after.nodes.filter(n => was.has(n.key) && (was.get(n.key)!.parentKey ?? null) !== (n.parentKey ?? null)).map(n => n.name);
+  return { added, removed, moved, same: !added.length && !removed.length && !moved.length };
+}

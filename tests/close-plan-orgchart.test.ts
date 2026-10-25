@@ -213,3 +213,12 @@ test("team layout rules: row, ladder, deep levels, wide teams, manual override",
   assert.equal((applyOrgEdit(chart, { op: "update", key: "m", layout: "ladder" }) as { chart: typeof chart }).chart.nodes[0].layout, "ladder");
   assert.ok("error" in applyOrgEdit(chart, { op: "update", key: "m", layout: "diagonal" }));
 });
+
+test("comparing two copies of a chart lists who is new, gone or has a new manager", async () => {
+  const { diffOrgCharts } = await import("../app/lib/org-chart-edit");
+  const person = (key: string, parentKey: string | null) => ({ key, roleId: "", name: key.toUpperCase(), title: "", email: "", phone: "", description: "", provisional: false, type: "Neutral", dealRole: "", powerBase: false, parentKey, order: 0, linkedin: "", left: false, openTasks: 0, photo: "" });
+  const before = { nodes: [person("a", null), person("b", "a"), person("c", "a")], roots: ["a"], issues: [] };
+  const after = { nodes: [person("a", null), person("b", null), person("d", "a")], roots: ["a", "b"], issues: [] };
+  assert.deepEqual(diffOrgCharts(before, after), { added: ["D"], removed: ["C"], moved: ["B"], same: false });
+  assert.equal(diffOrgCharts(before, before).same, true);
+});
