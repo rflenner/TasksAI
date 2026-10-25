@@ -170,3 +170,10 @@
 .oc-linemenu .oc-tone.on.negative{background:#d64545;border-color:#d64545;color:#fff}
 .oc-dot{margin-right:4px}
 .oc-legend.float{position:absolute;z-index:9;top:8px;left:12px;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.94);border:1px solid #e1e4e8;box-shadow:0 1px 6px rgba(0,0,0,.12)}
+.oc-switch{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#2b3445;cursor:pointer;user-select:none}
+.oc-switch input{position:absolute;opacity:0;width:0;height:0}
+.oc-track{position:relative;width:34px;height:20px;border-radius:10px;background:#c9ced6;transition:background .15s}
+.oc-track::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s}
+.oc-switch input:checked+.oc-track{background:#2f6fb5}
+.oc-switch input:checked+.oc-track::after{left:16px}
+.oc-switch input:focus-visible+.oc-track{outline:2px solid #173f76;outline-offset:2px}
