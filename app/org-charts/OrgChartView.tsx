@@ -489,7 +489,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const plan: TeamPlan = planTeam(n, level, key => kids.get(key) || [], layoutForce === "auto" ? undefined : layoutForce);
     const deeper = (list: OrgNode[]) => list.map(c => node(c, level + 1, list === plan.ladder, plain));
     return (
-      <li key={n.key}>
+      <li key={n.key} className={plan.layout === "ladder" ? "oc-hasladder" : undefined}>
         {plain ? <div className="oc-card" data-key={n.key} style={{ borderLeftColor: edge(n) }}>{inner(n, true)}</div> : card(n, inLadder)}
         {!plain && k.length > 0 && (
           <button type="button" className={`oc-chev${shut ? " shut" : ""}`} aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} the team of ${n.name}`} title={shut ? `Show all ${below(n)} below (Shift: only the next level)` : `Hide all ${below(n)} below`}
