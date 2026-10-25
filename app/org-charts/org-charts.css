@@ -210,7 +210,7 @@
 .oc-edited{padding:3px 10px;border-radius:12px;background:#fff6dc;color:#7a5a00;font-size:12px;font-weight:600}
 .oc-legend.end{margin-left:auto}
 /* Laptop: the working area gets the width the page gives it, the details panel is a little narrower */
-@media(min-width:861px){.oc-panel{width:300px}}
+@media(min-width:861px){.oc-panel{width:360px}}
 .oc-wrap{touch-action:pan-x pan-y}
 /* Phone: toolbar in one swipeable row, controls in a row above the chart, details as a sheet at the bottom */
 @media(max-width:860px){
@@ -248,3 +248,22 @@
 .oc-bar .oc-menu button:hover:not(:disabled){background:#eef2f8}
 .oc-panel .oc-disc{display:inline-block;margin-left:8px;padding:2px 8px;border:1px solid #e3b8b4;border-radius:6px;background:#fff;color:#b3261e;font:600 12px/1.4 sans-serif;cursor:pointer}
 .oc-panel .oc-disc:hover{background:#fdf1f0}
+/* Contact details: header, chips, contact lines, four tiles */
+.oc-panel .oc-rep{margin:4px 0 0}
+.oc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.oc-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid #d6dbe3;border-radius:14px;font-size:12px;font-weight:600;color:#2b3445;background:#fff}
+.oc-chip i{width:10px;height:10px;border-radius:50%}
+.oc-chip.role{border-color:#f5b942;color:#8a6a00;background:#fffaf0}
+.oc-chip svg{width:14px;height:14px}
+.oc-contact{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid #f0f1f3;border-bottom:1px solid #f0f1f3;font-size:13px}
+.oc-contact a,.oc-contact span{display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere;color:#2b3445;text-decoration:none}
+.oc-contact a:hover{color:#173f76;text-decoration:underline}
+.oc-contact svg{flex:none;color:#5b6573}
+.oc-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.oc-tiles>div{padding:8px 10px;border:1px solid #e3e8ee;border-radius:8px;background:#fbfcfe}
+.oc-tiles small{display:block;font-size:11px;color:#5b6573;margin-bottom:3px}
+.oc-tiles b{font-size:15px;color:#173f76}
+.oc-tiles .oc-act{display:flex;align-items:center;gap:8px;font-size:13px;color:#5b6573}
+.oc-btn.primary{background:#1c3a73;border-color:#1c3a73;color:#fff}
+.oc-btn.primary:hover{background:#26406e}
+.oc-panel .oc-notes{white-space:pre-wrap;color:#2b3445}

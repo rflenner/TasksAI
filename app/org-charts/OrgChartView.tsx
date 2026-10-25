@@ -558,7 +558,6 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const t = sel ? tasks[sel.key] : undefined;
   const parent = sel?.parentKey ? byKey.get(sel.parentKey) : null;
   const team = sel ? (kids.get(sel.key) || []).length : 0;
-  const row = (label: string, value: React.ReactNode) => value ? <div className="oc-r"><span>{label}</span><div>{value}</div></div> : null;
 
   if (!chart.nodes.length) return <p className="oc-hint">This org chart is empty in Salesforce.</p>;
   return (
@@ -640,14 +639,26 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
         {sel && (
           <aside className="oc-panel" aria-label={sel.name}>
             <button type="button" className="oc-x" aria-label="Close details" onClick={() => setSelected(null)}>×</button>
-            <div className="oc-ph"><div className="oc-av big">{initials(sel.name)}{photo(sel)}</div><div><h3>{sel.name}</h3><p>{sel.title}</p></div></div>
+            <div className="oc-ph"><div className="oc-av big">{initials(sel.name)}{photo(sel)}</div><div><h3>{sel.name}</h3><p>{sel.title}</p>{parent && <p className="oc-rep">Reports to <button type="button" className="oc-lk" onClick={() => setSelected(parent.key)}>{parent.name}</button></p>}</div></div>
             {sel.left && <p className="oc-left"><Warn /> Salesforce says this contact left the organization.</p>}
-            {row("Mindset", mindset(sel))}{row("Deal role", sel.dealRole)}{row("Power base", sel.powerBase ? "Yes" : "")}{row("Reports to", parent?.name)}{row("Direct reports", team ? String(team) : "")}
-            {row("Email", sel.email && <a href={`mailto:${sel.email}`}>{sel.email}</a>)}{row("Phone", sel.phone)}{row("Notes", sel.description)}
-            <div className="oc-links">
-              {chart.salesforceBase && /^003/.test(sel.key) && <a className="oc-btn" href={`${chart.salesforceBase}/lightning/r/Contact/${encodeURIComponent(sel.key)}/view`} target="_blank" rel="noopener noreferrer">Go to contact in Salesforce ↗</a>}
-              {sel.linkedin && <a className="oc-btn" href={sel.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>}
+            <div className="oc-chips">
+              <span className="oc-chip" title="Mindset"><i style={{ background: EDGE[mindset(sel)] || EDGE.Neutral }} />{mindset(sel)}</span>
+              {sel.dealRole.split(/[;,]/).map(r => r.trim()).filter(Boolean).map(r => <span key={r} className="oc-chip role" title="Deal role">{r}</span>)}
+              {sel.powerBase && <span className="oc-chip" title="Power base"><Star blue={/Economic Buyer/.test(sel.dealRole)} />Power base</span>}
             </div>
+            {(sel.email || sel.phone || sel.linkedin) && <div className="oc-contact">
+              {sel.email && <a href={`mailto:${sel.email}`}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>{sel.email}</a>}
+              {sel.phone && <span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" /></svg>{sel.phone}</span>}
+              {sel.linkedin && <a href={sel.linkedin} target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" width="16" height="16" fill="#2f6fb5" aria-hidden="true"><path d={LI} /></svg>LinkedIn profile</a>}
+            </div>}
+            <div className="oc-tiles">
+              <div title={ACTIVITY_NOTE}><small>Activity</small><div className="oc-act"><Meter level={sel.activity || 0} /><span>{sel.activity ? `${sel.activity} of 4` : "None matched"}</span></div></div>
+              <div><small>Open tasks and events</small><b>{sel.provisional ? "–" : sel.openTasks || 0}</b></div>
+              <div><small>Direct reports</small><b>{team}</b></div>
+              <div><small>Influence lines</small><b>{influences.filter(l => l.from === sel.key).length} out · {influences.filter(l => l.to === sel.key).length} in</b></div>
+            </div>
+            {chart.salesforceBase && /^003/.test(sel.key) && <a className="oc-btn primary" href={`${chart.salesforceBase}/lightning/r/Contact/${encodeURIComponent(sel.key)}/view`} target="_blank" rel="noopener noreferrer">Open contact in Salesforce ↗</a>}
+            {sel.description && <><h4>Notes</h4><p className="oc-notes">{sel.description}</p></>}
             {editing && <EditPanel key={sel.key} node={sel} nodes={chart.nodes} busy={busy} confirmRemove={confirm === "remove"} onAsk={() => setConfirm("remove")} onCancel={() => setConfirm(null)} onEdit={edit => send(edit)} />}
             <h4>Influence</h4>
             {(() => {
@@ -662,9 +673,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
                 </div>
               );
             })()}
-            <h4>Activity <button type="button" className="oc-info" aria-label="About activity" title={ACTIVITY_NOTE}>i</button></h4>
-            <div className="oc-act"><Meter level={sel.activity || 0} /><span>{sel.activity ? `${sel.activity} of 4` : "No activity matched"}</span></div>
-            <h4>Open tasks and events in Salesforce <em>{sel.provisional ? "" : sel.openTasks || 0}</em></h4>
+            <h4>Open tasks and events <em>{sel.provisional ? "" : sel.openTasks || 0}</em></h4>
             {sel.provisional ? <p className="oc-hint">A placeholder contact has no tasks in Salesforce.</p>
               : !t || t.busy ? <p className="oc-hint">Reading Salesforce…</p>
               : t.error ? <p className="oc-err">{t.error}</p>
