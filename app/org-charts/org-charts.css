@@ -15,7 +15,8 @@
 .oc-tree>li::before,.oc-tree>li::after{display:none}
 .oc-tree li:only-child::before,.oc-tree li:only-child::after{border-top:none}
 .oc-tree li:first-child::before,.oc-tree li:last-child::after{border-top:none}
-.oc-tree li>.oc-card::before{content:"";position:absolute;top:-34px;left:calc(50% - 1px);height:34px;border-left:2px solid #f5b942}
+/* the card has a 5px coloured edge and left:50% counts from inside it, 2.5px right of the card middle: pull the line back */
+.oc-tree li>.oc-card::before{content:"";position:absolute;top:-34px;left:calc(50% - 3.5px);height:34px;border-left:2px solid #f5b942}
 .oc-tree>li>.oc-card::before{display:none}
 .oc-tree ul::before{content:"";position:absolute;top:0;left:calc(50% - 1px);height:20px;border-left:2px solid #f5b942}
 .oc-chev{z-index:1;margin-top:8px;margin-bottom:-14px;min-width:22px;height:22px;padding:0 4px;border:2px solid #f5b942;border-radius:11px;background:#fff;color:#f5b942;font:600 13px/18px sans-serif;text-align:center;box-sizing:border-box;cursor:pointer}
