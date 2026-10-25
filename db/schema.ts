@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigserial, boolean, customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigserial, boolean, customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, serial, text, timestamp, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("user_role", ["site_admin", "area_admin", "collaborator", "readonly"]);
 export const userStatusEnum = pgEnum("user_status", ["pending", "active", "revoked"]);
@@ -468,3 +468,17 @@ export const closePlanAccessLog = pgTable("close_plan_access_log", {
   taskTitle: text("task_title"),
   detail: text("detail"),
 }, table => [index("close_plan_access_log_at_idx").on(table.at), index("close_plan_access_log_plan_idx").on(table.planId, table.at), index("close_plan_access_log_user_idx").on(table.userId, table.at)]);
+
+// Org charts copied from Salesforce, listed under Org charts in Task AI (app/lib/org-chart-load.ts). Migration 0033.
+export const orgCharts = pgTable("org_charts", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  sfdcId: text("sfdc_id").notNull(),
+  name: text("name").notNull(),
+  accountId: text("account_id").notNull().default(""),
+  accountName: text("account_name").notNull().default(""),
+  data: jsonb("data").notNull(),
+  people: integer("people").notNull().default(0),
+  importedBy: integer("imported_by").references(() => users.id, { onDelete: "set null" }),
+  importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [unique("org_charts_source_unique").on(table.kind, table.sfdcId)]);

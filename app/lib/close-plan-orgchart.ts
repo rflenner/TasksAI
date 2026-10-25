@@ -131,9 +131,9 @@ export function buildOrgChart(roles: SfOrgRoleRow[], contactRoles: SfContactRole
 
 // Per Contact on the chart: the LinkedIn link and the number of open Tasks and upcoming Events on this opportunity
 // (what the Salesforce chart's clipboard counter shows). Both are read after the chart is built.
-export function orgContactExtraQueries(opportunityId: string, contactIds: string[]) {
+export function orgContactExtraQueries(opportunityId: string /* or an account id: the record the tasks hang off */, contactIds: string[]) {
   const list = ids(contactIds);
-  if (!list.length) return null;
+  if (!list.length || !ids([opportunityId]).length) return null;
   const who = `WhoId IN (${inList(list)})`;
   return {
     linkedin: `SELECT Id, iseeit__LinkedIn_Profile__c, iseeit__Linkedin_Profile_Url__c, iseeit__Is_Company_Left__c FROM Contact WHERE Id IN (${inList(list)})`,
@@ -186,3 +186,61 @@ export function mapOrgTasks(tasks: Array<{ Id: string; Subject: string | null; A
     ...events.map(e => ({ id: e.Id, kind: "Event" as const, subject: e.Subject || "(no subject)", when: (e.ActivityDateTime || "").slice(0, 10), status: "Scheduled", owner: e.Owner?.Name || "" })),
   ].sort((a, b) => (a.when || "9999").localeCompare(b.when || "9999"));
 }
+
+// --- Account-level org chart (iseeit__Account_Contact_Role__c) ------------------------------------------------------
+// The same chart, kept per account instead of per opportunity: the person is iseeit__Contact__c, the manager is
+// iseeit__Parent_Contact__c (or the provisional one). Checked against the iSEEit org on 2026-10-25. Rows whose Contact
+// was deleted come back with no Contact and are reported, like on an opportunity.
+export type SfAccountRoleRow = {
+  Id: string;
+  iseeit__Contact__c: string | null;
+  iseeit__Provisional_Contact__c: string | null;
+  iseeit__Parent_Contact__c: string | null;
+  iseeit__Parent_Provisional_Contact__c: string | null;
+  iseeit__Type__c: string | null;
+  iseeit__Title__c: string | null;
+  iseeit__Power_Base__c: boolean | null;
+  iseeit__Child_Number__c: number | null;
+  iseeit__Description__c: string | null;
+};
+export type SfContactRow = { Id: string; Name: string | null; Title: string | null; Email: string | null; Phone?: string | null };
+
+export function accountRoleQuery(accountId: string) {
+  return `SELECT Id, iseeit__Contact__c, iseeit__Provisional_Contact__c, iseeit__Parent_Contact__c, iseeit__Parent_Provisional_Contact__c, iseeit__Type__c, iseeit__Title__c, iseeit__Power_Base__c, iseeit__Child_Number__c, iseeit__Description__c FROM iseeit__Account_Contact_Role__c WHERE iseeit__Account__c = '${accountId}' ORDER BY iseeit__Child_Number__c, CreatedDate LIMIT 2000`;
+}
+
+// Contacts of a list of ids, in chunks small enough for one request.
+export function contactQueries(contactIds: string[], size = 150): string[] {
+  const list = ids(contactIds), out: string[] = [];
+  for (let i = 0; i < list.length; i += size) out.push(`SELECT Id, Name, Title, Email, Phone FROM Contact WHERE Id IN (${inList(list.slice(i, i + size))})`);
+  return out;
+}
+
+export function accountRolesToChartInput(roles: SfAccountRoleRow[], contacts: SfContactRow[]): { roles: SfOrgRoleRow[]; contactRoles: SfContactRoleRow[] } {
+  const byId = new Map(contacts.map(c => [c.Id, c]));
+  const contactRoles: SfContactRoleRow[] = [];
+  const mapped = roles.map(r => {
+    const contact = r.iseeit__Contact__c ? byId.get(r.iseeit__Contact__c) : undefined;
+    // The role's own Id stands in for the opportunity contact role the opportunity chart points at.
+    if (r.iseeit__Contact__c && contact) contactRoles.push({ Id: r.Id, ContactId: r.iseeit__Contact__c, Role: null, Contact: { Name: contact.Name, Title: contact.Title, Email: contact.Email, Phone: contact.Phone } });
+    return {
+      Id: r.Id, iseeit__OpportunityContactRole__c: contact ? r.Id : null, iseeit__Provisional_Contact__c: r.iseeit__Provisional_Contact__c,
+      iseeit__Parent_Contact__c: r.iseeit__Parent_Contact__c, iseeit__Parent_Provisional_Contact__c: r.iseeit__Parent_Provisional_Contact__c,
+      iseeit__Type__c: r.iseeit__Type__c, iseeit__Title__c: r.iseeit__Title__c, iseeit__Power_Base__c: r.iseeit__Power_Base__c,
+      iseeit__Child_Number__c: r.iseeit__Child_Number__c, iseeit__Description__c: r.iseeit__Description__c,
+    } satisfies SfOrgRoleRow;
+  });
+  return { roles: mapped, contactRoles };
+}
+
+// --- Finding an account or an opportunity to import ---------------------------------------------------------------
+// Same rule as app/lib/salesforce-opportunity-search.ts: only letters, digits, spaces and . , & ' - reach the query.
+const searchWords = (query: string) => query.normalize("NFKC").replace(/[^\p{L}\p{N} .,&'-]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 4);
+const lit = (word: string) => word.replace(/'/g, "\\'");
+export function orgSearchSoql(kind: "account" | "opportunity", query: string): string | null {
+  const parts = searchWords(query);
+  if (!parts.length || parts.join(" ").length < 2) return null;
+  if (kind === "account") return `SELECT Id, Name, Industry, Owner.Name FROM Account WHERE ${parts.map(w => `Name LIKE '%${lit(w)}%'`).join(" AND ")} ORDER BY LastModifiedDate DESC LIMIT 10`;
+  return `SELECT Id, Name, StageName, AccountId, Account.Name, Owner.Name FROM Opportunity WHERE ${parts.map(w => `(Name LIKE '%${lit(w)}%' OR Account.Name LIKE '%${lit(w)}%')`).join(" AND ")} ORDER BY LastModifiedDate DESC LIMIT 10`;
+}
+export const isAccountId = (value: string) => /^001[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/.test(value.trim());

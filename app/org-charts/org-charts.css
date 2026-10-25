@@ -1,0 +1,63 @@
+/* Org chart view, same look as the iSEEit chart in Salesforce: cards with a coloured left edge by type, gold elbow connectors. */
+.oc-bar{display:flex;gap:8px;align-items:center;margin:2px 0 10px}
+.oc-bar button{min-width:30px;padding:3px 9px;border:1px solid #c9d3e0;border-radius:6px;background:#fff;font-size:13px;cursor:pointer}
+.oc-bar span{font-size:13px;color:#5b6573;min-width:44px;text-align:center}
+.oc-main{display:flex;gap:16px;align-items:flex-start}
+.oc-wrap{flex:1;min-width:0;overflow:auto;height:68vh;padding:6px 4px 14px;cursor:grab;border:1px solid #e3e8ee;border-radius:10px;background:#fbfcfe}
+.oc-wrap.pan{cursor:grabbing;user-select:none}
+.oc-tree,.oc-tree ul{list-style:none;margin:0;padding:0;display:flex;justify-content:center}
+.oc-tree{justify-content:flex-start;width:max-content}
+.oc-tree ul{padding-top:20px;position:relative}
+.oc-tree li{position:relative;padding:34px 8px 0;display:flex;flex-direction:column;align-items:center}
+.oc-tree>li{padding-top:0}
+.oc-tree li::before,.oc-tree li::after{content:"";position:absolute;top:0;width:50%;height:34px;border-top:2px solid #f5b942}
+.oc-tree li::before{left:0}.oc-tree li::after{right:0}
+.oc-tree>li::before,.oc-tree>li::after{display:none}
+.oc-tree li:only-child::before,.oc-tree li:only-child::after{border-top:none}
+.oc-tree li:first-child::before,.oc-tree li:last-child::after{border-top:none}
+.oc-tree li>.oc-card::before{content:"";position:absolute;top:-34px;left:50%;height:34px;border-left:2px solid #f5b942}
+.oc-tree>li>.oc-card::before{display:none}
+.oc-tree ul::before{content:"";position:absolute;top:0;left:50%;height:20px;border-left:2px solid #f5b942}
+.oc-chev{z-index:1;margin-top:8px;margin-bottom:-14px;min-width:22px;height:22px;padding:0 4px;border:2px solid #f5b942;border-radius:11px;background:#fff;color:#f5b942;font:600 13px/18px sans-serif;text-align:center;box-sizing:border-box;cursor:pointer}
+.oc-chev b{font-size:11px;color:#8a6a00}
+.oc-chev.shut{background:#fff6dc;margin-bottom:0}
+.oc-card{position:relative;display:flex;gap:10px;align-items:flex-start;width:230px;min-height:100px;box-sizing:border-box;background:#fff;border-left:5px solid #c4c4c4;border-radius:4px;padding:12px 8px 8px 10px;box-shadow:0 1px 6px rgba(0,0,0,.18);text-align:left;cursor:pointer}
+.oc-card:hover,.oc-card:focus-visible{box-shadow:0 2px 10px rgba(0,0,0,.3);outline:none}
+.oc-card.sel{outline:2px solid #26406e}
+.oc-av{position:relative;overflow:hidden;flex:none;width:46px;height:46px;border-radius:50%;background:#dfe3e8;color:#5b6573;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+.oc-av.big{width:60px;height:60px;font-size:18px}
+.oc-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.oc-tx{flex:1;min-width:0;display:flex;flex-direction:column;min-height:80px}
+.oc-nm{font-weight:700;font-size:15px;line-height:1.2;color:#1c3a73}
+.oc-ds{font-size:12px;line-height:1.3;color:#5b6573;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.oc-ft{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:6px}
+.oc-rl{font-size:12px;font-style:italic;color:#5b6573}
+.oc-rp{flex:none;width:24px;display:flex;flex-direction:column;align-items:center;border-left:1px solid #eee;padding-left:8px;align-self:stretch;justify-content:space-between;gap:6px}
+.oc-top,.oc-bot{display:flex;flex-direction:column;align-items:center;gap:6px}
+.oc-ic{border:0;background:none;padding:0;position:relative;display:flex;flex-direction:column;align-items:center;line-height:1;cursor:pointer}
+.oc-ic b{font-size:9px;color:#fff;position:absolute;top:8px;font-weight:700}
+.oc-in{display:block;line-height:0}
+.oc-warn{border:0;background:none;padding:0;position:relative;display:block;line-height:0;cursor:default}
+.oc-warn i{display:none;position:absolute;right:-6px;top:26px;z-index:5;width:170px;background:#26406e;color:#fff;font:600 12px/1.35 sans-serif;font-style:normal;padding:8px 10px;border-radius:6px;text-align:left}
+.oc-warn:hover i,.oc-warn:focus i{display:block}
+.oc-tmp{position:absolute;top:-8px;right:8px;background:#fdf0c9;color:#7a5a00;font-size:10px;padding:0 7px;border-radius:8px}
+.oc-panel{position:relative;flex:none;width:320px;height:68vh;overflow:auto;box-sizing:border-box;padding:16px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.oc-panel h3{margin:0;font-size:17px;color:#1c3a73}
+.oc-panel p{margin:2px 0 0;font-size:13px;color:#5b6573}
+.oc-panel h4{margin:16px 0 6px;font-size:13px;color:#1c3a73}
+.oc-panel h4 em{font-style:normal;color:#5b6573}
+.oc-x{position:absolute;right:8px;top:6px;border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:#5b6573}
+.oc-ph{display:flex;gap:12px;align-items:center;margin-bottom:10px;padding-right:18px}
+.oc-left{display:flex;gap:6px;align-items:center;margin:6px 0;font-size:13px;color:#b3261e}
+.oc-r{display:flex;gap:10px;font-size:13px;padding:5px 0;border-top:1px solid #f0f1f3}
+.oc-r span{flex:none;width:92px;color:#5b6573}
+.oc-r div{min-width:0;overflow-wrap:anywhere}
+.oc-links{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.oc-btn{display:block;text-align:center;padding:7px 10px;border:1px solid #26406e;border-radius:6px;color:#26406e;font-size:13px;font-weight:600;text-decoration:none;background:#fff}
+.oc-btn:hover{background:#eef2f8}
+.oc-tl{list-style:none;margin:0;padding:0}
+.oc-tl li{padding:7px 0;border-top:1px solid #f0f1f3;font-size:13px;display:flex;flex-direction:column}
+.oc-tl small{color:#5b6573;font-size:12px;margin-top:2px}
+.oc-hint{font-size:13px;color:#697181;margin:4px 0}
+.oc-err{font-size:13px;color:#b3261e;margin:4px 0}
+@media(max-width:860px){.oc-main{flex-direction:column}.oc-panel{width:100%;height:auto}}
