@@ -495,12 +495,12 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const plan: TeamPlan = planTeam(n, level, key => kids.get(key) || [], layoutForce === "auto" ? undefined : layoutForce);
     const deeper = (list: OrgNode[]) => list.map(c => node(c, level + 1, list === plan.ladder, plain));
     return (
-      <li key={n.key}>
+      <li key={n.key} className={plan.layout === "ladder" ? "oc-hasladder" : undefined}>
         {plain ? <div className="oc-card" data-key={n.key} style={{ borderLeftColor: edge(n) }}>{inner(n, true)}</div> : card(n, inLadder)}
         {!plain && k.length > 0 && (
           <button type="button" className={`oc-chev${shut ? " shut" : ""}`} aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} the team of ${n.name}`} title={shut ? `Show all ${below(n)} below (Shift: only the next level)` : `Hide all ${below(n)} below`}
             onClick={e => { e.stopPropagation(); toggleTeam(n, e.shiftKey); }}>
-            {shut ? <b>+{below(n)}</b> : "⌃"}
+            {shut ? <b>+{below(n)}</b> : <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>}
           </button>
         )}
         {k.length > 0 && !shut && (plan.layout === "ladder"
