@@ -1,8 +1,8 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { closePlanDocuments } from "../../../../../../db/schema";
-import { applyContactExtras, buildOrgChart, orgContactExtraQueries, orgLookupQueries, orgRoleQuery, type SfContactRoleRow, type SfOrgRoleRow, type SfProvisionalRow } from "../../../../../lib/close-plan-orgchart";
-import { newestPhotos, photoQuery, type AttachmentRow } from "../../../../../lib/close-plan-photos";
+import { applyContactExtras, buildOrgChart, orgContactExtraQueries, orgLookupQueries, orgPhotoQuery, orgRoleQuery, type SfContactRoleRow, type SfOrgRoleRow, type SfProvisionalRow } from "../../../../../lib/close-plan-orgchart";
+import { newestPhotos, type AttachmentRow } from "../../../../../lib/close-plan-photos";
 import { canAccessPlan, canDeletePlan } from "../../../../../lib/close-plan-store";
 import { requireSameOrigin } from "../../../../../lib/request";
 import { SalesforceNotConnectedError, salesforceApi } from "../../../../../lib/salesforce";
@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const chart = buildOrgChart(roles, contactRoles, provisional, parents);
     // Photos are a nicety: if the lookup fails the cards show initials.
     try {
-      const soql = photoQuery(chart.nodes.filter(n => !n.provisional).map(n => n.key));
+      const soql = orgPhotoQuery(chart.nodes.filter(n => !n.provisional).map(n => n.key));
       const photos = soql ? newestPhotos(await query<AttachmentRow>(soql)) : new Map();
       for (const node of chart.nodes) node.photo = photos.get(node.key)?.attachmentId || "";
     } catch (error) { console.error("Close Plan org chart photos failed:", error instanceof Error ? error.message : error); }
@@ -45,7 +45,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const extra = orgContactExtraQueries(opportunityId, chart.nodes.filter(n => !n.provisional).map(n => n.key));
       if (extra) {
         const [links, tasks, events] = await Promise.all([
-          query<{ Id: string; iseeit__LinkedIn_Profile__c: string | null; iseeit__Linkedin_Profile_Url__c: string | null }>(extra.linkedin),
+          query<{ Id: string; iseeit__LinkedIn_Profile__c: string | null; iseeit__Linkedin_Profile_Url__c: string | null; iseeit__Is_Company_Left__c: boolean | null }>(extra.linkedin),
           query<{ WhoId: string; n: number }>(extra.tasks), query<{ WhoId: string; n: number }>(extra.events),
         ]);
         applyContactExtras(chart.nodes, links, [...tasks, ...events]);

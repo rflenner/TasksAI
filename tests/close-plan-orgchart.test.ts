@@ -65,7 +65,7 @@ test("queries only embed Salesforce ids", () => {
 });
 
 test("LinkedIn links: only real linkedin.com addresses, with or without https", async () => {
-  const { linkedinUrl, applyContactExtras, orgContactExtraQueries } = await import("../app/lib/close-plan-orgchart");
+  const { linkedinUrl, applyContactExtras, orgContactExtraQueries, orgPhotoQuery } = await import("../app/lib/close-plan-orgchart");
   assert.equal(linkedinUrl("https://www.linkedin.com/in/ana-lopez"), "https://www.linkedin.com/in/ana-lopez");
   assert.equal(linkedinUrl("linkedin.com/in/ana-lopez"), "https://linkedin.com/in/ana-lopez");
   assert.equal(linkedinUrl("javascript:alert(1)"), "");
@@ -74,11 +74,13 @@ test("LinkedIn links: only real linkedin.com addresses, with or without https", 
   assert.equal(linkedinUrl(null, "  https://linkedin.com/in/b  "), "https://linkedin.com/in/b");
   assert.equal(linkedinUrl(""), "");
   const chart = buildOrgChart([role("a0O000000000001AAA", { iseeit__OpportunityContactRole__c: "00K000000000001AAA" }), role("a0O000000000002AAA", { iseeit__Provisional_Contact__c: "a1C000000000001AAA" })], contactRoles, [{ Id: "a1C000000000001AAA", Name: "Dee Fox", iseeit__Title__c: null }]);
-  applyContactExtras(chart.nodes, [{ Id: "003000000000001AAA", iseeit__LinkedIn_Profile__c: "linkedin.com/in/ana", iseeit__Linkedin_Profile_Url__c: null }], [{ WhoId: "003000000000001AAA", n: 2 }, { WhoId: "003000000000001AAA", n: 1 }]);
+  applyContactExtras(chart.nodes, [{ Id: "003000000000001AAA", iseeit__LinkedIn_Profile__c: "linkedin.com/in/ana", iseeit__Linkedin_Profile_Url__c: null, iseeit__Is_Company_Left__c: true }], [{ WhoId: "003000000000001AAA", n: 2 }, { WhoId: "003000000000001AAA", n: 1 }]);
   const ana = chart.nodes.find(n => n.name === "Ana Lopez")!, dee = chart.nodes.find(n => n.name === "Dee Fox")!;
   assert.equal(ana.openTasks, 3); assert.equal(ana.linkedin, "https://linkedin.com/in/ana");
+  assert.equal(ana.left, true); assert.equal(dee.left, false);
   assert.equal(dee.openTasks, 0); assert.equal(dee.linkedin, "");
   const q = orgContactExtraQueries("006000000000001AAA", ["003000000000001AAA", "x' OR 1=1"])!;
   assert.ok(q.tasks.includes("IN ('003000000000001AAA')") && !q.events.includes("OR 1=1"));
   assert.equal(orgContactExtraQueries("006000000000001AAA", []), null);
+  assert.ok(orgPhotoQuery(["003000000000001AAA"])?.includes("LIKE 'Profile_Picture%'"));
 });
