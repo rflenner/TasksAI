@@ -227,6 +227,9 @@
   .oc-stage .oc-wrap{flex:none;width:100%;padding:50px 2px 10px;border-radius:8px}
   .oc-panel{position:fixed;left:0;right:0;bottom:0;width:100%;height:auto;max-height:55dvh;z-index:40;border-radius:14px 14px 0 0;box-shadow:0 -4px 18px rgba(0,0,0,.22)}
 }
+/* The PDF sheet has no fold circle, so the hanging team's line starts right at the manager's card, not 16px up inside it */
+.oc-print-root .oc-tree ul.oc-ladder::before{top:0;height:0}
+
 /* Toolbar: line switch, levels, one menu for the rest */
 .oc-seg{display:inline-flex;align-items:center;gap:0;font-size:13px;color:#5b6573}
 .oc-seg button{border-radius:0;margin-left:-1px}
