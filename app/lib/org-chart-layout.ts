@@ -16,8 +16,10 @@ export type TeamLayout = "row" | "ladder";
 export type TeamPlan = { layout: TeamLayout; row: OrgNode[]; ladder: OrgNode[] };
 
 // `level` is the manager's own level in the chart: top level = 1.
-export function planTeam(node: OrgNode, level: number, kidsOf: (key: string) => OrgNode[]): TeamPlan {
+// `force` is the choice for the whole chart ("all rows" / "all hanging"); a person set to Row or Ladder by hand still wins.
+export function planTeam(node: OrgNode, level: number, kidsOf: (key: string) => OrgNode[], force?: TeamLayout): TeamPlan {
   const team = kidsOf(node.key);
+  if (!node.layout || node.layout === "auto") { if (force === "ladder") return { layout: "ladder", row: [], ladder: team }; if (force === "row") return { layout: "row", row: team, ladder: [] }; }
   if (node.layout === "ladder") return { layout: "ladder", row: [], ladder: team };
   if (node.layout === "row") return { layout: "row", row: team, ladder: [] };
   const leaders = team.filter(k => kidsOf(k.key).length), leaves = team.filter(k => !kidsOf(k.key).length);
