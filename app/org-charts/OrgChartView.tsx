@@ -244,6 +244,45 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+  // Touch: two fingers pinch the chart around their midpoint; one finger scrolls it as usual.
+  useEffect(() => {
+    const el = wrap.current; if (!el) return;
+    let start: { d: number; z: number } | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => { start = e.touches.length === 2 ? { d: dist(e.touches), z: zoomNow.current } : null; };
+    const onMove = (e: TouchEvent) => {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault();
+      const z = zoomNow.current, next = Math.max(0.25, Math.min(2, Math.round(start.z * dist(e.touches) / start.d * 100) / 100));
+      if (next === z) return;
+      const r = el.getBoundingClientRect(), px = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left, py = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
+      const cx = (el.scrollLeft + px) / z, cy = (el.scrollTop + py) / z;
+      zoomNow.current = next; setZoom(next);
+      requestAnimationFrame(() => { el.scrollLeft = cx * next - px; el.scrollTop = cy * next - py; });
+    };
+    const onEnd = () => { start = null; };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    return () => { el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd); };
+  }, []);
+  // The working area is as tall as the room left under the header and toolbar, measured on the real window (so it follows the
+  // phone's address bar, rotation and a toolbar that wraps). The CSS height is the fallback before this has run.
+  const main = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = main.current; if (!el) return;
+    const size = () => {
+      if (!window.innerHeight) return;
+      const top = el.getBoundingClientRect().top + window.scrollY, h = Math.max(360, Math.round(window.innerHeight - top - 36));
+      if (el.style.getPropertyValue("--oc-h") !== `${h}px`) el.style.setProperty("--oc-h", `${h}px`);
+    };
+    size();
+    const ro = new ResizeObserver(size); ro.observe(document.body);
+    window.addEventListener("resize", size);
+    return () => { ro.disconnect(); window.removeEventListener("resize", size); };
+  }, []);
+  // On a phone the chart starts fitted to the screen, so the whole picture is there before zooming in on a person.
+  useEffect(() => { if (window.innerWidth <= 860) requestAnimationFrame(fitChart); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const stepZoom = (d: number) => setZoom(z => Math.max(0.25, Math.min(2, Math.round((z + d) * 20) / 20)));
   function fitChart() {
     const el = wrap.current, tree = el?.querySelector<HTMLElement>(".oc-tree"); if (!el || !tree) return;
@@ -543,7 +582,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           </div>
         );
       })()}
-      <div className="oc-main">
+      <div className="oc-main" ref={main}>
         
         <div className="oc-stage">
         <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => { if (!editing || !dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}><div className="oc-canvas" ref={canvas}>{editing && dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul>{overlay}</div></div>
