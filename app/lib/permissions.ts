@@ -1,5 +1,5 @@
 export type Role = "site_admin" | "area_admin" | "collaborator" | "readonly";
-export type Actor = { id?: number; email: string; name: string; role: Role; status: string; canInvite?: boolean; projects: string[]; meetings: string[]; topics: string[] };
+export type Actor = { id?: number; email: string; name: string; role: Role; status: string; canInvite?: boolean; canCreatePlans?: boolean; canViewOrgCharts?: boolean; projects: string[]; meetings: string[]; topics: string[] };
 export type TaskScope = { owner?: unknown; collaborators?: unknown; recipients?: unknown; project?: unknown; recurringMeeting?: unknown; recurring_meeting?: unknown; topic?: unknown };
 const list = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : [];
 export function relationship(task: TaskScope, actor: Actor) { const collaborators=list(task.collaborators),recipients=list(task.recipients); return actor.role === "readonly" ? recipients.includes(actor.name) : task.owner === actor.name || collaborators.includes(actor.name) || recipients.includes(actor.name); }

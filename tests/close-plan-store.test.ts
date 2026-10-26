@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAccessPlan, canCreatePlan, canDeletePlan, canManagePlanLinks, memberEmails, sellerOwnerEmail, validatePlan } from "../app/lib/close-plan-store";
+import { canAccessPlan, canCreatePlan, canViewOrgCharts, canDeletePlan, canManagePlanLinks, memberEmails, sellerOwnerEmail, validatePlan } from "../app/lib/close-plan-store";
 
 // Fictional data only — this repository is public.
 const plan = {
@@ -63,4 +63,13 @@ test("canManagePlanPeople: the iSEEit plan owner or an administrator, nobody els
   assert.equal(canManagePlanPeople({ email: "x@iseeit.example", role: "site_admin" }, plan), true);
   assert.equal(canManagePlanPeople({ email: "member@iseeit.example", role: "collaborator" }, plan), false);
   assert.equal(canManagePlanPeople({ email: "olivia.grant@meridian-bio.example", role: "collaborator" }, plan), false);
+});
+
+test("a Site Admin can switch Close Plans and Org charts on for a collaborator", () => {
+  assert.equal(canCreatePlan({ email: "a", role: "collaborator", canCreatePlans: true }), true);
+  assert.equal(canCreatePlan({ email: "a", role: "collaborator", canViewOrgCharts: true }), false);
+  assert.equal(canViewOrgCharts({ email: "a", role: "collaborator", canViewOrgCharts: true }), true);
+  assert.equal(canViewOrgCharts({ email: "a", role: "collaborator", canCreatePlans: true }), false);
+  assert.equal(canViewOrgCharts({ email: "a", role: "readonly" }), false);
+  assert.equal(canViewOrgCharts({ email: "a", role: "area_admin" }), true);
 });

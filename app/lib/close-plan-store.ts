@@ -4,7 +4,7 @@
 // app/api/close-plans/store do the reading and writing.
 import type { Role } from "./permissions";
 
-export type StoreActor = { id?: number; email: string; role: Role };
+export type StoreActor = { id?: number; email: string; role: Role; canCreatePlans?: boolean; canViewOrgCharts?: boolean };
 export type PlanPerson = { id?: unknown; side?: unknown; email?: unknown };
 export type PlanData = { id?: unknown; title?: unknown; account?: unknown; people?: unknown; planOwners?: { seller?: unknown } };
 
@@ -34,7 +34,11 @@ export function canAccessPlan(actor: StoreActor, row: { memberEmails: string[]; 
 }
 
 // New plans: admins only, the same people who can search Sales AI in the guide.
-export const canCreatePlan = (actor: StoreActor) => actor.role === "site_admin" || actor.role === "area_admin";
+const isAdmin = (actor: StoreActor) => actor.role === "site_admin" || actor.role === "area_admin";
+// Creating Close Plans: the admins, and anyone a Site Admin switched "Close Plans" on for (Admin > Users).
+export const canCreatePlan = (actor: StoreActor) => isAdmin(actor) || Boolean(actor.canCreatePlans);
+// The Org charts page: the admins, and anyone a Site Admin switched "Org charts" on for.
+export const canViewOrgCharts = (actor: StoreActor) => isAdmin(actor) || Boolean(actor.canViewOrgCharts);
 
 // Personal links for customer contacts: the iSEEit plan owner or a Site Admin.
 export function canManagePlanLinks(actor: StoreActor, data: PlanData): boolean {
