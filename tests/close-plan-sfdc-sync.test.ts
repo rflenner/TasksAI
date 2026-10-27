@@ -248,3 +248,19 @@ test("a task moved into a phase that is being created follows it there in the sa
   assert.equal(o.phaseCreates.length, 1);
   assert.equal(o.updates[0].phaseRef, "fresh");
 });
+
+test("a checkpoint created in Salesforce is credited to its creator, not to the person it is owned by", () => {
+  const p = plan(); p.people.push({ id: "c1", name: "Erik", sfdcContactId: "003000000000001AAA", side: "buyer" } as SyncPlan["people"][number]);
+  const o = syncPlan(p, phases, [row({ iseeit__Phase_Checkpoint_Owner__c: "003000000000001AAA", CreatedById: "005000000000001AAA" })]);
+  assert.equal(o.plan.tasks[0].owner, "c1"); assert.equal(o.plan.tasks[0].createdBy, "p1");
+  const unknown = syncPlan(plan(), phases, [row({ CreatedById: "005000000000009AAA" })]);
+  assert.equal(unknown.plan.tasks[0].createdBy, "p1"); // creator not on the plan: the plan's seller side, never the owner
+});
+
+test("a checkpoint without a deadline becomes a task without a due date, and no date is pushed back", () => {
+  const o = syncPlan(plan(), phases, [row({ iseeit__Deadline__c: null })]);
+  assert.equal(o.plan.tasks[0].due, undefined);
+  assert.equal(o.updates.length, 0);
+  const again = syncPlan(o.plan, phases, [row({ iseeit__Deadline__c: null })]);
+  assert.equal(again.updates.length, 0); assert.equal(again.plan.tasks[0].due, undefined);
+});
