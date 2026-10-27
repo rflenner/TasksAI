@@ -132,17 +132,17 @@ button { cursor: pointer; }
 .stat-prog { display: grid; gap: 0; cursor: pointer; text-align: left; align-content: start; }
 .pg-top { display: grid; grid-template-columns: minmax(120px, auto) minmax(110px, 1fr); gap: 4px 16px; align-items: center; }
 .pg-text { display: grid; gap: 2px; align-content: start; } .stat-prog .pg-title { color: var(--muted); font-size: 13px; } .stat-prog .pg-score { font-size: 34px; color: var(--navy); line-height: 1.1; } .stat-prog small { color: var(--muted); font-size: 12px; }
-.pg-mini { min-width: 0; } .pg-svg { width: 100%; height: auto; display: block; } .pg-svg text { font: 9.5px Arial, Helvetica, sans-serif; fill: #8a919c; }
+.pg-mini { min-width: 0; } .pg-svg { width: 100%; height: auto; display: block; } .pg-svg text { font: 9.5px Arial, Helvetica, sans-serif; fill: #8a919c; } .pg-svg text.pg-ms, .pg-svg text.pg-md { paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; } .pg-svg text.pg-ms { font-weight: 700; } .pg-svg text.pg-md { font-weight: 500; }
 .pg-sep { border-top: 1px solid #e3e8ee; margin: 12px 0 10px; }
 .pg-bottom { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pg-badge { display: inline-flex; align-items: center; height: 34px; box-sizing: border-box; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 0 12px; line-height: 1.2; white-space: nowrap; } .pg-badge.ok { background: #e4f4eb; color: #25784b; } .pg-badge.late { background: #fdecd8; color: #b25c00; }
 .pg-fcbox { display: grid; align-content: center; height: 34px; box-sizing: border-box; border: 1px solid #dfe5ec; border-radius: 10px; padding: 0 12px; background: #f8fafc; line-height: 1.15; } .stat-prog .pg-fcbox small { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #7a8492; } .stat-prog .pg-fcbox b { font-size: 13px; margin: 0; display: block; } .stat-prog .pg-fcbox .late { color: #b25c00; } .stat-prog .pg-fcbox .ok { color: #25784b; }
 .pg-toggle { margin: 0 0 0 auto; border: 0; background: none; color: var(--navy); font-weight: 700; font-size: 12.5px; padding: 2px 0; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .pg-card { grid-column: 1 / -1; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; }
-.pg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: #6f7885; justify-content: flex-end; margin-bottom: 4px; } .pg-legend span { display: inline-flex; align-items: center; gap: 6px; } .pg-legend i { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+.pg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: #6f7885; justify-content: flex-end; margin-bottom: 4px; } .pg-legend span { display: inline-flex; align-items: center; gap: 6px; } .pg-legend b { font-size: 11px; } .pg-legend i { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
 .pg-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; } .pg-card .pg-legend { margin: 0 0 2px; }
 .pg-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } .pg-facts div { background: #f5f8fc; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #4a5160; line-height: 1.4; } .pg-facts div > b { display: block; color: #173f76; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; } .pg-facts small { color: #7a8492; font-size: 11px; } .pg-facts .pg-wide { grid-column: 1 / -1; }
-.pg-late { color: #b25c00; font-weight: 700; } .pg-ok { color: #25784b; font-weight: 700; } .pg-note { margin: 6px 0 0; font-size: 11px; color: #8a919c; }
+.pg-late { color: #b25c00; font-weight: 700; } .pg-ok { color: #25784b; font-weight: 700; } .pg-chartbox { position: relative; } .pg-info-btn { position: absolute; top: -2px; right: 0; z-index: 2; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #9aa4b2; background: #fff; color: #6f7885; font: italic 700 12px Georgia, serif; line-height: 1; padding: 0; cursor: pointer; } .pg-info-btn:hover, .pg-info-btn[aria-expanded="true"] { border-color: var(--navy); color: var(--navy); } .pg-info { position: absolute; top: 24px; right: 0; z-index: 3; width: min(100%, 380px); background: #fff; border: 1px solid #d9e0ea; border-radius: 10px; padding: 10px 12px; box-shadow: 0 6px 20px rgba(23,63,118,.14); } .pg-info .pg-legend { justify-content: flex-start; margin-bottom: 6px; } .pg-info p { margin: 6px 0 0; font-size: 11.5px; color: #6f7885; line-height: 1.4; } .pg-note { margin: 6px 0 0; font-size: 11px; color: #8a919c; }
 @media (max-width: 900px) { .pg-grid { grid-template-columns: 1fr; } }
 @media (max-width: 1180px) { .stats.has-prog { grid-template-columns: repeat(3, 1fr); } .stat-prog { grid-column: 1 / -1; } }
 @media (max-width: 560px) { .stats.has-prog { grid-template-columns: 1fr 1fr; } }
@@ -2067,6 +2067,14 @@ function emptyView() {
 // due dates the plan started with (the first "from" of a task's date changes, or its due date if it never moved); the current
 // plan is today's due dates; actual is what is closed so far. The forecast continues at the pace of the last four weeks.
 const MS_WEIGHT = 3;
+// Milestone colour: done green; unresolved and past its date red; due within a week yellow; otherwise (still ahead) purple.
+const MS_COLOR = { done: "#25784b", late: "#c8372d", soon: "#e0a100", ahead: "#7a4fd0" };
+function milestoneState(t) {
+  if (t.status === "Closed") return "done";
+  if (isOver(t)) return "late";
+  if (t.due && daysBetween(isoOf(TODAY), t.due) <= 7) return "soon";
+  return "ahead";
+}
 function progressData() {
   const today = isoOf(TODAY), tasks = state.tasks;
   const w = t => t.milestone ? MS_WEIGHT : 1;
@@ -2093,21 +2101,50 @@ function progressData() {
   const fSign = forecastFor("sign"), fLive = forecastFor("live");
   const moved = tasks.reduce((n, t) => n + (t.dateChanges ? t.dateChanges.length : 0), 0);
   const ms = tasks.filter(t => t.key === "sign" || t.key === "live").map(t => ({ name: t.key === "sign" ? "Target signature" : "Target go-live", days: base(t) && t.due ? daysBetween(base(t), t.due) : 0, due: t.due, live: t.key === "live" }));
-  return { fSign, fLive, today, start, end: planEnd, sBase, sNow, sAct, actual, planBase: at(sBase, today), planNow: at(sNow, today), pace, finish, moved, ms };
+  const marks = tasks.filter(t => t.milestone && t.due).map(t => ({ name: t.key === "sign" ? "Signature" : t.key === "live" ? "Go-live" : t.title, due: t.due, key: t.key === "sign" || t.key === "live", state: milestoneState(t) })).sort((a, b) => a.due.localeCompare(b.due));
+  return { marks, fSign, fLive, today, start, end: planEnd, sBase, sNow, sAct, actual, planBase: at(sBase, today), planNow: at(sNow, today), pace, finish, moved, ms };
 }
 function progressChart(g, H = 120, mini = false) {
-  const W = 520, L = mini ? 6 : 30, R = mini ? 6 : 8, T = mini ? 6 : 10, B = mini ? 6 : 18;
-  const endDate = g.finish && g.finish > g.end ? (daysBetween(g.end, g.finish) > 45 ? addDays(g.end, 45) : g.finish) : g.end, span = Math.max(daysBetween(g.start, endDate), 1);
+  const W = 520, L = mini ? 8 : 30, R = mini ? 8 : 12, T = mini ? 9 : 14, B = mini ? 8 : 18;
+  // The time axis ends at the last milestone (or the plan's last due date when there are none; today if that is later), so nothing is drawn after it.
+  const lastMark = g.marks.length ? g.marks[g.marks.length - 1].due : g.end, endBase = lastMark > g.start ? lastMark : g.end;
+  const endDate = g.today > endBase ? g.today : endBase, span = Math.max(daysBetween(g.start, endDate), 1);
   const x = dt => L + Math.max(0, Math.min(1, daysBetween(g.start, dt) / span)) * (W - L - R), y = p => T + (1 - Math.min(p, 100) / 100) * (H - T - B);
+  const upTo = ser => { const kept = ser.filter(([dt]) => dt <= endDate), v = kept.length ? kept[kept.length - 1][1] : 0; return [...kept, [endDate, v]]; };
   const line = (ser, last) => { const pts = [[g.start, 0], ...ser]; if (last) pts.push(last); return pts.map(([dt, p]) => `${x(dt).toFixed(1)},${y(p).toFixed(1)}`).join(" "); };
   const grid = [0, 50, 100].map(p => `<line x1="${L}" x2="${W - R}" y1="${y(p)}" y2="${y(p)}" stroke="#e8edf3"/>${mini ? "" : `<text x="${L - 5}" y="${y(p) + 3.5}" text-anchor="end">${p}%</text>`}`).join("");
   let ticks = ""; if (!mini) for (let m = new Date(g.start + "T00:00:00"), i = 0; m <= d(endDate) && i < 24; m = new Date(m.getFullYear(), m.getMonth() + 1, 1), i += 1) { const iso = isoOf(m); if (iso >= g.start && i % 2 === 0) ticks += `<text x="${x(iso)}" y="${H - 4}" text-anchor="middle">${m.toLocaleString("en", { month: "short" })}${m.getMonth() === 0 ? " " + m.getFullYear() : ""}</text>`; }
   const tx = x(g.today);
-  return `<svg class="pg-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weighted progress over time against the original and the current plan">${grid}${ticks}
+  // Milestones are diamonds on the current-plan curve, coloured by state; target signature and go-live also get a dotted line over the full
+  // height. The detail chart writes name and date next to each diamond, in the free space the rising curve leaves: above-left of it, or
+  // below-right (below-left near the right edge). Left-half milestones prefer above, right-half ones below; when a label would run into
+  // another, it takes the other side, so of two close milestones the earlier is above and the later below.
+  const at = (ser, date) => { let v = 0; for (const [dt, p] of ser) { if (dt <= date) v = p; else break; } return v; };
+  const R_D = mini ? 5.5 : 7, placed = [];
+  g.marks.forEach(m => {
+    m.x = x(m.due); m.y = y(at(g.sNow, m.due));
+    if (mini) return;
+    const name = m.name.length > 22 ? m.name.slice(0, 21) + "…" : m.name, date = fmt(m.due), w = Math.max(name.length * 5.6, date.length * 5.2) + 4;
+    const box = side => {
+      const endAnchor = side === "above" || m.x > W * 0.7, x0 = endAnchor ? m.x - R_D - 3 : m.x + R_D + 3, a = endAnchor ? x0 - w : x0;
+      const top = side === "above" ? m.y - R_D - 26 : m.y + R_D + 4;
+      return { side, endAnchor, x0, a, b: a + w, top, bottom: top + 25, ok: a >= 0 && a + w <= W && top >= 0 && top + 25 <= H - B };
+    };
+    const free = b => b.ok && !placed.some(o => !(b.b < o.a || b.a > o.b || b.bottom < o.top || b.top > o.bottom));
+    const want = m.x > W * 0.5 ? ["below", "above"] : ["above", "below"], boxes = want.map(box);
+    const pick = boxes.find(free) || boxes.find(b => b.ok) || boxes[0];
+    placed.push(pick); m.label = { ...pick, name, date };
+  });
+  const tint = m => MS_COLOR[m.state];
+  const guides = g.marks.filter(m => m.key).map(m => `<line x1="${m.x}" x2="${m.x}" y1="${T}" y2="${H - B}" stroke="${tint(m)}" stroke-width="1.5" stroke-dasharray="1.5 3" stroke-linecap="round"/>`).join("");
+  const names = mini ? "" : g.marks.map(m => { const l = m.label; return `<text class="pg-ms" x="${l.x0}" y="${l.top + 10}" text-anchor="${l.endAnchor ? "end" : "start"}" style="fill:${tint(m)}">${esc(l.name)}</text><text class="pg-md" x="${l.x0}" y="${l.top + 21}" text-anchor="${l.endAnchor ? "end" : "start"}" style="fill:${tint(m)}">${esc(l.date)}</text>`; }).join("");
+  const diamonds = g.marks.map(m => `<path d="M${m.x} ${m.y - R_D}L${m.x + R_D} ${m.y}L${m.x} ${m.y + R_D}L${m.x - R_D} ${m.y}Z" fill="${tint(m)}" stroke="#fff" stroke-width="1.4"/>`).join("");
+  const marks = guides;
+  return `<svg class="pg-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weighted progress over time against the original and the current plan">${grid}${ticks}${marks}
       <line x1="${tx}" x2="${tx}" y1="${T}" y2="${H - B}" stroke="#ffa614" stroke-width="1.3"/>
-      <polyline points="${line(g.sBase)}" fill="none" stroke="#b6bfcc" stroke-width="1.8" stroke-dasharray="4 3"/>
-      <polyline points="${line(g.sNow)}" fill="none" stroke="#173f76" stroke-width="1.8"/>
-      <polyline points="${line(g.sAct, [g.today, g.actual])}" fill="none" stroke="#25784b" stroke-width="2.6" stroke-linejoin="round"/><circle cx="${tx}" cy="${y(g.actual)}" r="3.8" fill="#25784b" stroke="#fff" stroke-width="1.6"/></svg>`;
+      <polyline points="${line(upTo(g.sBase))}" fill="none" stroke="#b6bfcc" stroke-width="1.8" stroke-dasharray="4 3"/>
+      <polyline points="${line(upTo(g.sNow))}" fill="none" stroke="#173f76" stroke-width="1.8"/>
+      <polyline points="${line(g.sAct, [g.today, g.actual])}" fill="none" stroke="#25784b" stroke-width="2.6" stroke-linejoin="round"/><circle cx="${tx}" cy="${y(g.actual)}" r="3.8" fill="#25784b" stroke="#fff" stroke-width="1.6"/>${diamonds}${names}</svg>`;
 }
 const lateText = days => days === null ? "" : days > 0 ? `${days >= 14 ? Math.round(days / 7) + " weeks" : days + " day" + (days === 1 ? "" : "s")} late` : days < 0 ? `${-days} day${days === -1 ? "" : "s"} early` : "on time";
 function progressPanel() {
@@ -2115,9 +2152,9 @@ function progressPanel() {
   const liveDue = (g.ms.find(m => m.live) || {}).due;
   const fc = (label, f) => f ? `<div><b>${label}</b>${f.finish ? `${fmtY(f.finish)} <span class="${f.late > 0 ? "pg-late" : "pg-ok"}">· ${lateText(f.late)}</span><br><small>Target ${fmtY(f.target)}</small>` : `No forecast yet<br><small>Target ${fmtY(f.target)}</small>`}</div>` : "";
   const allText = g.finish === null ? "No tasks closed in the last 4 weeks, so no forecast yet." : g.actual >= 100 ? "Everything is closed." : `Every task is closed by <strong>${fmtY(g.finish)}</strong>${liveDue ? (g.finish > liveDue ? `, ${Math.round(daysBetween(liveDue, g.finish) / 7)} weeks after go-live.` : ", before go-live.") : "."}`;
-  return `<section class="pg-card" aria-label="Progress against plan"><div class="pg-grid"><div class="pg-chartbox"><div class="pg-legend"><span><i style="border-color:#b6bfcc;border-top-style:dashed"></i>Original plan</span><span><i style="border-color:#173f76"></i>Current plan</span><span><i style="border-color:#25784b"></i>Done</span></div>${progressChart(g, 170)}</div>
+  return `<section class="pg-card" aria-label="Progress against plan"><div class="pg-grid"><div class="pg-chartbox"><button type="button" class="pg-info-btn" data-prog-info aria-expanded="${Boolean(ui.progInfo)}" aria-label="How to read this chart" title="How to read this chart">i</button>${ui.progInfo ? `<div class="pg-info" role="note"><div class="pg-legend"><span><i style="border-color:#b6bfcc;border-top-style:dashed"></i>Original plan</span><span><i style="border-color:#173f76"></i>Current plan</span><span><i style="border-color:#25784b"></i>Done</span></div><div class="pg-legend"><span><b style="color:#25784b">◆</b>Milestone done</span><span><b style="color:#7a4fd0">◆</b>still ahead</span><span><b style="color:#e0a100">◆</b>due within a week</span><span><b style="color:#c8372d">◆</b>missed</span></div><p>Dotted lines mark the target signature and go-live dates. Every task counts 1 and every milestone counts ${MS_WEIGHT}. The original plan is the due dates when the plan was created or imported. Only the iSEEit team sees this.</p></div>` : ""}${progressChart(g, 190)}</div>
     <div class="pg-facts"><div><b>Today</b>${Math.round(g.actual)}% done<br><small>original ${Math.round(g.planBase)}% · current ${Math.round(g.planNow)}%</small></div>${fc("Forecast signature", g.fSign)}${fc("Forecast go-live", g.fLive)}<div><b>Dates moved</b>${g.moved ? `${g.moved} date change${g.moved === 1 ? "" : "s"}${moves ? `<br><small>${moves}</small>` : ""}` : "None since the plan started"}</div><div class="pg-wide"><b>All tasks</b>${allText}</div></div></div>
-    <p class="pg-note">Every task counts 1 and every milestone counts ${MS_WEIGHT}. The original plan is the due dates when the plan was created or imported. Only the iSEEit team sees this.</p></section>`;
+</section>`;
 }
 function progressTile() {
   const g = progressData(), f = g.fSign, done = state.tasks.filter(t => t.status === "Closed").length;
@@ -3680,6 +3717,7 @@ function wirePage() {
   // Renaming the plan: the name in the plan header (plan owners and admins).
   const pt = document.getElementById("plan-title");
   if (pt) { pt.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pt.blur(); } }; pt.onchange = () => { const v = pt.value.replace(/\s+/g, " ").trim(); if (v && v !== state.title) { log(`renamed the close plan from “${state.title}” to “${v}”`, null); state.title = v; save(); flushPlanSave(); render(); toast("Close plan renamed"); } else pt.value = state.title; }; }
+  app.querySelectorAll("[data-prog-info]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.progInfo = !ui.progInfo; render(); });
   app.querySelectorAll("[data-prog-toggle]").forEach(b => b.onclick = e => { e.stopPropagation(); ui.progOpen = !ui.progOpen; render(); });
   app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { ui.filter = ui.filter === b.dataset.f && b.classList.contains("stat") ? "all" : b.dataset.f; render(); });
   app.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { setPhaseOpen([b.dataset.jump], true); render(); document.getElementById("ph-" + b.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
