@@ -13,7 +13,7 @@ export type SfPhaseRow = { Id: string; iseeit__Title__c?: string | null; iseeit_
 export type SfCheckpointRow = {
   Id: string; iseeit__Title__c?: string | null; iseeit__Current_Phase__c?: string | null; iseeit__Phase_Checkpoint_Status__c?: string | null;
   iseeit__Status__c?: boolean | null; iseeit__Deadline__c?: string | null; iseeit__Interaction_Type__c?: string | null;
-  iseeit__Phase_Checkpoint_Owner__c?: string | null; iseeit__Checklist_Description__c?: string | null; iseeit__Checkpoint_N_A__c?: boolean | null; iseeit__Close_Plan_Order__c?: string | number | null;
+  iseeit__Phase_Checkpoint_Owner__c?: string | null; iseeit__Checklist_Description__c?: string | null; iseeit__Checkpoint_N_A__c?: boolean | null; iseeit__Close_Plan_Order__c?: string | number | null; CreatedById?: string | null;
 };
 
 type Person = { id: string; name?: string; email?: string; contactIds?: string[]; sfdcUserId?: string; sfdcContactId?: string; title?: string; side?: string; role?: string; access?: object; invite?: object };
@@ -48,7 +48,7 @@ export type SyncOutcome = {
 export const checkpointQuery = (opportunityId: string) => {
   if (!isSalesforceId(opportunityId)) throw new Error("Invalid Salesforce opportunity id");
   return "SELECT Id, iseeit__Title__c, iseeit__Current_Phase__c, iseeit__Phase_Checkpoint_Status__c, iseeit__Status__c, iseeit__Deadline__c, " +
-    "iseeit__Interaction_Type__c, iseeit__Phase_Checkpoint_Owner__c, iseeit__Checklist_Description__c, iseeit__Checkpoint_N_A__c, iseeit__Close_Plan_Order__c " +
+    "iseeit__Interaction_Type__c, iseeit__Phase_Checkpoint_Owner__c, iseeit__Checklist_Description__c, iseeit__Checkpoint_N_A__c, iseeit__Close_Plan_Order__c, CreatedById " +
     `FROM iseeit__TO_DO__c WHERE iseeit__Opportunity__c = '${opportunityId}' AND iseeit__Is_From_Close_Plan__c = true AND iseeit__Current_Phase__c != null ` +
     "ORDER BY iseeit__Close_Plan_Order__c NULLS LAST";
 };
@@ -323,8 +323,10 @@ export function syncPlan(input: SyncPlan, phaseRows: SfPhaseRow[], rows: SfCheck
     const phase = phaseBySfdc.get(row.iseeit__Current_Phase__c || ""); if (!phase) continue;
     const sf = seenOf(row), found = ownerList(sf.owners).map(x => personBySfdc.get(x)).filter((p): p is Person => Boolean(p));
     const owner = found[0]?.id || plan.planOwners?.seller || plan.people[0]?.id || "";
+    // Whoever created the checkpoint in Salesforce, not its owner: otherwise a task Drew gives to a customer reads "added by" the customer.
+    const creator = personBySfdc.get(row.CreatedById || "")?.id || plan.planOwners?.seller || plan.people.find(p => p.side === "seller")?.id || owner;
     plan.seq = (plan.seq || 1000) + 1;
-    const added: Task = { id: "t" + plan.seq, phase: phase.id, parent: null, title: sf.title || "Untitled", desc: sf.desc, owner, coworkers: found.slice(1).map(p => p.id), recipients: [], due: sf.due || phase.end || today, status: sf.status, shared: sf.shared, milestone: false, createdBy: owner, updates: [], sfdcId: row.Id, sfdcSeen: sf };
+    const added: Task = { id: "t" + plan.seq, phase: phase.id, parent: null, title: sf.title || "Untitled", desc: sf.desc, owner, coworkers: found.slice(1).map(p => p.id), recipients: [], due: sf.due || undefined, status: sf.status, shared: sf.shared, milestone: false, createdBy: creator, updates: [], sfdcId: row.Id, sfdcSeen: sf };
     added.sfdcSeen = { ...sf, planOwners: ownersOf(added) };
     let at = -1; plan.tasks.forEach((t, i) => { if (t.phase === phase.id) at = i; });
     plan.tasks.splice(at + 1, 0, added);
