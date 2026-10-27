@@ -19,10 +19,10 @@ export async function clearSession() { const jar=await cookies(),id=verifySigned
 export async function currentActor(): Promise<Actor | null> {
   const id = verifySignedValue((await cookies()).get(SESSION_COOKIE)?.value); if (!id) return null;
   const idHash = sha256(id);
-  const [row] = await getDb().select({ id: users.id, email: users.email, name: users.name, role: users.role, status: users.status, canInvite: users.canInvite, projects: users.projects, meetings: users.meetings, topics: users.topics, lastSeenAt: sessions.lastSeenAt }).from(sessions).innerJoin(users, eq(users.id, sessions.userId)).where(and(eq(sessions.idHash, idHash), gt(sessions.expiresAt, new Date()), eq(users.status, "active"))).limit(1);
+  const [row] = await getDb().select({ id: users.id, email: users.email, name: users.name, role: users.role, status: users.status, canInvite: users.canInvite, canCreatePlans: users.canCreatePlans, canViewOrgCharts: users.canViewOrgCharts, projects: users.projects, meetings: users.meetings, topics: users.topics, lastSeenAt: sessions.lastSeenAt }).from(sessions).innerJoin(users, eq(users.id, sessions.userId)).where(and(eq(sessions.idHash, idHash), gt(sessions.expiresAt, new Date()), eq(users.status, "active"))).limit(1);
   if (!row) return null;
   // Throttled to once a minute per session so "last active" stays fresh
   // without a write on every single request in a page load.
   if (Date.now() - row.lastSeenAt.getTime() > 60000) await getDb().update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.idHash, idHash));
-  return { id: row.id, email: row.email, name: row.name, role: row.role, status: row.status, canInvite: row.canInvite, projects: row.projects, meetings: row.meetings, topics: row.topics };
+  return { id: row.id, email: row.email, name: row.name, role: row.role, status: row.status, canInvite: row.canInvite, canCreatePlans: row.canCreatePlans, canViewOrgCharts: row.canViewOrgCharts, projects: row.projects, meetings: row.meetings, topics: row.topics };
 }

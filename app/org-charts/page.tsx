@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb } from "../../db";
 import { orgCharts, users } from "../../db/schema";
-import { canCreatePlan } from "../lib/close-plan-store";
+import { canViewOrgCharts } from "../lib/close-plan-store";
 import { currentActor } from "../lib/session";
 import OrgChartsClient from "./OrgChartsClient";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function OrgChartsPage() {
   const actor = await currentActor();
   if (!actor) redirect("/login?returnTo=/org-charts");
-  if (!canCreatePlan(actor)) redirect("/");
+  if (!canViewOrgCharts(actor)) redirect("/");
   const rows = await getDb().select({ id: orgCharts.id, kind: orgCharts.kind, sfdcId: orgCharts.sfdcId, name: orgCharts.name, accountName: orgCharts.accountName, people: orgCharts.people, importedAt: orgCharts.importedAt, importedBy: users.name, editedAt: orgCharts.editedAt, logo: orgCharts.logo })
     .from(orgCharts).leftJoin(users, eq(users.id, orgCharts.importedBy)).orderBy(desc(orgCharts.importedAt));
   const charts = rows.map(r => ({ ...r, importedAt: r.importedAt.toISOString(), importedBy: r.importedBy || "", editedAt: r.editedAt ? r.editedAt.toISOString() : null }));
