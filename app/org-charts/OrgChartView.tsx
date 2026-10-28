@@ -93,51 +93,123 @@ const Icon = ({ n }: { n: string }) => <svg viewBox="0 0 24 24" width="24" heigh
 // eslint-disable-next-line @next/next/no-img-element
 const PrintLogo = ({ src }: { src: string }) => <img src={src} alt="" referrerPolicy="no-referrer" loading="eager" className="oc-print-logo" onError={e => e.currentTarget.remove()} />;
 type FoundPerson = { url: string; name: string; headline: string; photo: string; title: string; company: string; inChart: boolean };
-// "Add a person": type the name, or search LinkedIn (by first and last name, position or profile address) and pick someone; the
-// pick fills in name, title and profile link. Typing a name and adding it stays possible without any search.
-function AddPopover({ chartId, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null, linkedin?: string, email?: string) => void; onClose: () => void }) {
-  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent), [url, setUrl] = useState(""), [email, setEmail] = useState("");
-  const [salesAi, setSalesAi] = useState<Array<{ name: string; title: string; email: string; linkedin: string; inChart: boolean }>>([]);
-  const [found, setFound] = useState<FoundPerson[] | null>(null), [more, setMore] = useState(""), [searching, setSearching] = useState(false), [err, setErr] = useState("");
+type SalesAiPerson = { name: string; title: string; email: string; linkedin: string; inChart: boolean };
+type AddMode = "contact" | "placeholder" | "linkedin";
+const TILES: Array<{ mode: AddMode; label: string; hint: string }> = [
+  { mode: "contact", label: "Contact", hint: "People Sales AI knows at this account" },
+  { mode: "placeholder", label: "Placeholder Contact", hint: "Just a name and a title" },
+  { mode: "linkedin", label: "Search Contact from LinkedIn", hint: "By name, position or profile address" },
+];
+// "Add Contact to Org Chart", like Salesforce's: choose Contact (from Sales AI), Placeholder Contact (a name and title) or Search Contact
+// from LinkedIn. A search shows its results in the same window, with what was searched for; picking one fills in the form, which is
+// then added to the chart. The person is added to this copy of the chart only; nothing is created in Salesforce.
+function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; accountName: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null, linkedin?: string, email?: string) => void; onClose: () => void }) {
+  const [mode, setMode] = useState<AddMode | null>(null), [view, setView] = useState<"form" | "results">("form");
+  const [first, setFirst] = useState(""), [last, setLast] = useState(""), [account, setAccount] = useState(accountName), [pick, setPick] = useState("");
+  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent), [url, setUrl] = useState(""), [email, setEmail] = useState(""), [from, setFrom] = useState("");
+  const [salesAi, setSalesAi] = useState<SalesAiPerson[]>([]), [found, setFound] = useState<FoundPerson[]>([]), [more, setMore] = useState("");
+  const [searching, setSearching] = useState(false), [err, setErr] = useState(""), [searched, setSearched] = useState("");
   async function search(next = "") {
-    setSearching(true); setErr("");
-    const r = await fetch(`/api/org-charts/${encodeURIComponent(chartId)}/linkedin`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "search", name, position: title, url, nextToken: next || undefined }) }).catch(() => null);
+    setSearching(true); setErr(""); if (!next) { setView("results"); setFound([]); setSalesAi([]); setSearched(""); setPick(""); }
+    const r = await fetch(`/api/org-charts/${encodeURIComponent(chartId)}/linkedin`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(mode === "linkedin" ? { action: "search", first, last, position: title, account, url, nextToken: next || undefined } : { action: "search", only: "salesai", first: name, position: title }) }).catch(() => null);
     const res = r ? await r.json().catch(() => ({})) : {};
     setSearching(false);
-    if (!r?.ok) { setErr(res.error || "LinkedIn could not be reached."); return; }
-    setFound(list => next && list ? [...list, ...res.people] : res.people); setMore(res.nextToken || ""); if (!next) setSalesAi(res.salesAi || []);
-    if (!res.people.length && !(res.salesAi || []).length && !next) setErr("Nobody found. Try fewer words, or paste the LinkedIn address.");
+    if (!r?.ok) { setErr(res.error || "The search could not be reached."); return; }
+    setFound(list => next ? [...list, ...res.people] : res.people); setMore(res.nextToken || "");
+    if (!next) {
+      setSalesAi(res.salesAi || []);
+      const who = mode === "linkedin" ? `${first} ${last}`.trim() : name.trim();
+      const what = [mode === "linkedin" && url.trim() && `LinkedIn address ${url.trim()}`, who && `name “${who}”`, title.trim() && `position “${title.trim()}”`].filter(Boolean).join(", ");
+      setSearched(mode === "linkedin" && url.trim() ? what : `${what}, at ${res.searched?.company ? `“${res.searched.company}”` : "(no account name)"}${mode !== "contact" && res.searched?.domain ? ` (${res.searched.domain})` : ""}`);
+    }
   }
-  const pickSalesAi = (p: { name: string; title: string; email: string; linkedin: string }) => { setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin); setFound(null); setSalesAi([]); setMore(""); setErr(""); };
-  const pick = (p: FoundPerson) => { setName(p.name); setTitle(p.title || p.headline); setUrl(p.url); setFound(null); setSalesAi([]); setMore(""); setErr(""); };
+  const use = (p: { name: string; title: string; email: string; linkedin: string }, source: string) => { setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin); setFrom(source); setView("form"); };
+  const noResults = !searching && !err && !salesAi.length && !found.length;
+  const searchable = mode === "linkedin" ? Boolean(url.trim() || ((first.trim() || last.trim() || title.trim()) && account.trim())) : mode === "contact" && Boolean(name.trim() || title.trim());
+  const field = (value: string, set: (v: string) => void, placeholder: string, max: number, focus = false) => <input value={value} onChange={e => set(e.target.value)} placeholder={placeholder} aria-label={placeholder} maxLength={max} ref={focus ? el => el?.focus() : undefined} />;
   return (
-    <form className="oc-pop wide" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null, url.trim() || undefined, email || undefined); }}>
-      <b>Add a person</b>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="First and last name" aria-label="Name" maxLength={80} ref={el => el?.focus()} />
-      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Position / job title (optional)" aria-label="Job title" maxLength={120} />
-      <input value={url} onChange={e => setUrl(e.target.value)} placeholder="LinkedIn address (optional)" aria-label="LinkedIn address" maxLength={300} />
-      <div className="oc-row"><button type="button" disabled={busy || searching || (!name.trim() && !title.trim() && !url.trim())} onClick={() => void search()}>{searching ? "Searching…" : "Search LinkedIn"}</button></div>
-      {err && <p className="oc-hint" role="status">{err}</p>}
-      {salesAi.length > 0 && <><b>Already in Sales AI</b><ul className="oc-li-list">
-        {salesAi.map(p => (
-          <li key={p.email || p.name} className="oc-li-person">
-            <span><b>{p.name}</b><br /><small>{p.title}{p.email ? ` · ${p.email}` : ""}</small></span>
-            <button type="button" disabled={p.inChart} onClick={() => pickSalesAi(p)}>{p.inChart ? "In chart" : "Use"}</button>
-          </li>
-        ))}
-      </ul></>}
-      {found && found.length > 0 && <><b>On LinkedIn</b><ul className="oc-li-list">
-        {found.map(p => (
-          <li key={p.url} className="oc-li-person">
-            <span><b>{p.name}</b><br /><small>{p.title || p.headline}{p.company ? ` · ${p.company}` : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span>
-            <button type="button" disabled={p.inChart} onClick={() => pick(p)}>{p.inChart ? "In chart" : "Use"}</button>
-          </li>
-        ))}
-        {more && <li><button type="button" disabled={searching} onClick={() => void search(more)}>Load more</button></li>}
-      </ul></>}
-      <label>Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
-      <div className="oc-row"><button type="submit" className="on" disabled={busy || !name.trim()}>Add</button><button type="button" onClick={onClose}>Cancel</button></div>
-    </form>
+    <div className="oc-modal" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }} onKeyDown={e => { if (e.key === "Escape") onClose(); }}>
+      <div className={`oc-results${mode === "linkedin" ? " wide2" : ""}`} role="dialog" aria-modal="true" aria-label="Add Contact to Org Chart">
+        <h4>{mode === "linkedin" ? "Select Contact From LinkedIn" : "Add Contact to Org Chart"}</h4>
+        {!mode && <>
+          <div className="oc-tiles">{TILES.map(t => <button key={t.mode} type="button" className="oc-tile" onClick={() => setMode(t.mode)}><svg viewBox="0 0 24 24" width="34" height="34" fill="#c9ced6" aria-hidden="true"><circle cx="15" cy="8" r="4" /><path d="M15 14c-3.3 0-7 1.7-7 4v2h14v-2c0-2.3-3.700-4-7-4z" /><path d="M4 7h2V4h2V2H6V-1H4V2H1v2h3z" transform="translate(1 4)" /></svg><b>{t.label}</b><small>{t.hint}</small></button>)}</div>
+          <div className="oc-row"><button type="button" onClick={onClose}>Cancel</button></div>
+        </>}
+        {mode === "linkedin" && <div className="oc-li2">
+          <form className="oc-li2-left" onSubmit={e => { e.preventDefault(); if (searchable) void search(); }}>
+            <label>First Name<input value={first} onChange={e => setFirst(e.target.value)} maxLength={60} ref={el => el?.focus()} /></label>
+            <label>Last Name<input value={last} onChange={e => setLast(e.target.value)} maxLength={60} /></label>
+            <label>Title<input value={title} onChange={e => setTitle(e.target.value)} maxLength={80} /></label>
+            <label><span><i className="req">*</i> Account Name</span><input value={account} onChange={e => setAccount(e.target.value)} maxLength={120} /></label>
+            <p className="oc-or">- OR -</p>
+            <label>LinkedIn Profile Url<input value={url} onChange={e => setUrl(e.target.value)} maxLength={300} /></label>
+            <div className="oc-row"><button type="submit" disabled={busy || searching || !searchable}>{searching ? "Searching…" : "Search"}</button></div>
+          </form>
+          <div className="oc-li2-right">
+            {view === "form" && <p className="oc-empty">Search by name, title and account, or by LinkedIn profile address. People already in Sales AI are listed first.</p>}
+            {view === "results" && <>
+              <p className="oc-hint">{searching && !searched ? "Searching…" : `Searched for ${searched}.`}</p>
+              {err && <p className="oc-li-err" role="alert">{err}</p>}
+              {salesAi.length > 0 && <><h5>Already in Sales AI ({salesAi.length})</h5><ul className="oc-li-list">
+                {salesAi.map(p => { const id = `s:${p.email || p.name}`; return (
+                  <li key={id}><label className={`oc-li-pick${pick === id ? " on" : ""}`} aria-label={p.name}><input type="radio" name="pick" disabled={p.inChart} checked={pick === id} onChange={() => { setPick(id); setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin || url); setFrom("Sales AI"); }} />
+                    <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || "No title"}{p.email ? ` · ${p.email}` : ""}{p.inChart ? " · already in the chart" : ""}</small></span></label></li>
+                ); })}
+              </ul></>}
+              {found.length > 0 && <><h5>On LinkedIn ({found.length}{more ? "+" : ""})</h5><ul className="oc-li-list">
+                {found.map(p => (
+                  <li key={p.url}><label className={`oc-li-pick${pick === p.url ? " on" : ""}`} aria-label={p.name}><input type="radio" name="pick" disabled={p.inChart} checked={pick === p.url} onChange={() => { setPick(p.url); setName(p.name); setTitle(p.title || p.headline); setEmail(""); setUrl(p.url); setFrom("LinkedIn"); }} />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <span className="oc-li-ph">{p.photo ? <img src={p.photo} alt="" referrerPolicy="no-referrer" onError={e => e.currentTarget.remove()} /> : initials(p.name)}</span>
+                    <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || p.headline || "No title"}{p.company ? ` · ${p.company}` : ""}{p.inChart ? " · already in the chart" : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span></label></li>
+                ))}
+              </ul></>}
+              {more && <div className="oc-row"><button type="button" disabled={searching} onClick={() => void search(more)}>{searching ? "Loading…" : "Load more (uses credits)"}</button></div>}
+              {noResults && <div className="oc-empty"><p><b>No LinkedIn profile data was found for the specified detail.</b></p><p>LinkedIn only lists people whose profile shows this company as their current job. Try fewer words (just the last name), the company name as LinkedIn writes it, or paste the profile address.</p></div>}
+            </>}
+          </div>
+          <div className="oc-li2-foot">
+            <label className="oc-li2-parent">Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
+            <button type="button" onClick={() => { setMode(null); setFrom(""); setPick(""); setView("form"); }}>Back</button>
+            <button type="button" onClick={onClose}>Cancel</button>
+            <button type="button" className="on" disabled={busy || !pick || !name.trim()} onClick={() => onAdd(name, title, parent || null, url.trim() || undefined, email || undefined)}>Import to Org Chart</button>
+          </div>
+        </div>}
+        {mode && mode !== "linkedin" && view === "form" && <form className="oc-li-form" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null, url.trim() || undefined, email || undefined); }}>
+          {from && <p className="oc-hint">Taken from {from}. Check it, then add.</p>}
+          {field(name, setName, mode === "placeholder" ? "Name" : "First and last name", 80, true)}
+          {field(title, setTitle, mode === "placeholder" ? "Job title (optional)" : "Position / job title (optional)", 120)}
+          {mode !== "placeholder" && <div className="oc-row"><button type="button" disabled={busy || searching || !searchable} onClick={() => void search()}>{mode === "contact" ? "Search Sales AI" : "Search LinkedIn (and Sales AI)"}</button></div>}
+          <label>Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
+          <div className="oc-row"><button type="submit" className="on" disabled={busy || !name.trim()}>Add</button><button type="button" onClick={() => { setMode(null); setFrom(""); }}>Back</button><button type="button" onClick={onClose}>Cancel</button></div>
+        </form>}
+        {mode && mode !== "linkedin" && view === "results" && <>
+          <p className="oc-hint">{searching && !searched ? "Searching…" : `Searched for ${searched}.`}</p>
+          {err && <p className="oc-li-err" role="alert">{err}</p>}
+          {salesAi.length > 0 && <><h5>Already in Sales AI ({salesAi.length})</h5><ul className="oc-li-list">
+            {salesAi.map(p => (
+              <li key={p.email || p.name} className="oc-li-person">
+                <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || "No title"}{p.email ? ` · ${p.email}` : ""}</small></span>
+                <button type="button" disabled={p.inChart} onClick={() => use(p, "Sales AI")}>{p.inChart ? "In chart" : "Use"}</button>
+              </li>
+            ))}
+          </ul></>}
+          {found.length > 0 && <><h5>On LinkedIn ({found.length}{more ? "+" : ""})</h5><ul className="oc-li-list">
+            {found.map(p => (
+              <li key={p.url} className="oc-li-person">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <span className="oc-li-ph">{p.photo ? <img src={p.photo} alt="" referrerPolicy="no-referrer" onError={e => e.currentTarget.remove()} /> : initials(p.name)}</span>
+                <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || p.headline || "No title"}{p.company ? ` · ${p.company}` : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span>
+                <button type="button" disabled={p.inChart} onClick={() => use({ name: p.name, title: p.title || p.headline, email: "", linkedin: p.url }, "LinkedIn")}>{p.inChart ? "In chart" : "Use"}</button>
+              </li>
+            ))}
+          </ul></>}
+          {more && <div className="oc-row"><button type="button" disabled={searching} onClick={() => void search(more)}>{searching ? "Loading…" : "Load more (uses credits)"}</button></div>}
+          {noResults && <p>{mode === "contact" ? "Nobody found in Sales AI for this account." : "Nobody found. LinkedIn only lists people whose profile shows this company as their current job. Try fewer words (just the last name), another spelling, or paste the LinkedIn address."}</p>}
+          <div className="oc-row"><button type="button" onClick={() => setView("form")}>Back</button><button type="button" onClick={onClose}>Cancel</button></div>
+        </>}
+      </div>
+    </div>
   );
 }
 // Four bars like a signal meter; `level` 0 to 4 fills them, 0 = no activity matched (all light grey).
@@ -206,7 +278,7 @@ function EditPanel({ node, nodes, busy, confirmRemove, onAsk, onCancel, onEdit }
   );
 }
 
-export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged, onImport, logo, influences: initialInfluences }: { chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void; onImport: () => void; logo: string; influences: OrgInfluence[] }) {
+export default function OrgChartView({ chartId, chart: initial, edited: wasEdited, title, subtitle, startEditing, onEditing, onChanged, onImport, logo, influences: initialInfluences, accountName }: { accountName: string; chartId: string; chart: ChartData; edited: boolean; title: string; subtitle: string; startEditing: boolean; onEditing: (on: boolean) => void; onChanged: (people: number, edited: boolean) => void; onImport: () => void; logo: string; influences: OrgInfluence[] }) {
   const [chart, setChart] = useState<ChartData>(initial);
   const [edited, setEdited] = useState(wasEdited);
   const [editing, setEditing] = useState(startEditing);
@@ -674,7 +746,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               <button type="button" data-tip="Sync with Salesforce: not available yet" aria-label="Sync with Salesforce, not available yet" disabled><Icon n="sync" /></button>
             </div>
           )}
-          {addOpen && <AddPopover chartId={chartId} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey, linkedin, email) => { if (await send({ op: "add", name, title, parentKey, linkedin, email })) setAddOpen(false); }} />}
+          {addOpen && <AddPopover chartId={chartId} accountName={accountName} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey, linkedin, email) => { if (await send({ op: "add", name, title, parentKey, linkedin, email })) setAddOpen(false); }} />}
           {liOpen && <LinkedInPanel chartId={chartId} nodes={chart.nodes} send={send} onClose={() => setLiOpen(false)} />}
           {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
         </div>

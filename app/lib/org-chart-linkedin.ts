@@ -112,21 +112,34 @@ export async function resolveProfile(name: string, companyDomain: string, title 
   return parseProfile(res.profile, res.url);
 }
 
-export type SearchInput = { name?: string; position?: string; companyName: string; companyDomain?: string; url?: string; nextToken?: string };
+export type SearchInput = { first?: string; last?: string; position?: string; companyName: string; companyDomain?: string; url?: string; nextToken?: string };
 // New people for the chart, the way Sales AI's "add contact" looks them up: a profile link is read directly; first and last name
 // with the company's web domain is a person lookup; anything else (a lone name, a position) is a search among the company's
 // people, five at a time, continued with the returned token.
 export async function searchPeople(input: SearchInput): Promise<{ people: LiProfile[]; nextToken: string }> {
   if (input.url) { const p = await fetchProfile(input.url); return { people: p ? [p] : [], nextToken: "" }; }
-  const { first, last } = splitName(input.name || "");
-  if (!first && !input.position) return { people: [], nextToken: "" };
+  const first = (input.first || "").trim(), last = (input.last || "").trim();
+  if (!first && !last && !input.position) return { people: [], nextToken: "" };
   if (first && last && input.companyDomain && !input.nextToken) {
-    const p = await resolveProfile(input.name || "", input.companyDomain, input.position || "", false);
+    const p = await resolveProfile(`${first} ${last}`, input.companyDomain, input.position || "", false);
     if (p) return { people: [p], nextToken: "" };
   }
-  const res = await enrich<{ results?: Array<{ linkedin_profile_url?: string | null; profile?: RawProfile | null }>; next_page?: string | null }>("/search/person", {
-    current_company_name: input.companyName, first_name: first, last_name: last, current_role_title: input.position || "", page_size: "5", enrich_profiles: "enrich", use_cache: "if-present", next_token: input.nextToken || "",
+  // The filters are Enrich Layer "search expressions" (boolean syntax): "-" means NOT and AND/OR are operators, so a company name is
+  // sent as an exact phrase. A search page costs 3 credits per person plus 1 for the profile data.
+  const phrase = (v: string) => `"${v.replace(/["()]/g, " ").replace(/\s+/g, " ").trim()}"`;
+  const run = (company: Record<string, string>) => enrich<{ results?: Array<{ linkedin_profile_url?: string | null; profile?: RawProfile | null }>; next_page?: string | null }>("/search/person", {
+    ...company, first_name: first, last_name: last, current_role_title: input.position || "", page_size: "5", enrich_profiles: "enrich", use_cache: "if-present", next_token: input.nextToken || "",
   });
+  // Salesforce says "CS Disco Inc." where LinkedIn says "CS Disco": an exact phrase needs the name without its legal ending too.
+  const plain = companyWords(input.companyName).join(" ");
+  const names = [...new Set([input.companyName, plain].map(n => n.trim()).filter(Boolean))];
+  let res: Awaited<ReturnType<typeof run>> = null;
+  if (input.nextToken) res = await run({});
+  else {
+    for (const n of names) { res = await run({ current_company_name: phrase(n) }); if (res?.results?.length) break; }
+    // The company may be listed under yet another name on LinkedIn: try its web domain.
+    if (!res?.results?.length && input.companyDomain) res = await run({ current_company_domain_name: input.companyDomain });
+  }
   let nextToken = "";
   try { nextToken = res?.next_page ? new URL(res.next_page).searchParams.get("next_token") || "" : ""; } catch { /* no more pages */ }
   return { people: (res?.results || []).map(r => parseProfile(r.profile, r.linkedin_profile_url || "")).filter((p): p is LiProfile => Boolean(p)), nextToken };
