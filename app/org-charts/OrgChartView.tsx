@@ -95,8 +95,9 @@ const PrintLogo = ({ src }: { src: string }) => <img src={src} alt="" referrerPo
 type FoundPerson = { url: string; name: string; headline: string; photo: string; title: string; company: string; inChart: boolean };
 // "Add a person": type the name, or search LinkedIn (by first and last name, position or profile address) and pick someone; the
 // pick fills in name, title and profile link. Typing a name and adding it stays possible without any search.
-function AddPopover({ chartId, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null, linkedin?: string) => void; onClose: () => void }) {
-  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent), [url, setUrl] = useState("");
+function AddPopover({ chartId, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null, linkedin?: string, email?: string) => void; onClose: () => void }) {
+  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent), [url, setUrl] = useState(""), [email, setEmail] = useState("");
+  const [salesAi, setSalesAi] = useState<Array<{ name: string; title: string; email: string; linkedin: string; inChart: boolean }>>([]);
   const [found, setFound] = useState<FoundPerson[] | null>(null), [more, setMore] = useState(""), [searching, setSearching] = useState(false), [err, setErr] = useState("");
   async function search(next = "") {
     setSearching(true); setErr("");
@@ -104,19 +105,28 @@ function AddPopover({ chartId, nodes, defaultParent, busy, onAdd, onClose }: { c
     const res = r ? await r.json().catch(() => ({})) : {};
     setSearching(false);
     if (!r?.ok) { setErr(res.error || "LinkedIn could not be reached."); return; }
-    setFound(list => next && list ? [...list, ...res.people] : res.people); setMore(res.nextToken || "");
-    if (!res.people.length && !next) setErr("Nobody found. Try fewer words, or paste the LinkedIn address.");
+    setFound(list => next && list ? [...list, ...res.people] : res.people); setMore(res.nextToken || ""); if (!next) setSalesAi(res.salesAi || []);
+    if (!res.people.length && !(res.salesAi || []).length && !next) setErr("Nobody found. Try fewer words, or paste the LinkedIn address.");
   }
-  const pick = (p: FoundPerson) => { setName(p.name); setTitle(p.title || p.headline); setUrl(p.url); setFound(null); setMore(""); setErr(""); };
+  const pickSalesAi = (p: { name: string; title: string; email: string; linkedin: string }) => { setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin); setFound(null); setSalesAi([]); setMore(""); setErr(""); };
+  const pick = (p: FoundPerson) => { setName(p.name); setTitle(p.title || p.headline); setUrl(p.url); setFound(null); setSalesAi([]); setMore(""); setErr(""); };
   return (
-    <form className="oc-pop wide" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null, url.trim() || undefined); }}>
+    <form className="oc-pop wide" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null, url.trim() || undefined, email || undefined); }}>
       <b>Add a person</b>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="First and last name" aria-label="Name" maxLength={80} ref={el => el?.focus()} />
       <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Position / job title (optional)" aria-label="Job title" maxLength={120} />
       <input value={url} onChange={e => setUrl(e.target.value)} placeholder="LinkedIn address (optional)" aria-label="LinkedIn address" maxLength={300} />
       <div className="oc-row"><button type="button" disabled={busy || searching || (!name.trim() && !title.trim() && !url.trim())} onClick={() => void search()}>{searching ? "Searching…" : "Search LinkedIn"}</button></div>
       {err && <p className="oc-hint" role="status">{err}</p>}
-      {found && found.length > 0 && <ul className="oc-li-list">
+      {salesAi.length > 0 && <><b>Already in Sales AI</b><ul className="oc-li-list">
+        {salesAi.map(p => (
+          <li key={p.email || p.name} className="oc-li-person">
+            <span><b>{p.name}</b><br /><small>{p.title}{p.email ? ` · ${p.email}` : ""}</small></span>
+            <button type="button" disabled={p.inChart} onClick={() => pickSalesAi(p)}>{p.inChart ? "In chart" : "Use"}</button>
+          </li>
+        ))}
+      </ul></>}
+      {found && found.length > 0 && <><b>On LinkedIn</b><ul className="oc-li-list">
         {found.map(p => (
           <li key={p.url} className="oc-li-person">
             <span><b>{p.name}</b><br /><small>{p.title || p.headline}{p.company ? ` · ${p.company}` : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span>
@@ -124,7 +134,7 @@ function AddPopover({ chartId, nodes, defaultParent, busy, onAdd, onClose }: { c
           </li>
         ))}
         {more && <li><button type="button" disabled={searching} onClick={() => void search(more)}>Load more</button></li>}
-      </ul>}
+      </ul></>}
       <label>Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
       <div className="oc-row"><button type="submit" className="on" disabled={busy || !name.trim()}>Add</button><button type="button" onClick={onClose}>Cancel</button></div>
     </form>
@@ -664,7 +674,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               <button type="button" data-tip="Sync with Salesforce: not available yet" aria-label="Sync with Salesforce, not available yet" disabled><Icon n="sync" /></button>
             </div>
           )}
-          {addOpen && <AddPopover chartId={chartId} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey, linkedin) => { if (await send({ op: "add", name, title, parentKey, linkedin })) setAddOpen(false); }} />}
+          {addOpen && <AddPopover chartId={chartId} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey, linkedin, email) => { if (await send({ op: "add", name, title, parentKey, linkedin, email })) setAddOpen(false); }} />}
           {liOpen && <LinkedInPanel chartId={chartId} nodes={chart.nodes} send={send} onClose={() => setLiOpen(false)} />}
           {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
         </div>

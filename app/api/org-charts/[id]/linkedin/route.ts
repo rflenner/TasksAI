@@ -6,12 +6,32 @@ import {
 import { loadStoredOrgChart, orgChartActor } from "../../../../lib/org-charts-store";
 import { requireSameOrigin } from "../../../../lib/request";
 import { salesforceApi } from "../../../../lib/salesforce";
+import { fetchAllPages } from "../../../../lib/sales-ai-client";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const CONTACT_ID = /^003[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/;
 const query = async <T,>(soql: string) => (await salesforceApi<{ records: T[] }>(`/query?q=${encodeURIComponent(soql)}`)).records;
+// People Sales AI already has on this account, matching what was typed: every word of the name, and the position as a part of the title.
+type SalesAiRow = Record<string, unknown> & { contact_name?: string | null; first_name?: string | null; last_name?: string | null; email?: string | null; title?: string | null };
+async function salesAiMatches(accountId: string, name: string, position: string, chart: OrgChart) {
+  const apiKey = process.env.SALES_AI_API_KEY, base = process.env.SALES_AI_BASE_URL;
+  if (!apiKey || !base || !isAccountId(accountId) || (!name && !position)) return [];
+  try {
+    const rows = await fetchAllPages<SalesAiRow>(base, apiKey, "contacts", { account_id: accountId });
+    const words = name.toLowerCase().split(/\s+/).filter(Boolean), pos = position.toLowerCase();
+    const have = new Set(chart.nodes.flatMap(n => [n.name.toLowerCase(), n.email.toLowerCase()]).filter(Boolean));
+    const seen = new Set<string>();
+    return rows.flatMap(r => {
+      const full = (r.contact_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "").trim(), email = (r.email || "").trim().toLowerCase(), title = (r.title || "").trim();
+      if (!full || !words.every(w => full.toLowerCase().includes(w)) || (pos && !title.toLowerCase().includes(pos))) return [];
+      const id = email || full.toLowerCase(); if (seen.has(id)) return []; seen.add(id);
+      const linkedin = linkedinUrl(...["linkedin_url", "linkedin_profile_url", "linkedin", "linkedin_profile"].map(k => typeof r[k] === "string" ? r[k] as string : ""));
+      return [{ name: full, title, email, linkedin, inChart: have.has(full.toLowerCase()) || (email !== "" && have.has(email)) }];
+    }).slice(0, 10);
+  } catch { return []; } // Sales AI is a shortcut: the LinkedIn search still runs
+}
 const card = (p: LiProfile) => ({ url: p.url, name: p.name, headline: p.headline, photo: p.photo, title: p.experiences.find(e => e.current)?.title || "", company: p.experiences.find(e => e.current)?.company || "" });
 
 // LinkedIn enrichment for one org chart. Reads only; the answers are suggestions that the page applies through the edit route.
@@ -60,7 +80,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const nextToken = typeof body?.nextToken === "string" ? body.nextToken.slice(0, 500) : "";
       const { people: found, nextToken: more } = await searchPeople({ url, name, position, companyName: row.accountName, companyDomain, nextToken });
       const have = new Set(chart.nodes.map(n => linkedinUrl(n.linkedin).toLowerCase().replace(/\/+$/, "")).filter(Boolean));
-      return Response.json({ people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
+      const salesAi = url || nextToken ? [] : await salesAiMatches(row.accountId, name, position, chart);
+      return Response.json({ salesAi, people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
     }
 
     if (action === "check") {
