@@ -65,6 +65,9 @@ button { cursor: pointer; }
 .side nav .nav-children button.current { background: #eef4fc; color: var(--navy); font-weight: 700; }
 .side nav .nav-children em { background: transparent; padding: 0; color: #9aa2ad; }
 .nav-new { font-size: 9px !important; font-weight: 800; background: var(--orange) !important; color: #fff; letter-spacing: .4px; }
+.side nav.side-admin { flex: 0 0 auto; overflow: visible; gap: 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.side nav.side-admin .admin-toggle { padding: 10px 14px; font-size: 13px; justify-content: space-between; }
+.side nav.side-admin .nav-children { margin-top: 2px; }
 .side-foot { margin-top: auto; display: flex; gap: 10px; align-items: center; padding: 14px 8px 0; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .side-foot b { display: block; color: var(--ink); font-size: 13px; }
 .main { margin-left: 246px; flex: 1; min-width: 0; }
@@ -1213,7 +1216,7 @@ let store = IN_APP ? { plans: [], current: null } : (load() || freshStore());
 let state = IN_APP ? null : (store.plans.find(x => x.id === store.current) || store.plans[0]);
 const B = () => (state && state.account) || "Customer";
 function switchPlan(id) { if (voice.open) voiceClose(); state = store.plans.find(x => x.id === id) || store.plans[0]; store.current = state.id; ui.viewer = state.planOwners.buyer || ui.viewer; Object.assign(ui, { open: null, filter: "all", tab: "plan", wizard: null, addFor: null, removing: null, manage: null, editPhase: null, deletePhase: null, phaseMenu: null }); ui.expanded = new Set(); ui.peopleOpen = new Set(); save(); render(); window.scrollTo({ top: 0 }); sfAutoSoon(500); }
-let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null };
+let ui = { mode: "seller", viewer: "kh", tab: "plan", filter: "all", open: null, expanded: new Set(), emailFor: null, digestFor: null, addFor: null, removing: null, inviteFor: null, peopleOpen: new Set(), manage: null, editPhase: null, deletePhase: null, phaseMenu: null, wizard: null, companyOpen: false };
 // A close plan always opens on the Plan tab; the last-used tab is deliberately not remembered.
 try { const m = localStorage.getItem(STORE_KEY + ":mode"); if (m === "buyer" || m === "seller") ui.mode = m; } catch (e) {}
 
@@ -1519,6 +1522,7 @@ function sellerShell() {
         </div>
         ${IN_APP && APP_ME && APP_ME.canViewOrgCharts ? `<button type="button" data-applink="/org-charts"><span class="i i-people"></span>Org charts</button>` : ""}
       </nav>
+      ${IN_APP && APP_ME && APP_ME.role === "site_admin" ? `<nav class="side-admin" aria-label="Company settings"><button type="button" class="admin-toggle" data-company-toggle aria-expanded="${ui.companyOpen ? "true" : "false"}">Company settings <span class="tri">${ui.companyOpen ? "▾" : "▸"}</span></button>${ui.companyOpen ? `<div class="nav-children"><button type="button" data-applink="/users"><span>User Management</span></button><button type="button" data-applink="/data-hygiene"><span>Data Hygiene</span></button><button type="button" data-applink="/integrations"><span>Integrations</span></button><button type="button" data-applink="/playground"><span>Playground</span></button><button type="button" data-applink="/voice-audit"><span>Voice Audit</span></button><button type="button" data-applink="/voice-requests"><span>Voice Requests</span></button><button type="button" data-applink="/notification-rules"><span>Notifications</span></button><button type="button" data-applink="/close-plan-roles"><span>Close Plan roles</span></button><button type="button" data-applink="/close-plan-activity"><span>Close Plan activity</span></button></div>` : ""}</nav>` : ""}
       <div class="side-foot"><span class="avatar" style="width:32px;height:32px;font-size:11px">${esc(initials(myName()))}</span><div><b>${esc(myName())}</b>${APP_ME ? esc({ site_admin: "Site Admin", area_admin: "Area Admin", collaborator: "Collaborator", readonly: "Read-only" }[APP_ME.role] || "") : "Site admin"}</div></div>
     </aside>
     <div class="main"><div class="content">
@@ -3785,6 +3789,7 @@ function wirePage() {
   app.querySelectorAll("[data-nu]").forEach(b => b.onclick = () => { ui.actPanel = false; ui.open = b.dataset.nu; render(); });
   app.querySelectorAll("[data-nu-all]").forEach(b => b.onclick = () => { ui.nextAll = !ui.nextAll; render(); });
   app.querySelectorAll("[data-act-close]").forEach(b => b.onclick = () => { ui.actPanel = false; render(); });
+  app.querySelectorAll("[data-company-toggle]").forEach(b => b.onclick = () => { ui.companyOpen = !ui.companyOpen; render(); });
   app.querySelectorAll("[data-act-toggle]").forEach(b => b.onclick = () => { ui.actOpen = !ui.actOpen; render(); });
   wirePhases(app);
   wireReorder(app);
