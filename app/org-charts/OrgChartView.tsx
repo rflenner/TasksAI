@@ -575,7 +575,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
 
   const inner = (n: OrgNode, eager = false) => (
     <>
-      {n.provisional && <span className="oc-tmp">Temp</span>}
+      {n.provisional && !(n.key.startsWith("tmp") && n.linkedin) && <span className="oc-tmp">Temp</span>}
       <div className="oc-av">{initials(n.name)}{photo(n, eager)}</div>
       <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span><Meter level={n.activity || 0} /></div></div>
       <div className="oc-rp">
