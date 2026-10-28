@@ -67,22 +67,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ ok: true, written: Object.keys(fields) });
     }
 
-    if (!enrichConfigured()) return Response.json({ error: "LinkedIn enrichment is not set up yet: ask an admin to add ENRICH_LAYER_API_KEY.", notConfigured: true }, { status: 503 });
-
     if (action === "search") {
-      const url = typeof body?.url === "string" ? body.url.trim() : "";
-      const name = typeof body?.name === "string" ? body.name.trim().slice(0, 80) : "", position = typeof body?.position === "string" ? body.position.trim().slice(0, 80) : "";
+      const str = (v: unknown, n: number) => typeof v === "string" ? v.trim().slice(0, n) : "";
+      const first = str(body?.first, 60), last = str(body?.last, 60), position = str(body?.position, 80), url = str(body?.url, 300);
+      const account = str(body?.account, 120) || row.accountName, nextToken = str(body?.nextToken, 500);
+      const fullName = `${first} ${last}`.trim();
       if (url && !linkedinUrl(url)) return Response.json({ error: "That is not a LinkedIn address" }, { status: 400 });
-      if (!url && !name && !position) return Response.json({ error: "Give a name, a position or a LinkedIn address" }, { status: 400 });
-      if (!url && !row.accountName) return Response.json({ error: "This chart has no account name to search in" }, { status: 422 });
+      if (!url && !fullName && !position) return Response.json({ error: "Give a name, a position or a LinkedIn address" }, { status: 400 });
       let companyDomain = "";
-      if (isAccountId(row.accountId)) { try { companyDomain = domainOf((await query<{ Website: string | null }>(`SELECT Website FROM Account WHERE Id = '${row.accountId}'`))[0]?.Website); } catch { /* the search then goes by company name */ } }
-      const nextToken = typeof body?.nextToken === "string" ? body.nextToken.slice(0, 500) : "";
-      const { people: found, nextToken: more } = await searchPeople({ url, name, position, companyName: row.accountName, companyDomain, nextToken });
+      if (isAccountId(row.accountId) && !body?.account) { try { companyDomain = domainOf((await query<{ Website: string | null }>(`SELECT Website FROM Account WHERE Id = '${row.accountId}'`))[0]?.Website); } catch { /* the search then goes by company name */ } }
+      const salesAi = url || nextToken ? [] : await salesAiMatches(row.accountId, fullName, position, chart);
+      const searched = { company: account, domain: companyDomain };
+      if (body?.only === "salesai") return Response.json({ searched, salesAi, people: [], nextToken: "" });
+      if (!enrichConfigured()) return Response.json({ error: "LinkedIn search is not set up yet: ask an admin to add ENRICH_LAYER_API_KEY.", notConfigured: true, searched, salesAi }, { status: 503 });
+      if (!url && !account) return Response.json({ error: "Give the account name to search in" }, { status: 422 });
+      const { people: found, nextToken: more } = await searchPeople({ url, first, last, position, companyName: account, companyDomain, nextToken });
       const have = new Set(chart.nodes.map(n => linkedinUrl(n.linkedin).toLowerCase().replace(/\/+$/, "")).filter(Boolean));
-      const salesAi = url || nextToken ? [] : await salesAiMatches(row.accountId, name, position, chart);
-      return Response.json({ salesAi, people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
+      return Response.json({ searched, salesAi, people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
     }
+
+    if (!enrichConfigured()) return Response.json({ error: "LinkedIn enrichment is not set up yet: ask an admin to add ENRICH_LAYER_API_KEY.", notConfigured: true }, { status: 503 });
 
     if (action === "check") {
       const accountName = row.accountName;
