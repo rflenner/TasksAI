@@ -55,9 +55,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (url && !linkedinUrl(url)) return Response.json({ error: "That is not a LinkedIn address" }, { status: 400 });
       if (!url && !name && !position) return Response.json({ error: "Give a name, a position or a LinkedIn address" }, { status: 400 });
       if (!url && !row.accountName) return Response.json({ error: "This chart has no account name to search in" }, { status: 422 });
-      const found = await searchPeople({ url, name, position, companyName: row.accountName });
+      let companyDomain = "";
+      if (isAccountId(row.accountId)) { try { companyDomain = domainOf((await query<{ Website: string | null }>(`SELECT Website FROM Account WHERE Id = '${row.accountId}'`))[0]?.Website); } catch { /* the search then goes by company name */ } }
+      const nextToken = typeof body?.nextToken === "string" ? body.nextToken.slice(0, 500) : "";
+      const { people: found, nextToken: more } = await searchPeople({ url, name, position, companyName: row.accountName, companyDomain, nextToken });
       const have = new Set(chart.nodes.map(n => linkedinUrl(n.linkedin).toLowerCase().replace(/\/+$/, "")).filter(Boolean));
-      return Response.json({ people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })) });
+      return Response.json({ people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
     }
 
     if (action === "check") {

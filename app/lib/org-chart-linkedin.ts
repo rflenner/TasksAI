@@ -101,25 +101,35 @@ export async function fetchProfile(url: string): Promise<LiProfile | null> {
 }
 
 // Finds one person's profile from a name and the company's web domain.
-export async function resolveProfile(name: string, companyDomain: string, title = ""): Promise<LiProfile | null> {
+export async function resolveProfile(name: string, companyDomain: string, title = "", strict = true): Promise<LiProfile | null> {
   const { first, last } = splitName(name);
   if (!first || !companyDomain) return null;
   const res = await enrich<{ url?: string | null; profile?: RawProfile | null; name_similarity_score?: number | null; company_similarity_score?: number | null }>("/profile/resolve", { company_domain: companyDomain, first_name: first, last_name: last, title, similarity_checks: "include", enrich_profile: "enrich" });
   // Both scores must be there and decent: a wrong person suggested for a real contact is worse than none.
-  if (!res?.url || (res.name_similarity_score ?? 0) < 0.8 || (res.company_similarity_score ?? 0) < 0.6) return null;
+  if (!res?.url) return null;
+  // When a person picks from a list (strict = false) a weaker match is shown rather than hidden.
+  if (strict && ((res.name_similarity_score ?? 0) < 0.8 || (res.company_similarity_score ?? 0) < 0.6)) return null;
   return parseProfile(res.profile, res.url);
 }
 
-export type SearchInput = { name?: string; position?: string; companyName: string; url?: string };
-// New people for the chart: by profile link, or by name and/or position at the account's company.
-export async function searchPeople(input: SearchInput): Promise<LiProfile[]> {
-  if (input.url) { const p = await fetchProfile(input.url); return p ? [p] : []; }
+export type SearchInput = { name?: string; position?: string; companyName: string; companyDomain?: string; url?: string; nextToken?: string };
+// New people for the chart, the way Sales AI's "add contact" looks them up: a profile link is read directly; first and last name
+// with the company's web domain is a person lookup; anything else (a lone name, a position) is a search among the company's
+// people, five at a time, continued with the returned token.
+export async function searchPeople(input: SearchInput): Promise<{ people: LiProfile[]; nextToken: string }> {
+  if (input.url) { const p = await fetchProfile(input.url); return { people: p ? [p] : [], nextToken: "" }; }
   const { first, last } = splitName(input.name || "");
-  if (!first && !input.position) return [];
-  const res = await enrich<{ results?: Array<{ linkedin_profile_url?: string | null; profile?: RawProfile | null }> }>("/search/person", {
-    current_company_name: input.companyName, first_name: first, last_name: last, current_role_title: input.position || "", page_size: "10", enrich_profiles: "enrich", use_cache: "if-present",
+  if (!first && !input.position) return { people: [], nextToken: "" };
+  if (first && last && input.companyDomain && !input.nextToken) {
+    const p = await resolveProfile(input.name || "", input.companyDomain, input.position || "", false);
+    if (p) return { people: [p], nextToken: "" };
+  }
+  const res = await enrich<{ results?: Array<{ linkedin_profile_url?: string | null; profile?: RawProfile | null }>; next_page?: string | null }>("/search/person", {
+    current_company_name: input.companyName, first_name: first, last_name: last, current_role_title: input.position || "", page_size: "5", enrich_profiles: "enrich", use_cache: "if-present", next_token: input.nextToken || "",
   });
-  return (res?.results || []).map(r => parseProfile(r.profile, r.linkedin_profile_url || "")).filter((p): p is LiProfile => Boolean(p));
+  let nextToken = "";
+  try { nextToken = res?.next_page ? new URL(res.next_page).searchParams.get("next_token") || "" : ""; } catch { /* no more pages */ }
+  return { people: (res?.results || []).map(r => parseProfile(r.profile, r.linkedin_profile_url || "")).filter((p): p is LiProfile => Boolean(p)), nextToken };
 }
 
 // --- Sales AI ------------------------------------------------------------------------------------------------------------
