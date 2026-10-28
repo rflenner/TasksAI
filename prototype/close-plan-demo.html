@@ -1517,6 +1517,7 @@ function sellerShell() {
           ${!APP_ME || APP_ME.canCreate ? `<button type="button" class="${ui.wizard ? "current" : ""}" data-newplan><span>+ New close plan</span></button>` : ""}
           ${IN_APP && APP_ME && APP_ME.canCreate && !(state && state._demo) ? `<button type="button" data-sfimport><span>⇩ Import from Salesforce</span></button>` : ""}
         </div>
+        ${IN_APP && APP_ME && APP_ME.canViewOrgCharts ? `<button type="button" data-applink="/org-charts"><span class="i i-people"></span>Org charts</button>` : ""}
       </nav>
       <div class="side-foot"><span class="avatar" style="width:32px;height:32px;font-size:11px">${esc(initials(myName()))}</span><div><b>${esc(myName())}</b>${APP_ME ? esc({ site_admin: "Site Admin", area_admin: "Area Admin", collaborator: "Collaborator", readonly: "Read-only" }[APP_ME.role] || "") : "Site admin"}</div></div>
     </aside>
@@ -4396,7 +4397,7 @@ function wireSetup(app) {
 // Inside Task AI (/close-plans) plans are loaded from and saved to the server (one JSON document per plan,
 // with a version number), and the page acts as the signed-in user. The stand-alone demo keeps using this
 // browser's storage. Every 30 s the page checks for changes by others while nobody is typing.
-let APP_ME = null; // { id, name, email, role, canCreate } of the signed-in Task AI user
+let APP_ME = null; // { id, name, email, role, canCreate, canViewOrgCharts } of the signed-in Task AI user
 const lowerEmail = v => String(v || "").trim().toLowerCase();
 const ME_ID = () => APP_ME ? "u" + APP_ME.id : "rf";
 const myName = () => APP_ME ? APP_ME.name : "Rizan Flenner";
