@@ -49,3 +49,12 @@ test("edits: left flag, profile link and adding a found person", () => {
   assert.equal((next as { chart: typeof chart }).chart.nodes[0].left, true);
   assert.equal((next as { chart: typeof chart }).chart.nodes[0].linkedin, "");
 });
+
+test("a person added from LinkedIn keeps only a picture hosted by Enrich Layer or LinkedIn", () => {
+  const base = { nodes: [], roots: [], issues: [] } as never;
+  const add = (photoUrl: string) => (applyOrgEdit(base, { op: "add", name: "Ana Lopez", parentKey: null, photoUrl }) as { chart: { nodes: Array<{ photoUrl?: string }> } }).chart.nodes[0].photoUrl;
+  assert.equal(add("https://assets.enrichlayer.com/pp/profilepic/abc"), "https://assets.enrichlayer.com/pp/profilepic/abc");
+  assert.equal(add("https://media.licdn.com/dms/image/x"), "https://media.licdn.com/dms/image/x");
+  assert.equal(add("https://evil.example/x.png"), "");
+  assert.equal(add("http://assets.enrichlayer.com/x"), "");
+});

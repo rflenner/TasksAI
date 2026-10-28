@@ -94,7 +94,7 @@ const Icon = ({ n }: { n: string }) => <svg viewBox="0 0 24 24" width="24" heigh
 const PrintLogo = ({ src }: { src: string }) => <img src={src} alt="" referrerPolicy="no-referrer" loading="eager" className="oc-print-logo" onError={e => e.currentTarget.remove()} />;
 type FoundPerson = { url: string; name: string; headline: string; photo: string; title: string; company: string; inChart: boolean };
 type SalesAiPerson = { name: string; title: string; email: string; linkedin: string; inChart: boolean };
-type Importable = { name: string; title: string; email: string; linkedin: string };
+type Importable = { name: string; title: string; email: string; linkedin: string; photo?: string };
 type AddMode = "contact" | "placeholder" | "linkedin";
 const TILES: Array<{ mode: AddMode; label: string; hint: string }> = [
   { mode: "contact", label: "Contact", hint: "People Sales AI knows at this account" },
@@ -162,7 +162,7 @@ function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, o
               </ul></>}
               {found.length > 0 && <><h5>On LinkedIn ({found.length}{more ? "+" : ""})</h5><ul className="oc-li-list">
                 {found.map(p => (
-                  <li key={p.url}><label className={`oc-li-pick${p.url in picks ? " on" : ""}`} aria-label={p.name}><input type="checkbox" disabled={p.inChart} checked={p.url in picks} onChange={() => toggle(p.url, { name: p.name, title: p.title || p.headline, email: "", linkedin: p.url })} />
+                  <li key={p.url}><label className={`oc-li-pick${p.url in picks ? " on" : ""}`} aria-label={p.name}><input type="checkbox" disabled={p.inChart} checked={p.url in picks} onChange={() => toggle(p.url, { name: p.name, title: p.title || p.headline, email: "", linkedin: p.url, photo: p.photo })} />
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <span className="oc-li-ph">{p.photo ? <img src={p.photo} alt="" referrerPolicy="no-referrer" onError={e => e.currentTarget.remove()} /> : initials(p.name)}</span>
                     <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || p.headline || "No title"}{p.company ? ` · ${p.company}` : ""}{p.inChart ? " · already in the chart" : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span></label></li>
@@ -350,7 +350,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const collapsedLevel = [1, 2].find(l => { const want = chart.nodes.filter(n => depthOf(n) === l - 1 && (kids.get(n.key) || []).length).map(n => n.key); return want.length > 0 && collapsed.size === want.length && want.every(k => collapsed.has(k)); });
   const below = (n: OrgNode): number => (kids.get(n.key) || []).reduce((sum, k) => sum + 1 + below(k), 0);
   // eslint-disable-next-line @next/next/no-img-element
-  const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
+  const photo = (n: OrgNode, eager = false) => n.photo ? <img src={`/api/org-charts/${encodeURIComponent(chartId)}/photo/${encodeURIComponent(n.photo)}`} alt="" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : n.photoUrl ? <img src={n.photoUrl} alt="" referrerPolicy="no-referrer" loading={eager ? "eager" : "lazy"} onError={e => e.currentTarget.remove()} /> : null;
 
   // Zoom in steps of 5 %. Fit shrinks the whole chart to the visible area.
   // Pinch on a trackpad (or Ctrl + wheel) zooms the chart around the pointer; two-finger swipes scroll it as usual.
@@ -750,7 +750,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               <button type="button" data-tip="Sync with Salesforce: not available yet" aria-label="Sync with Salesforce, not available yet" disabled><Icon n="sync" /></button>
             </div>
           )}
-          {addOpen && <AddPopover chartId={chartId} accountName={accountName} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (people, parentKey) => { let ok = true; for (const p of people) ok = (await send({ op: "add", name: p.name, title: p.title, parentKey, linkedin: p.linkedin || undefined, email: p.email || undefined })) && ok; if (ok) setAddOpen(false); }} />}
+          {addOpen && <AddPopover chartId={chartId} accountName={accountName} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (people, parentKey) => { let ok = true; for (const p of people) ok = (await send({ op: "add", name: p.name, title: p.title, parentKey, linkedin: p.linkedin || undefined, email: p.email || undefined, photoUrl: p.photo || undefined })) && ok; if (ok) setAddOpen(false); }} />}
           {liOpen && <LinkedInPanel chartId={chartId} nodes={chart.nodes} send={send} onClose={() => setLiOpen(false)} />}
           {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
         </div>
