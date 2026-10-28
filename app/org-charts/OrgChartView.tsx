@@ -580,11 +580,11 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <div className="oc-tx"><div className="oc-nm">{n.name}</div><div className="oc-ds">{n.title}</div><div className="oc-ft"><span className="oc-rl">{n.dealRole}</span><Meter level={n.activity || 0} /></div></div>
       <div className="oc-rp">
         <div className="oc-top">{(n.powerBase || influencers.has(n.key)) && <Star blue={/Economic Buyer/.test(n.dealRole)} />}{n.left && <button type="button" className="oc-warn" aria-label="Contact left the organization" onClick={e => e.stopPropagation()}><Warn /><i>Contact left the organization</i></button>}</div>
-        {!n.provisional && (
+        {(!n.provisional || n.linkedin) && (
           <div className="oc-bot">
-            <button type="button" className="oc-ic" title="Open tasks and events in Salesforce" aria-label="Open tasks and events" onClick={e => { e.stopPropagation(); open(n.key); }}>
+            {!n.provisional && <button type="button" className="oc-ic" title="Open tasks and events in Salesforce" aria-label="Open tasks and events" onClick={e => { e.stopPropagation(); open(n.key); }}>
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#44546f" d="M9 2h6v2h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3zm1.5 2v2h3V4zM9 12h6v2H9zm0 4h4v2H9z" /></svg><b>{n.openTasks || 0}</b>
-            </button>
+            </button>}
             {n.linkedin
               ? <a className="oc-in" href={n.linkedin} target="_blank" rel="noopener noreferrer" title="LinkedIn profile" aria-label="LinkedIn profile" onClick={e => e.stopPropagation()}><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#0a66c2" d={LI} /></svg></a>
               : <span className="oc-in" title="No LinkedIn profile on the contact"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#d0d4da" d={LI} /></svg></span>}
