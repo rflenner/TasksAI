@@ -10,7 +10,7 @@ import "./org-charts.css";
 
 // The interactive org chart, same behaviour as the iSEEit chart in Salesforce: click a card for its details, the task icon for
 // the person's open tasks and events, the chevron under a manager to collapse the team, drag the background to pan, and the
-// zoom buttons. "Edit chart" lets you drag a card onto a new manager, change type, role and notes, add a placeholder person and
+// zoom buttons. Any card can be dragged onto a new manager (always on); "Edit chart" lets you change type, role and notes, add a placeholder person and
 // remove someone. Edits are saved on the copy in Task AI only; nothing is written to Salesforce.
 export type ChartData = OrgChart & { salesforceBase: string };
 type TaskState = { busy?: boolean; items?: OrgTaskItem[]; error?: string };
@@ -596,10 +596,10 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
 
   const card = (n: OrgNode, ladder = false) => (
     <div data-key={n.key} data-ladder={ladder ? "1" : undefined} className={`oc-card${selected === n.key ? " sel" : ""}${dragKey === n.key ? " drag" : ""}${hover?.key === n.key ? " active" : ""}${linkTarget === n.key && linking?.from !== n.key ? " link-target" : ""}`} onMouseEnter={() => { window.clearTimeout(leaveTimer.current); setHoverCard(n.key); }} onMouseLeave={() => { window.clearTimeout(leaveTimer.current); leaveTimer.current = window.setTimeout(() => setHoverCard(h => h === n.key ? null : h), 350); }} tabIndex={0} role="button" aria-label={`${n.name}, show details`} style={{ borderLeftColor: edge(n) }}
-      draggable={editing && !busy} onDragStart={e => { const r = e.currentTarget.getBoundingClientRect(); grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height }; e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }}
+      draggable={!busy} onDragStart={e => { const r = e.currentTarget.getBoundingClientRect(); grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height }; e.dataTransfer.setData("text/plain", n.key); e.dataTransfer.effectAllowed = "move"; setDragKey(n.key); }}
       onDragEnd={() => { setDragKey(null); setHover(null); hoverRef.current = null; }}
       onClick={() => (selected === n.key ? setSelected(null) : open(n.key))} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (selected === n.key) setSelected(null); else open(n.key); } }}>
-      {editing && dragKey && hover?.key === n.key && (ladder ? LADDER_PADS : PADS).map(p => <span key={p.spot} className={`oc-pad ${p.spot}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
+      {dragKey && hover?.key === n.key && (ladder ? LADDER_PADS : PADS).map(p => <span key={p.spot} className={`oc-pad ${p.spot}${hover?.key === n.key && hover.zone === p.zone ? " on" : ""}`}>{p.label}</span>)}
       {inner(n)}
     </div>
   );
@@ -729,7 +729,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
       <div className="oc-main" ref={main}>
         
         <div className="oc-stage">
-        <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onClick={background} onDragOver={e => { if (editing && dragKey) e.preventDefault(); }} onDrop={e => { if (!editing || !dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}><div className="oc-canvas" ref={canvas}>{editing && dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul>{overlay}</div></div>
+        <div className={`oc-wrap${editing ? " editing" : ""}`} ref={wrap} role="presentation" onMouseDown={pan} onClick={background} onDragOver={e => { if (dragKey) e.preventDefault(); }} onDrop={e => { if (!dragKey) return; const h = hoverRef.current; if (!h) { e.preventDefault(); setDragKey(null); setHover(null); return; } drop(e, h.key === ROOT ? null : h.key, h.key === ROOT ? "root" : h.zone); }}><div className="oc-canvas" ref={canvas}>{dragKey && byKey.get(dragKey)?.parentKey && <div className="oc-rootzone-wrap"><div className={`oc-rootzone${hover?.key === ROOT ? " on" : ""}`}>Drop here to make {byKey.get(dragKey)?.name} top level</div></div>}<ul className={`oc-tree${editing ? " editing" : ""}`} style={{ zoom }}>{treeOf(false)}</ul>{overlay}</div></div>
         <div className="oc-rail-wrap">
           <button type="button" className="oc-rail-toggle" aria-label={railOpen ? "Hide the controls" : "Show the controls"} aria-expanded={railOpen} onClick={() => setRailOpen(v => !v)} title={railOpen ? "Hide the controls" : "Show the controls"}><svg viewBox="0 0 24 24" width="30" height="30" fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railOpen ? "none" : "rotate(180deg)" }} aria-hidden="true"><path d="M5 5l7 7-7 7" stroke="#c9ced6" /><path d="M12 5l7 7-7 7" stroke="#f5b942" /></svg></button>
           {railOpen && (
