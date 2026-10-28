@@ -1,4 +1,4 @@
-import type { OrgChart, OrgNode } from "./close-plan-orgchart";
+import { linkedinUrl, type OrgChart, type OrgNode } from "./close-plan-orgchart";
 
 // Edits to an org chart copy in Task AI (Phase 3). Pure: no database, no Salesforce. Nothing here is sent to Salesforce.
 // Every edit returns a new chart, or an error text; a move that would make someone their own boss (directly or through the
@@ -10,8 +10,8 @@ export type OrgEdit =
   | { op: "move"; key: string; parentKey: string | null; index?: number }
   | { op: "drop"; key: string; targetKey: string | null; position: DropPosition; withTeam: boolean }
   | { op: "shift"; key: string; by: -1 | 1 }
-  | { op: "update"; key: string; type?: string; layout?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string; name?: string; email?: string; phone?: string }
-  | { op: "add"; name: string; title?: string; parentKey: string | null }
+  | { op: "update"; key: string; type?: string; layout?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string; name?: string; email?: string; phone?: string; left?: boolean; linkedin?: string }
+  | { op: "add"; name: string; title?: string; parentKey: string | null; linkedin?: string; email?: string }
   | { op: "remove"; key: string };
 // Where a dragged card lands on the card it is dropped on, like the iSEEit chart in Salesforce: "top" = above it, so the dragged
 // person becomes its manager and takes its place; "bottom" = below it, so the dragged person reports to it; "left"/"right" =
@@ -109,6 +109,8 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
       if (edit.name !== undefined) { const name = text(edit.name, 80); if (!name) return { error: "Give the person a name" }; next.name = name; }
       if (edit.email !== undefined) next.email = text(edit.email, 120);
       if (edit.phone !== undefined) next.phone = text(edit.phone, 40);
+      if (edit.left !== undefined) next.left = Boolean(edit.left);
+      if (edit.linkedin !== undefined) next.linkedin = edit.linkedin ? linkedinUrl(edit.linkedin) : "";
       return { chart: { ...chart, nodes: chart.nodes.map(n => n.key === node.key ? next : n) }, key: node.key };
     }
     case "add": {
@@ -119,7 +121,7 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
       if (parentKey && !find(parentKey)) return { error: "That manager is not in the chart" };
       let key = "";
       do key = "tmp" + Math.random().toString(36).slice(2, 12); while (find(key));
-      const node: OrgNode = { key, roleId: "", name, title: text(edit.title, 120), email: "", phone: "", description: "", provisional: true, type: "Neutral", dealRole: "", powerBase: false, parentKey, order: siblings(chart, parentKey).length, linkedin: "", left: false, openTasks: 0, photo: "" };
+      const node: OrgNode = { key, roleId: "", name, title: text(edit.title, 120), email: text(edit.email, 120), phone: "", description: "", provisional: true, type: "Neutral", dealRole: "", powerBase: false, parentKey, order: siblings(chart, parentKey).length, linkedin: edit.linkedin ? linkedinUrl(edit.linkedin) : "", left: false, openTasks: 0, photo: "" };
       return { chart: normalizeOrgChart({ ...chart, nodes: [...chart.nodes, node] }), key };
     }
     case "remove": {

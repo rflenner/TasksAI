@@ -65,6 +65,9 @@ services:
       # screen (https://magical-ai-api.iseeit.com/api/v1/export/<app-id>/).
       # Used only by app/lib/sales-ai-sync.ts, triggered manually from
       # /integrations for now — no cron yet.
+      # LinkedIn enrichment for org charts (Enrich Layer); without it the LinkedIn panel says it is not set up.
+      - key: ENRICH_LAYER_API_KEY
+        sync: false
       - key: SALES_AI_API_KEY
         sync: false
       - key: SALES_AI_BASE_URL

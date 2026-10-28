@@ -5,6 +5,7 @@ import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart"
 import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
 import { lineTone, type InfluenceEdit, type InfluenceTone, type OrgInfluence } from "../lib/org-chart-influence";
 import { planTeam, type TeamPlan } from "../lib/org-chart-layout";
+import LinkedInPanel from "./LinkedInPanel";
 import "./org-charts.css";
 
 // The interactive org chart, same behaviour as the iSEEit chart in Salesforce: click a card for its details, the task icon for
@@ -91,16 +92,51 @@ const Icon = ({ n }: { n: string }) => <svg viewBox="0 0 24 24" width="24" heigh
 // The company logo at the top of the PDF sheet (eager: the print waits for it).
 // eslint-disable-next-line @next/next/no-img-element
 const PrintLogo = ({ src }: { src: string }) => <img src={src} alt="" referrerPolicy="no-referrer" loading="eager" className="oc-print-logo" onError={e => e.currentTarget.remove()} />;
-function AddPopover({ nodes, defaultParent, busy, onAdd, onClose }: { nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null) => void; onClose: () => void }) {
-  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent);
+type FoundPerson = { url: string; name: string; headline: string; photo: string; title: string; company: string; inChart: boolean };
+// "Add a person": type the name, or search LinkedIn (by first and last name, position or profile address) and pick someone; the
+// pick fills in name, title and profile link. Typing a name and adding it stays possible without any search.
+function AddPopover({ chartId, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null, linkedin?: string, email?: string) => void; onClose: () => void }) {
+  const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent), [url, setUrl] = useState(""), [email, setEmail] = useState("");
+  const [salesAi, setSalesAi] = useState<Array<{ name: string; title: string; email: string; linkedin: string; inChart: boolean }>>([]);
+  const [found, setFound] = useState<FoundPerson[] | null>(null), [more, setMore] = useState(""), [searching, setSearching] = useState(false), [err, setErr] = useState("");
+  async function search(next = "") {
+    setSearching(true); setErr("");
+    const r = await fetch(`/api/org-charts/${encodeURIComponent(chartId)}/linkedin`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "search", name, position: title, url, nextToken: next || undefined }) }).catch(() => null);
+    const res = r ? await r.json().catch(() => ({})) : {};
+    setSearching(false);
+    if (!r?.ok) { setErr(res.error || "LinkedIn could not be reached."); return; }
+    setFound(list => next && list ? [...list, ...res.people] : res.people); setMore(res.nextToken || ""); if (!next) setSalesAi(res.salesAi || []);
+    if (!res.people.length && !(res.salesAi || []).length && !next) setErr("Nobody found. Try fewer words, or paste the LinkedIn address.");
+  }
+  const pickSalesAi = (p: { name: string; title: string; email: string; linkedin: string }) => { setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin); setFound(null); setSalesAi([]); setMore(""); setErr(""); };
+  const pick = (p: FoundPerson) => { setName(p.name); setTitle(p.title || p.headline); setUrl(p.url); setFound(null); setSalesAi([]); setMore(""); setErr(""); };
   return (
-    <form className="oc-pop" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null); }}>
+    <form className="oc-pop wide" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null, url.trim() || undefined, email || undefined); }}>
       <b>Add a person</b>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" aria-label="Name" maxLength={80} ref={el => el?.focus()} />
-      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Job title (optional)" aria-label="Job title" maxLength={120} />
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="First and last name" aria-label="Name" maxLength={80} ref={el => el?.focus()} />
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Position / job title (optional)" aria-label="Job title" maxLength={120} />
+      <input value={url} onChange={e => setUrl(e.target.value)} placeholder="LinkedIn address (optional)" aria-label="LinkedIn address" maxLength={300} />
+      <div className="oc-row"><button type="button" disabled={busy || searching || (!name.trim() && !title.trim() && !url.trim())} onClick={() => void search()}>{searching ? "Searching…" : "Search LinkedIn"}</button></div>
+      {err && <p className="oc-hint" role="status">{err}</p>}
+      {salesAi.length > 0 && <><b>Already in Sales AI</b><ul className="oc-li-list">
+        {salesAi.map(p => (
+          <li key={p.email || p.name} className="oc-li-person">
+            <span><b>{p.name}</b><br /><small>{p.title}{p.email ? ` · ${p.email}` : ""}</small></span>
+            <button type="button" disabled={p.inChart} onClick={() => pickSalesAi(p)}>{p.inChart ? "In chart" : "Use"}</button>
+          </li>
+        ))}
+      </ul></>}
+      {found && found.length > 0 && <><b>On LinkedIn</b><ul className="oc-li-list">
+        {found.map(p => (
+          <li key={p.url} className="oc-li-person">
+            <span><b>{p.name}</b><br /><small>{p.title || p.headline}{p.company ? ` · ${p.company}` : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span>
+            <button type="button" disabled={p.inChart} onClick={() => pick(p)}>{p.inChart ? "In chart" : "Use"}</button>
+          </li>
+        ))}
+        {more && <li><button type="button" disabled={searching} onClick={() => void search(more)}>Load more</button></li>}
+      </ul></>}
       <label>Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
       <div className="oc-row"><button type="submit" className="on" disabled={busy || !name.trim()}>Add</button><button type="button" onClick={onClose}>Cancel</button></div>
-      <p className="oc-hint">A placeholder for now; later this will search Salesforce contacts.</p>
     </form>
   );
 }
@@ -206,6 +242,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [layoutForce, setLayoutForce] = useState<"auto" | "row" | "ladder">("auto");
   const [addOpen, setAddOpen] = useState(false);
   const [info, setInfo] = useState("");
+  const [liOpen, setLiOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [contactEditKey, setContactEditKey] = useState<string | null>(null); // the Edit button in the details: change this person without the whole chart in edit mode
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
@@ -302,10 +339,6 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const r = tree.getBoundingClientRect(), w = r.width / zoom, h = r.height / zoom;
     setZoom(Math.max(0.5, Math.min(1, Math.floor(Math.min((el.clientWidth - 24) / w, (el.clientHeight - 70) / h) * 20) / 20)));
     el.scrollTo(0, 0);
-  }
-  function checkUpdates() {
-    const linked = chart.nodes.filter(n => n.linkedin).length;
-    setInfo(linked ? `${linked} of ${chart.nodes.length} people have a LinkedIn profile that can be checked. The check against LinkedIn (is the person still with the company?) is not connected yet.` : "Nobody in this chart has a LinkedIn profile yet, so there is nothing to check. The check against LinkedIn is not connected yet.");
   }
   function open(key: string) {
     setSelected(key);
@@ -625,8 +658,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           <button type="button" className="oc-rail-toggle" aria-label={railOpen ? "Hide the controls" : "Show the controls"} aria-expanded={railOpen} onClick={() => setRailOpen(v => !v)} title={railOpen ? "Hide the controls" : "Show the controls"}><svg viewBox="0 0 24 24" width="30" height="30" fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railOpen ? "none" : "rotate(180deg)" }} aria-hidden="true"><path d="M5 5l7 7-7 7" stroke="#c9ced6" /><path d="M12 5l7 7-7 7" stroke="#f5b942" /></svg></button>
           {railOpen && (
             <div className="oc-rail" role="toolbar" aria-label="Org chart controls">
-              <button type="button" data-tip="Add contact" aria-label="Add contact" onClick={() => { setAddOpen(v => !v); setInfo(""); }}><Icon n="add" /></button>
-              <button type="button" data-tip="Check for updates" aria-label="Check for updates" onClick={() => { setAddOpen(false); checkUpdates(); }}><Icon n="check" /></button>
+              <button type="button" data-tip="Add contact" aria-label="Add contact" onClick={() => { setAddOpen(v => !v); setInfo(""); setLiOpen(false); }}><Icon n="add" /></button>
+              <button type="button" data-tip="LinkedIn: check and find people" aria-label="LinkedIn: check and find people" onClick={() => { setAddOpen(false); setInfo(""); setLiOpen(v => !v); }}><Icon n="check" /></button>
               <button type="button" data-tip="Import org chart" aria-label="Import org chart" onClick={onImport}><Icon n="import" /></button>
               <button type="button" data-tip="Zoom in (5%)" aria-label="Zoom in" onClick={() => stepZoom(0.05)}><Icon n="zin" /></button>
               <button type="button" data-tip="Zoom out (5%)" aria-label="Zoom out" onClick={() => stepZoom(-0.05)}><Icon n="zout" /></button>
@@ -641,7 +674,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               <button type="button" data-tip="Sync with Salesforce: not available yet" aria-label="Sync with Salesforce, not available yet" disabled><Icon n="sync" /></button>
             </div>
           )}
-          {addOpen && <AddPopover nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey) => { if (await send({ op: "add", name, title, parentKey })) setAddOpen(false); }} />}
+          {addOpen && <AddPopover chartId={chartId} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey, linkedin, email) => { if (await send({ op: "add", name, title, parentKey, linkedin, email })) setAddOpen(false); }} />}
+          {liOpen && <LinkedInPanel chartId={chartId} nodes={chart.nodes} send={send} onClose={() => setLiOpen(false)} />}
           {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
         </div>
         </div>
