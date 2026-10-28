@@ -563,7 +563,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     setPrintScale(scale);
     const oldTitle = document.title; document.title = `Org chart ${title}`; document.body.classList.add("oc-printing");
     // Landscape only for this print: a named page would start the sheet on a second page after an empty portrait one.
-    const pageRule = document.createElement("style"); pageRule.textContent = "@page{size:A4 landscape;margin:10mm}"; document.head.appendChild(pageRule);
+    const pageRule = document.createElement("style"); pageRule.textContent = "@page{size:A4 landscape;margin:0}"; document.head.appendChild(pageRule);
     let done = false;
     const finish = () => { if (done) return; done = true; pageRule.remove(); document.title = oldTitle; document.body.classList.remove("oc-printing"); window.removeEventListener("afterprint", finish); setPrinting(false); };
     window.addEventListener("afterprint", finish);
