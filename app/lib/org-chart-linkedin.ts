@@ -132,7 +132,9 @@ export async function searchPeople(input: SearchInput): Promise<{ people: LiProf
   });
   // Salesforce says "CS Disco Inc." where LinkedIn says "CS Disco": an exact phrase needs the name without its legal ending too.
   const plain = companyWords(input.companyName).join(" ");
-  const names = [...new Set([input.companyName, plain].map(n => n.trim()).filter(Boolean))];
+  // "CS Disco" is "DISCO" on LinkedIn: also try without a one- or two-letter first word.
+  const words = plain.split(" "), bare = words.length > 1 && words[0].length <= 2 ? words.slice(1).join(" ") : "";
+  const names = [...new Set([input.companyName, plain, bare].map(n => n.trim()).filter(Boolean))];
   let res: Awaited<ReturnType<typeof run>> = null;
   if (input.nextToken) res = await run({});
   else {

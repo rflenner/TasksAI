@@ -41,6 +41,7 @@ export type OrgNode = {
   parentKey: string | null;
   order: number;
   linkedin: string; // the Contact's LinkedIn profile link, or ""
+  photoUrl?: string; // a person added from a LinkedIn search: their LinkedIn picture (a web address on Enrich Layer or LinkedIn), when there is no Salesforce photo
   left: boolean; // Salesforce says the Contact has left the company (iseeit__Is_Company_Left__c)
   openTasks: number; // open Tasks plus upcoming Events on this opportunity with the Contact
   activity?: number; // 0 to 4: how well the person is covered by meetings and action items; missing or 0 = no activity matched (not fed yet)

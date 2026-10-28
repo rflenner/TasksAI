@@ -83,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (!url && !account) return Response.json({ error: "Give the account name to search in" }, { status: 422 });
       const { people: found, nextToken: more } = await searchPeople({ url, first, last, position, companyName: account, companyDomain, nextToken });
       const have = new Set(chart.nodes.map(n => linkedinUrl(n.linkedin).toLowerCase().replace(/\/+$/, "")).filter(Boolean));
-      return Response.json({ searched, salesAi, people: found.map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
+      return Response.json({ searched, salesAi, people: found.filter((p, i) => found.findIndex(q => q.url.toLowerCase().replace(/\/+$/, "") === p.url.toLowerCase().replace(/\/+$/, "")) === i).map(p => ({ ...card(p), inChart: have.has(p.url.toLowerCase().replace(/\/+$/, "")) })), nextToken: more });
     }
 
     if (!enrichConfigured()) return Response.json({ error: "LinkedIn enrichment is not set up yet: ask an admin to add ENRICH_LAYER_API_KEY.", notConfigured: true }, { status: 503 });

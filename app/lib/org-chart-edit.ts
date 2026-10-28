@@ -11,7 +11,7 @@ export type OrgEdit =
   | { op: "drop"; key: string; targetKey: string | null; position: DropPosition; withTeam: boolean }
   | { op: "shift"; key: string; by: -1 | 1 }
   | { op: "update"; key: string; type?: string; layout?: string; dealRole?: string; powerBase?: boolean; description?: string; title?: string; name?: string; email?: string; phone?: string; left?: boolean; linkedin?: string }
-  | { op: "add"; name: string; title?: string; parentKey: string | null; linkedin?: string; email?: string }
+  | { op: "add"; name: string; title?: string; parentKey: string | null; linkedin?: string; email?: string; photoUrl?: string }
   | { op: "remove"; key: string };
 // Where a dragged card lands on the card it is dropped on, like the iSEEit chart in Salesforce: "top" = above it, so the dragged
 // person becomes its manager and takes its place; "bottom" = below it, so the dragged person reports to it; "left"/"right" =
@@ -21,6 +21,11 @@ export type DropPosition = "top" | "bottom" | "left" | "right" | "root";
 const POSITIONS: DropPosition[] = ["top", "bottom", "left", "right", "root"];
 export type EditResult = { chart: OrgChart; key?: string } | { error: string };
 
+// Only a picture hosted by Enrich Layer or LinkedIn is kept, as a plain https address.
+export function photoWebAddress(value: unknown): string {
+  if (typeof value !== "string" || value.length > 600) return "";
+  try { const u = new URL(value); return u.protocol === "https:" && /(^|\.)(enrichlayer\.com|licdn\.com)$/i.test(u.hostname) ? u.toString() : ""; } catch { return ""; }
+}
 const text = (value: unknown, max: number) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
 
 // Renumber every group of siblings 0, 1, 2… in their current order and recompute the top level.
@@ -121,7 +126,7 @@ export function applyOrgEdit(chart: OrgChart, edit: OrgEdit): EditResult {
       if (parentKey && !find(parentKey)) return { error: "That manager is not in the chart" };
       let key = "";
       do key = "tmp" + Math.random().toString(36).slice(2, 12); while (find(key));
-      const node: OrgNode = { key, roleId: "", name, title: text(edit.title, 120), email: text(edit.email, 120), phone: "", description: "", provisional: true, type: "Neutral", dealRole: "", powerBase: false, parentKey, order: siblings(chart, parentKey).length, linkedin: edit.linkedin ? linkedinUrl(edit.linkedin) : "", left: false, openTasks: 0, photo: "" };
+      const node: OrgNode = { key, roleId: "", name, title: text(edit.title, 120), email: text(edit.email, 120), phone: "", description: "", provisional: true, type: "Neutral", dealRole: "", powerBase: false, parentKey, order: siblings(chart, parentKey).length, linkedin: edit.linkedin ? linkedinUrl(edit.linkedin) : "", left: false, openTasks: 0, photo: "", photoUrl: photoWebAddress(edit.photoUrl) };
       return { chart: normalizeOrgChart({ ...chart, nodes: [...chart.nodes, node] }), key };
     }
     case "remove": {
