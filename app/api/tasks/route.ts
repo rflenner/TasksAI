@@ -9,6 +9,7 @@ import { autoAdvanceStatus, describeChanges, recordActivity } from "../../lib/ta
 import { resolveDueDate } from "../../lib/task-defaults";
 import { hasUnseenUpdateFor, isTaskNewFor, loadNewFlagContext, newlyAssignedPeople, noteAssignments } from "../../lib/task-flags";
 import { notifySlackOnTaskChange } from "../../lib/task-notify";
+import { canViewOrgCharts } from "../../lib/close-plan-store";
 type StoredTask=typeof tasks.$inferSelect; type Input=Partial<StoredTask>&{recurring_meeting?:string}; type DimensionType="project"|"meeting"|"topic"|"person";
 const cleanList=(value:unknown)=>Array.isArray(value)?value.map(String).map(x=>x.trim()).filter(Boolean):[];
 // externalSource/externalId only ever come through when a caller explicitly
@@ -51,7 +52,7 @@ export async function GET(){const actor=await currentActor();if(!actor)return Re
  // has to be computed per request, never cached on the row itself.
  const flagContext=await loadNewFlagContext(actor.name);const now=Date.now();
  const withFlags=visible.map(task=>({...task,isNew:isTaskNewFor(task,now,flagContext.viewedAt.get(task.id)??null,flagContext.assignedAt.get(task.id)??null),hasUnseenUpdate:hasUnseenUpdateFor(task,actor.name,flagContext.viewedAt.get(task.id)??null)}));
- return Response.json({tasks:withFlags,dimensions:{...(actor.role==="site_admin"?await dimensions():scoped),account,opportunity},registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite}})}
+ return Response.json({tasks:withFlags,dimensions:{...(actor.role==="site_admin"?await dimensions():scoped),account,opportunity},registeredPeople,actor:{name:actor.name,email:actor.email,role:actor.role,canWrite:actor.role!=="readonly",canInvite:actor.canInvite,canViewOrgCharts:canViewOrgCharts(actor)}})}
 export async function POST(request:Request){
  const invalid=requireSameOrigin(request);if(invalid)return invalid;
  const actor=await currentActor();if(!actor)return Response.json({error:"Sign in required"},{status:401});
