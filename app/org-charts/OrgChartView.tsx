@@ -94,6 +94,7 @@ const Icon = ({ n }: { n: string }) => <svg viewBox="0 0 24 24" width="24" heigh
 const PrintLogo = ({ src }: { src: string }) => <img src={src} alt="" referrerPolicy="no-referrer" loading="eager" className="oc-print-logo" onError={e => e.currentTarget.remove()} />;
 type FoundPerson = { url: string; name: string; headline: string; photo: string; title: string; company: string; inChart: boolean };
 type SalesAiPerson = { name: string; title: string; email: string; linkedin: string; inChart: boolean };
+type Importable = { name: string; title: string; email: string; linkedin: string };
 type AddMode = "contact" | "placeholder" | "linkedin";
 const TILES: Array<{ mode: AddMode; label: string; hint: string }> = [
   { mode: "contact", label: "Contact", hint: "People Sales AI knows at this account" },
@@ -103,14 +104,15 @@ const TILES: Array<{ mode: AddMode; label: string; hint: string }> = [
 // "Add Contact to Org Chart", like Salesforce's: choose Contact (from Sales AI), Placeholder Contact (a name and title) or Search Contact
 // from LinkedIn. A search shows its results in the same window, with what was searched for; picking one fills in the form, which is
 // then added to the chart. The person is added to this copy of the chart only; nothing is created in Salesforce.
-function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; accountName: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (name: string, title: string, parentKey: string | null, linkedin?: string, email?: string) => void; onClose: () => void }) {
+function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, onClose }: { chartId: string; accountName: string; nodes: OrgNode[]; defaultParent: string; busy: boolean; onAdd: (people: Importable[], parentKey: string | null) => void; onClose: () => void }) {
   const [mode, setMode] = useState<AddMode | null>(null), [view, setView] = useState<"form" | "results">("form");
-  const [first, setFirst] = useState(""), [last, setLast] = useState(""), [account, setAccount] = useState(accountName), [pick, setPick] = useState("");
+  const [first, setFirst] = useState(""), [last, setLast] = useState(""), [account, setAccount] = useState(accountName), [picks, setPicks] = useState<Record<string, Importable>>({}), firstRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(""), [title, setTitle] = useState(""), [parent, setParent] = useState(defaultParent), [url, setUrl] = useState(""), [email, setEmail] = useState(""), [from, setFrom] = useState("");
   const [salesAi, setSalesAi] = useState<SalesAiPerson[]>([]), [found, setFound] = useState<FoundPerson[]>([]), [more, setMore] = useState("");
   const [searching, setSearching] = useState(false), [err, setErr] = useState(""), [searched, setSearched] = useState("");
+  useEffect(() => { firstRef.current?.focus(); }, [mode, view]); // once per screen: a ref callback written inline would refocus on every keystroke
   async function search(next = "") {
-    setSearching(true); setErr(""); if (!next) { setView("results"); setFound([]); setSalesAi([]); setSearched(""); setPick(""); }
+    setSearching(true); setErr(""); if (!next) { setView("results"); setFound([]); setSalesAi([]); setSearched(""); setPicks({}); }
     const r = await fetch(`/api/org-charts/${encodeURIComponent(chartId)}/linkedin`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(mode === "linkedin" ? { action: "search", first, last, position: title, account, url, nextToken: next || undefined } : { action: "search", only: "salesai", first: name, position: title }) }).catch(() => null);
     const res = r ? await r.json().catch(() => ({})) : {};
     setSearching(false);
@@ -124,9 +126,11 @@ function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, o
     }
   }
   const use = (p: { name: string; title: string; email: string; linkedin: string }, source: string) => { setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin); setFrom(source); setView("form"); };
+  const toggle = (id: string, person: Importable) => setPicks(m => { const n = { ...m }; if (id in n) delete n[id]; else n[id] = person; return n; });
+  const chosen = Object.values(picks);
   const noResults = !searching && !err && !salesAi.length && !found.length;
   const searchable = mode === "linkedin" ? Boolean(url.trim() || ((first.trim() || last.trim() || title.trim()) && account.trim())) : mode === "contact" && Boolean(name.trim() || title.trim());
-  const field = (value: string, set: (v: string) => void, placeholder: string, max: number, focus = false) => <input value={value} onChange={e => set(e.target.value)} placeholder={placeholder} aria-label={placeholder} maxLength={max} ref={focus ? el => el?.focus() : undefined} />;
+  const field = (value: string, set: (v: string) => void, placeholder: string, max: number, focus = false) => <input value={value} onChange={e => set(e.target.value)} placeholder={placeholder} aria-label={placeholder} maxLength={max} ref={focus ? firstRef : undefined} />;
   return (
     <div className="oc-modal" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }} onKeyDown={e => { if (e.key === "Escape") onClose(); }}>
       <div className={`oc-results${mode === "linkedin" ? " wide2" : ""}`} role="dialog" aria-modal="true" aria-label="Add Contact to Org Chart">
@@ -137,7 +141,7 @@ function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, o
         </>}
         {mode === "linkedin" && <div className="oc-li2">
           <form className="oc-li2-left" onSubmit={e => { e.preventDefault(); if (searchable) void search(); }}>
-            <label>First Name<input value={first} onChange={e => setFirst(e.target.value)} maxLength={60} ref={el => el?.focus()} /></label>
+            <label>First Name<input value={first} onChange={e => setFirst(e.target.value)} maxLength={60} ref={firstRef} /></label>
             <label>Last Name<input value={last} onChange={e => setLast(e.target.value)} maxLength={60} /></label>
             <label>Title<input value={title} onChange={e => setTitle(e.target.value)} maxLength={80} /></label>
             <label><span><i className="req">*</i> Account Name</span><input value={account} onChange={e => setAccount(e.target.value)} maxLength={120} /></label>
@@ -152,13 +156,13 @@ function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, o
               {err && <p className="oc-li-err" role="alert">{err}</p>}
               {salesAi.length > 0 && <><h5>Already in Sales AI ({salesAi.length})</h5><ul className="oc-li-list">
                 {salesAi.map(p => { const id = `s:${p.email || p.name}`; return (
-                  <li key={id}><label className={`oc-li-pick${pick === id ? " on" : ""}`} aria-label={p.name}><input type="radio" name="pick" disabled={p.inChart} checked={pick === id} onChange={() => { setPick(id); setName(p.name); setTitle(p.title); setEmail(p.email); setUrl(p.linkedin || url); setFrom("Sales AI"); }} />
+                  <li key={id}><label className={`oc-li-pick${id in picks ? " on" : ""}`} aria-label={p.name}><input type="checkbox" disabled={p.inChart} checked={id in picks} onChange={() => toggle(id, { name: p.name, title: p.title, email: p.email, linkedin: p.linkedin })} />
                     <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || "No title"}{p.email ? ` · ${p.email}` : ""}{p.inChart ? " · already in the chart" : ""}</small></span></label></li>
                 ); })}
               </ul></>}
               {found.length > 0 && <><h5>On LinkedIn ({found.length}{more ? "+" : ""})</h5><ul className="oc-li-list">
                 {found.map(p => (
-                  <li key={p.url}><label className={`oc-li-pick${pick === p.url ? " on" : ""}`} aria-label={p.name}><input type="radio" name="pick" disabled={p.inChart} checked={pick === p.url} onChange={() => { setPick(p.url); setName(p.name); setTitle(p.title || p.headline); setEmail(""); setUrl(p.url); setFrom("LinkedIn"); }} />
+                  <li key={p.url}><label className={`oc-li-pick${p.url in picks ? " on" : ""}`} aria-label={p.name}><input type="checkbox" disabled={p.inChart} checked={p.url in picks} onChange={() => toggle(p.url, { name: p.name, title: p.title || p.headline, email: "", linkedin: p.url })} />
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <span className="oc-li-ph">{p.photo ? <img src={p.photo} alt="" referrerPolicy="no-referrer" onError={e => e.currentTarget.remove()} /> : initials(p.name)}</span>
                     <span className="oc-li-who"><b>{p.name}</b><br /><small>{p.title || p.headline || "No title"}{p.company ? ` · ${p.company}` : ""}{p.inChart ? " · already in the chart" : ""} · <a href={p.url} target="_blank" rel="noopener noreferrer">Profile</a></small></span></label></li>
@@ -170,12 +174,12 @@ function AddPopover({ chartId, accountName, nodes, defaultParent, busy, onAdd, o
           </div>
           <div className="oc-li2-foot">
             <label className="oc-li2-parent">Reports to<select value={parent} onChange={e => setParent(e.target.value)}><option value="">Nobody (top level)</option>{nodes.map(n => <option key={n.key} value={n.key}>{n.name}</option>)}</select></label>
-            <button type="button" onClick={() => { setMode(null); setFrom(""); setPick(""); setView("form"); }}>Back</button>
+            <button type="button" onClick={() => { setMode(null); setFrom(""); setPicks({}); setView("form"); }}>Back</button>
             <button type="button" onClick={onClose}>Cancel</button>
-            <button type="button" className="on" disabled={busy || !pick || !name.trim()} onClick={() => onAdd(name, title, parent || null, url.trim() || undefined, email || undefined)}>Import to Org Chart</button>
+            <button type="button" className="on" disabled={busy || !chosen.length} onClick={() => onAdd(chosen, parent || null)}>{chosen.length > 1 ? `Import ${chosen.length} to Org Chart` : "Import to Org Chart"}</button>
           </div>
         </div>}
-        {mode && mode !== "linkedin" && view === "form" && <form className="oc-li-form" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd(name, title, parent || null, url.trim() || undefined, email || undefined); }}>
+        {mode && mode !== "linkedin" && view === "form" && <form className="oc-li-form" onSubmit={e => { e.preventDefault(); if (name.trim()) onAdd([{ name, title, email, linkedin: url.trim() }], parent || null); }}>
           {from && <p className="oc-hint">Taken from {from}. Check it, then add.</p>}
           {field(name, setName, mode === "placeholder" ? "Name" : "First and last name", 80, true)}
           {field(title, setTitle, mode === "placeholder" ? "Job title (optional)" : "Position / job title (optional)", 120)}
@@ -746,7 +750,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
               <button type="button" data-tip="Sync with Salesforce: not available yet" aria-label="Sync with Salesforce, not available yet" disabled><Icon n="sync" /></button>
             </div>
           )}
-          {addOpen && <AddPopover chartId={chartId} accountName={accountName} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey, linkedin, email) => { if (await send({ op: "add", name, title, parentKey, linkedin, email })) setAddOpen(false); }} />}
+          {addOpen && <AddPopover chartId={chartId} accountName={accountName} nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (people, parentKey) => { let ok = true; for (const p of people) ok = (await send({ op: "add", name: p.name, title: p.title, parentKey, linkedin: p.linkedin || undefined, email: p.email || undefined })) && ok; if (ok) setAddOpen(false); }} />}
           {liOpen && <LinkedInPanel chartId={chartId} nodes={chart.nodes} send={send} onClose={() => setLiOpen(false)} />}
           {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
         </div>
