@@ -104,7 +104,7 @@
   body.oc-printing>*:not(.oc-print-root){display:none!important}
   body.oc-printing{background:#fff}
   html:has(body.oc-printing),body.oc-printing{height:auto!important;min-height:0!important;overflow:visible!important}
-  .oc-print-root{position:static;width:auto}
+  .oc-print-root{position:static;width:auto;padding:10mm}
   .oc-print-root,.oc-print-root *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .oc-print-root li{break-inside:avoid}
 }
