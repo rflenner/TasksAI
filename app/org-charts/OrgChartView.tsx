@@ -5,6 +5,7 @@ import type { OrgChart, OrgNode, OrgTaskItem } from "../lib/close-plan-orgchart"
 import type { DropPosition, OrgEdit } from "../lib/org-chart-edit";
 import { lineTone, type InfluenceEdit, type InfluenceTone, type OrgInfluence } from "../lib/org-chart-influence";
 import { planTeam, type TeamPlan } from "../lib/org-chart-layout";
+import LinkedInPanel from "./LinkedInPanel";
 import "./org-charts.css";
 
 // The interactive org chart, same behaviour as the iSEEit chart in Salesforce: click a card for its details, the task icon for
@@ -206,6 +207,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
   const [layoutForce, setLayoutForce] = useState<"auto" | "row" | "ladder">("auto");
   const [addOpen, setAddOpen] = useState(false);
   const [info, setInfo] = useState("");
+  const [liOpen, setLiOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [contactEditKey, setContactEditKey] = useState<string | null>(null); // the Edit button in the details: change this person without the whole chart in edit mode
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
@@ -302,10 +304,6 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
     const r = tree.getBoundingClientRect(), w = r.width / zoom, h = r.height / zoom;
     setZoom(Math.max(0.5, Math.min(1, Math.floor(Math.min((el.clientWidth - 24) / w, (el.clientHeight - 70) / h) * 20) / 20)));
     el.scrollTo(0, 0);
-  }
-  function checkUpdates() {
-    const linked = chart.nodes.filter(n => n.linkedin).length;
-    setInfo(linked ? `${linked} of ${chart.nodes.length} people have a LinkedIn profile that can be checked. The check against LinkedIn (is the person still with the company?) is not connected yet.` : "Nobody in this chart has a LinkedIn profile yet, so there is nothing to check. The check against LinkedIn is not connected yet.");
   }
   function open(key: string) {
     setSelected(key);
@@ -625,8 +623,8 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
           <button type="button" className="oc-rail-toggle" aria-label={railOpen ? "Hide the controls" : "Show the controls"} aria-expanded={railOpen} onClick={() => setRailOpen(v => !v)} title={railOpen ? "Hide the controls" : "Show the controls"}><svg viewBox="0 0 24 24" width="30" height="30" fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railOpen ? "none" : "rotate(180deg)" }} aria-hidden="true"><path d="M5 5l7 7-7 7" stroke="#c9ced6" /><path d="M12 5l7 7-7 7" stroke="#f5b942" /></svg></button>
           {railOpen && (
             <div className="oc-rail" role="toolbar" aria-label="Org chart controls">
-              <button type="button" data-tip="Add contact" aria-label="Add contact" onClick={() => { setAddOpen(v => !v); setInfo(""); }}><Icon n="add" /></button>
-              <button type="button" data-tip="Check for updates" aria-label="Check for updates" onClick={() => { setAddOpen(false); checkUpdates(); }}><Icon n="check" /></button>
+              <button type="button" data-tip="Add contact" aria-label="Add contact" onClick={() => { setAddOpen(v => !v); setInfo(""); setLiOpen(false); }}><Icon n="add" /></button>
+              <button type="button" data-tip="LinkedIn: check and find people" aria-label="LinkedIn: check and find people" onClick={() => { setAddOpen(false); setInfo(""); setLiOpen(v => !v); }}><Icon n="check" /></button>
               <button type="button" data-tip="Import org chart" aria-label="Import org chart" onClick={onImport}><Icon n="import" /></button>
               <button type="button" data-tip="Zoom in (5%)" aria-label="Zoom in" onClick={() => stepZoom(0.05)}><Icon n="zin" /></button>
               <button type="button" data-tip="Zoom out (5%)" aria-label="Zoom out" onClick={() => stepZoom(-0.05)}><Icon n="zout" /></button>
@@ -642,6 +640,7 @@ export default function OrgChartView({ chartId, chart: initial, edited: wasEdite
             </div>
           )}
           {addOpen && <AddPopover nodes={chart.nodes} defaultParent={selected || ""} busy={busy} onClose={() => setAddOpen(false)} onAdd={async (name, title, parentKey) => { if (await send({ op: "add", name, title, parentKey })) setAddOpen(false); }} />}
+          {liOpen && <LinkedInPanel chartId={chartId} nodes={chart.nodes} parentKey={selected || ""} send={send} onClose={() => setLiOpen(false)} />}
           {info && <div className="oc-pop" role="status"><p>{info}</p><div className="oc-row"><button type="button" onClick={() => setInfo("")}>Close</button></div></div>}
         </div>
         </div>

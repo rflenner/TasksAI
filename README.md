@@ -60,7 +60,7 @@ Other access-model notes:
 ## Deploy to Render
 
 1. In Render, choose **New → Blueprint** and connect this repository. Render reads `render.yaml` and creates the web service, the PostgreSQL database, and four Cron Jobs.
-2. Enter every `sync: false` variable in the Render dashboard (see `render.yaml` for the current list — currently `SITE_ADMIN_COMPANY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `SALES_AI_API_KEY`, `SALES_AI_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`). They are never stored in Git.
+2. Enter every `sync: false` variable in the Render dashboard (see `render.yaml` for the current list — currently `SITE_ADMIN_COMPANY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `SALES_AI_API_KEY`, `SALES_AI_BASE_URL`, `ENRICH_LAYER_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`). They are never stored in Git.
 3. Keep `TASK_AI_FROM_EMAIL` as `Task AI <notifications@tasks.flenner.at>`. The `tasks.flenner.at` domain must remain verified in Resend for *sending* — that's independent of what `APP_URL` points to (see below), so this stays put even while the custom domain itself isn't in use for links.
 4. On the first deployment only, change `BOOTSTRAP_SITE_ADMIN` to `true` and deploy. Startup applies migrations and idempotently creates the configured `SITE_ADMIN_EMAIL` as Site Admin.
 5. Immediately set `BOOTSTRAP_SITE_ADMIN` back to `false` and redeploy. The existing admin remains intact.
