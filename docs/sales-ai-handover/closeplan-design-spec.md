@@ -36,6 +36,9 @@ One lane when phases do not overlap, a Gantt row per phase when they do. Each ph
 ### 3.3 Task card, subtasks, drag — `cardHtml`
 Checkbox, title, one meta row (owner, due date, status, milestone star, coworkers, "Requested by …", update count, "x/y subtasks"). Overdue due dates in `#c96539` with "Overdue ·". "ADDED BY <customer>" badge only when a customer created it and the viewer is on the selling team. Drag handle on hover; tasks can move between phases. Bell icon only on hover.
 
+### 3.3b Next up — see `next-up.md` in this folder
+A list of open tasks the viewer may see, due today or earlier or within 14 days, oldest first, 6 rows with "Show all N". Side column on screens 1920 px and wider, otherwise an icon button with an overdue badge. Full rules, wording and placement are in `next-up.md` (read `nextUpPanel()` in the prototype).
+
 ### 3.4 Add a task (inline) — `.inline-new`
 A normal white card with a normal grey border (no blue): disabled checkbox, "Task name" field (17px, navy text, no border), hint line "Enter adds it and starts the next one · the button adds it and closes · Esc cancels", and on the right **Cancel** and **Add task** buttons.
 

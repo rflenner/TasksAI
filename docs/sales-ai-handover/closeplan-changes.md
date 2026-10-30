@@ -4,6 +4,7 @@ Newest first. The Task AI chat adds a line here whenever it changes what users s
 
 | Date | Task AI PR | What to copy | Spec section | Ported in Sales AI |
 |---|---|---|---|---|
+| 2026-10-30 | #266 | How "Next up" items are shown (rules, order, wording, badge, placement); described in `next-up.md` | 3.3b | Check whether Sales AI has a Next up list |
 | 2026-10-30 | #264 | Add-task row without blue frame; people fields as a plain box with ▾, "None selected", × on hover; timeline phase cards with completion bar, "x/y closed" and state colour | 2, 3.2, 3.4, 3.6 | Done by the Task AI chat, uncommitted in the closePlan folder; also phase header, searchable dropdowns |
 | 2026-10-30 | #254 | A task pulled from Salesforce is credited to its creator; a checkpoint with no deadline stays without a due date | 4 | Backend sync: check |
 | 2026-10-27 | #255 | Progress chart: milestone diamonds (green / purple / yellow within 7 days / red missed), names beside the diamonds on the large chart, dotted lines for signature and go-live, axis ends at the last milestone, legend and footnote behind an (i) | 3.7 | Not started |
