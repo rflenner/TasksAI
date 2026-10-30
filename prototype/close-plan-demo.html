@@ -3985,6 +3985,31 @@ const TEMPLATES = [
     ],
   },
   {
+    id: "renewal-playbook", live: 30, name: "Renewal playbook (iSEEit)", goodFor: "Renewal deals run on the iSEEit renewal playbook: onboarding check-ins, qualify, validate, consensus and negotiate/close. The signature date is the renewal date. Internal checkpoints stay hidden from the customer.",
+    phases: [
+      ["onboarding", "Onboarding", "Check in on the technical setup and agree the final sales process and go-live.", ["S", -120], ["S", -100]],
+      ["qualify", "Qualify", "Understand usage health, the pain, the economic buyer and the champion.", ["S", -96], ["S", -70]],
+      ["validate", "Validate", "Show the value realized and get the economic buyer behind adoption.", ["S", -66], ["S", -45]],
+      ["consensus", "Consensus", "Agree the decision criteria and the decision process with everyone involved.", ["S", -42], ["S", -22]],
+      ["negotiate", "Negotiate/Close", "Confirm the numbers, send the renewal quote and get it accepted.", ["S", -20], ["S", 0]],
+    ],
+    tasks: [
+      ["onboarding", "Check-ins", "cs", ["S", -112], { d: "Technical check-in with the customer.", subs: [["Technical check-in", "cs", ["S", -112], {}]] }],
+      ["onboarding", "Go live", "ae", ["S", -102], { d: "Agree the final sales process and make sure the implementation is done and live.", subs: [["Final sales process agreed", "ae", ["S", -108], {}], ["Implementation done", "cs", ["S", -104], {}], ["Go live", "lead", ["S", -102], { ms: true }]] }],
+      ["qualify", "Usage health", "cs", ["S", -92], { int: true, d: "Internal check of how the product is used today.", subs: [["ISV health score", "cs", ["S", -94], {}], ["Features in use", "cs", ["S", -92], {}]] }],
+      ["qualify", "Check-ins", "ae", ["S", -86], { d: "Business check-in with the customer.", subs: [["Business check-in", "ae", ["S", -86], {}]] }],
+      ["qualify", "Pain", "ae", ["S", -80], { co: ["lead"], d: "What the customer needs the solution to keep doing for them.", subs: [["Success criteria", "lead", ["S", -80], {}]] }],
+      ["qualify", "Economic buyer", "ae", ["S", -76], { int: true, d: "Who signs the renewal.", subs: [["Economic buyer identified", "ae", ["S", -76], {}]] }],
+      ["qualify", "Champion", "ae", ["S", -72], { int: true, d: "Who is driving the renewal on the customer side.", subs: [["Champion identified", "ae", ["S", -74], {}], ["Champion tested", "ae", ["S", -72], {}]] }],
+      ["validate", "Metrics", "cs", ["S", -60], { rq: ["sponsor"], d: "The value the customer has realized.", subs: [["Value realization", "cs", ["S", -60], {}]] }],
+      ["validate", "Economic buyer", "ae", ["S", -50], { int: true, d: "Get the economic buyer behind adoption.", subs: [["Economic buyer drives adoption", "ae", ["S", -50], {}]] }],
+      ["consensus", "Decision criteria", "ae", ["S", -38], { rq: ["sponsor"], d: "What the customer decides on.", subs: [["Decision criteria communicated and confirmed", "ae", ["S", -38], {}]] }],
+      ["consensus", "Decision process", "sponsor", ["S", -28], { co: ["ae"], d: "Who approves what, in which order.", subs: [["Stakeholders confirm value realization", "sponsor", ["S", -28], {}]] }],
+      ["negotiate", "Check-ins", "ae", ["S", -18], { d: "Make sure the customer is on the latest version before renewing.", subs: [["Upgraded to latest managed package", "tech", ["S", -18], {}]] }],
+      ["negotiate", "Decision process", "ae", ["S", -3], { rq: ["sponsor"], d: "Confirm the numbers, send the renewal quote and get it accepted.", subs: [["User counts confirmed", "lead", ["S", -14], {}], ["Renewal quote sent", "ae", ["S", -8], {}], ["Quote accepted", "sponsor", ["S", 0], { ms: true, key: "sign" }]] }],
+    ],
+  },
+  {
     id: "service", live: 110, name: "App design & build (service)", goodFor: "Service projects that design and build an app with the customer. Signature = statement of work, go-live = launch.",
     phases: [
       ["sow", "Proposal & SOW", "Agree scope, approach and price in a statement of work.", ["S", -30], ["S", 0]],
