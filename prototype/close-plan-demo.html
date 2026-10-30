@@ -324,7 +324,7 @@ button { cursor: pointer; }
 .add-task-btn { display: inline-flex; align-items: center; gap: 6px; align-self: start; justify-self: start; border: 0; background: none; color: var(--muted); font-size: 14px; padding: 8px 10px; margin-left: 10px; border-radius: 8px; }
 .add-task-btn:hover { color: var(--navy); background: #fff; }
 .add-task-btn .i { width: 16px; height: 16px; }
-.inline-new { cursor: default; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(23, 63, 118, .08); }
+.inline-new { cursor: default; } .inline-new:hover { border-color: var(--line); box-shadow: none; }
 .inline-new .card-check { opacity: .5; }
 .inline-title { width: 100%; border: 0; outline: 0; background: transparent; font-size: 17px; color: var(--navy); padding: 0; line-height: 1.35; }
 .inline-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-top: 8px; }
@@ -670,15 +670,17 @@ textarea[data-grow] { resize: none; overflow-y: hidden; line-height: 1.45; }
 .g-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: #eef1f5; }
 .g-today { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--orange); z-index: 2; pointer-events: none; }
 .g-label { display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0 10px 0 0; text-align: left; font-weight: 700; font-size: 13px; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.g-label:hover { color: var(--navy); text-decoration: underline; }
+.g-label:hover { color: var(--navy); text-decoration: underline; } .g-cnt-l { color: var(--hint); font-weight: 400; font-size: 10.5px; margin-left: 2px; }
 .g-num { width: 20px; height: 20px; border-radius: 50%; background: #e7eef8; color: var(--navy); display: inline-grid; place-items: center; font-size: 10.5px; flex: none; }
 .g-bar { position: absolute; top: 6px; height: 24px; border: 1px solid #c9d6e6; background: #f2f6fb; border-radius: 6px; overflow: hidden; padding: 0 8px; text-align: left; font-size: 11px; color: #5d6470; display: flex; align-items: center; }
 .g-bar:hover { border-color: var(--navy); }
 .g-bar.current { border-color: var(--navy); background: #e6eefa; color: var(--navy); font-weight: 700; }
 .g-bar span { position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-row.single { grid-template-columns: minmax(560px, 1fr); }
-.g-lane-strip { height: 54px; }
-.g-strip { top: 5px; height: 44px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 0 9px; }
+.g-lane-strip { height: 84px; }
+.g-strip { top: 5px; height: 74px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 0 10px; background: #f3f5f9; border-color: #d5dbe5; }
+.g-strip .g-prog { display: block; width: 100%; height: 4px; border-radius: 4px; background: #dfe5ee; overflow: hidden; margin-top: 4px; flex: none; } .g-strip .g-prog i { display: block; height: 100%; background: var(--green); } .g-strip .g-cnt { font-size: 10.5px; color: var(--hint); font-weight: 400; }
+.g-strip.current { background: #e2ebf9; border-color: var(--navy); } .g-strip.complete { background: #e8f5ee; border-color: #b9dcc8; } .g-strip.complete .g-num { background: #cfe9da; color: #25784b; } .g-strip.late:not(.complete) { border-color: #e6b56a; }
 .g-strip .nm { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--dark); font-size: 12.5px; max-width: 100%; }
 .g-strip .nm .g-num { width: 17px; height: 17px; font-size: 9.5px; }
 .g-strip .dt { font-size: 10.5px; color: var(--hint); font-weight: 400; max-width: 100%; }
@@ -845,7 +847,10 @@ button.wz-card { font: inherit; text-align: left; }
 .pfield { position: relative; font-weight: 400; }
 .pf-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 44px; border: 1px solid var(--field); border-radius: 8px; padding: 6px 8px; background: #fff; }
 .pfield.ro .pf-box { background: #f6f8fa; }
-.pfield.open .pf-box { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(23, 63, 118, .08); }
+.pf-trigger { cursor: pointer; } .pf-trigger:hover, .pfield.open .pf-box { border-color: #b8c6da; } .pf-trigger:focus-visible { outline: 0; border-color: #b8c6da; }
+.pf-placeholder { flex: 1; color: #9aa2ac; font-size: 14px; } .pf-caret { margin-left: auto; flex: none; color: #8b929d; font-size: 11px; padding-left: 6px; } .pfield.open .pf-caret { color: var(--navy); }
+.pf-box .chip button { display: none; } .pf-box .chip:hover button { display: inline-block; }
+.pf-box .chip:not(:has(button)), .pf-box .chip { padding-right: 9px; } .pf-box .chip:hover:has(button) { padding-right: 5px; }
 .pf-box .chip { font-size: 12px; padding: 3px 5px 3px 9px; }
 .pf-box .chip:not(:has(button)) { padding-right: 9px; }
 .pf-add { border: 0; background: none; color: var(--navy); font-size: 12.5px; font-weight: 700; padding: 4px 6px; border-radius: 6px; }
@@ -2244,9 +2249,10 @@ function timelineBlock() {
   // No overlaps: one compact lane, every phase placed by date with its name inside the bar.
   if (!overlapping()) {
     const bars = phases.map((ph, i) => {
-      const done = doneOf(ph), left = pct(d(ph.start).getTime()), width = pct(d(ph.end).getTime() + 864e5) - left;
-      return `<button type="button" class="g-bar g-strip ${isCurrent(ph) ? "current" : ""}" data-jump="${ph.id}" style="left:${left}%;width:${width}%" title="${esc(ph.name)}: ${fmtY(ph.start)} – ${fmtY(ph.end)}, ${Math.round(done * 100)}% closed">
-        <i class="g-fill" style="width:${done * 100}%"></i><span class="nm"><span class="g-num">${i + 1}</span>${esc(ph.name)}</span><span class="dt">${fmt(ph.start)} – ${fmt(ph.end)}</span></button>`;
+      const ts = state.tasks.filter(t => t.phase === ph.id && visible(t)), closed = ts.filter(t => t.status === "Closed").length, done = ts.length ? closed / ts.length : 0;
+      const left = pct(d(ph.start).getTime()), width = pct(d(ph.end).getTime() + 864e5) - left, complete = ts.length > 0 && closed === ts.length, late = ts.some(isOver);
+      return `<button type="button" class="g-bar g-strip ${isCurrent(ph) ? "current" : ""} ${complete ? "complete" : ""} ${late ? "late" : ""}" data-jump="${ph.id}" style="left:${left}%;width:${width}%" title="${esc(ph.name)}: ${fmtY(ph.start)} – ${fmtY(ph.end)}, ${closed}/${ts.length} closed">
+        <span class="nm"><span class="g-num">${complete ? "✓" : i + 1}</span>${esc(ph.name)}</span><span class="dt">${fmt(ph.start)} – ${fmt(ph.end)}</span><span class="g-prog"><i style="width:${done * 100}%"></i></span><span class="g-cnt">${closed}/${ts.length} closed</span></button>`;
     }).join("");
     return `<section class="timeline" aria-label="Phase timeline">${axis}<div class="g-row single"><div class="g-lane g-lane-strip">${grid}${bars}</div></div>${msLane ? `<div class="g-row single">${msLane}</div>` : ""}</section>`;
   }
@@ -2255,7 +2261,7 @@ function timelineBlock() {
     const done = ts.length ? ts.filter(t => t.status === "Closed").length / ts.length : 0;
     const left = pct(d(ph.start).getTime()), width = Math.max(pct(d(ph.end).getTime() + 864e5) - left, 1.5);
     return `<div class="g-row">
-      <button type="button" class="g-label" data-jump="${ph.id}"><span class="g-num">${i + 1}</span>${esc(ph.name)}</button>
+      <button type="button" class="g-label" data-jump="${ph.id}"><span class="g-num">${i + 1}</span>${esc(ph.name)}<small class="g-cnt-l">${ts.filter(t => t.status === "Closed").length}/${ts.length} closed</small></button>
       <div class="g-lane">${grid}
         <button type="button" class="g-bar ${isCurrent(ph) ? "current" : ""}" data-jump="${ph.id}" style="left:${left}%;width:${width}%" title="${esc(ph.name)}: ${fmtY(ph.start)} – ${fmtY(ph.end)}, ${Math.round(done * 100)}% closed">
           <i class="g-fill" style="width:${done * 100}%"></i>${width >= 18 ? `<span>${fmt(ph.start)} – ${fmt(ph.end)}</span>` : ""}</button>
@@ -3362,7 +3368,7 @@ function renderDrawer() {
   const tk = $("#d-key"); if (tk) tk.onchange = () => { if (tk.value) state.tasks.forEach(x => { if (x.key === tk.value) delete x.key; }); if (tk.value) t.key = tk.value; else delete t.key; save(); render(); };
   const mi = $("#d-mile"); if (mi) mi.onchange = () => { t.milestone = mi.checked; save(); render(); };
   root.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => { ui.ask = { task: t.id, who: b.dataset.ask, sent: false }; renderAsk(); });
-  root.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [key, id] = b.dataset.rm.split(":"); t[key] = t[key].filter(x => x !== id); log(`removed ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
+  root.querySelectorAll("[data-rm]").forEach(b => b.onclick = e => { e.stopPropagation(); const [key, id] = b.dataset.rm.split(":"); t[key] = t[key].filter(x => x !== id); log(`removed ${person(id).name} as ${key === "coworkers" ? "coworker" : "requester"} on “${t.title}”`, t.id); save(); render(); });
 
   const ab = $("#d-addsub-btn"); if (ab) ab.onclick = () => { ui.addSub = true; render(); $("#d-subtitle")?.focus(); };
   const as = $("#d-addsub"); if (as) as.onsubmit = e => { e.preventDefault(); const v = $("#d-subtitle").value.trim(); if (v) { addTask(t.phase, t.id, v); ui.addSub = true; render(); $("#d-subtitle")?.focus(); } };
@@ -3383,8 +3389,7 @@ function peopleField(t, key, edit) {
   const chip = id => { const p = person(id); return `<span class="chip ${p.side === "buyer" ? "chip-b" : ""}">${esc(p.name)}${edit && key !== "owner" ? `<button type="button" data-rm="${key}:${id}" aria-label="Remove ${esc(p.name)}">×</button>` : ""}</span>`; };
   const open = ui.picker && ui.picker.key === key;
   return `<div class="pfield ${edit ? "" : "ro"} ${open ? "open" : ""}" data-pfield="${key}">
-    <div class="pf-box">${ids.map(chip).join("")}${!ids.length && !edit ? `<span class="none">None</span>` : ""}
-      ${edit ? `<button type="button" class="pf-add" data-pf-open="${key}" aria-expanded="${open}" aria-label="${key === "owner" ? "Change owner" : `Add to ${PF_LABEL[key]}`}">${key === "owner" ? "Change" : ids.length ? "+ Add" : "+ Add someone"}</button>` : ""}</div>
+    <div class="pf-box ${edit ? "pf-trigger" : ""}" ${edit ? `data-pf-open="${key}" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="${open}" aria-label="${key === "owner" ? "Change owner" : `Add to ${PF_LABEL[key]}`}"` : ""}>${ids.map(chip).join("")}${!ids.length ? (edit ? `<span class="pf-placeholder">None selected</span>` : `<span class="none">None</span>`) : ""}${edit ? `<span class="pf-caret" aria-hidden="true">▾</span>` : ""}</div>
     ${open ? `<div class="pf-pop" role="dialog" aria-label="${PF_LABEL[key]}"><input class="pf-search" id="pf-q" placeholder="Search by name, title or email" autocomplete="off" value="${esc(ui.picker.q || "")}"><div class="pf-list" id="pf-list" role="listbox">${pickerList(t, key, ui.picker.q || "")}</div></div>` : ""}
   </div>`;
 }
@@ -3419,6 +3424,7 @@ function pickPerson(t, key, val) {
   save(); render();
 }
 function wirePicker(root, t) {
+  root.querySelectorAll("[data-pf-open]").forEach(b => b.onkeydown = e => { if ((e.key === "Enter" || e.key === " ") && e.target === b) { e.preventDefault(); b.click(); } });
   root.querySelectorAll("[data-pf-open]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pfOpen; ui.picker = ui.picker && ui.picker.key === k ? null : { key: k, q: "" }; if (ui.picker && IN_APP && !LINK && !state._demo && canAddPeople("buyer")) loadPeopleOptions(); render(); });
   const q = root.querySelector("#pf-q"); if (!q) return;
   const key = ui.picker.key, list = root.querySelector("#pf-list");
