@@ -1,0 +1,553 @@
+{
+  "id": "plroles1",
+  "data": {
+    "id": "plroles1",
+    "opp": {
+      "name": "Acme Demo",
+      "stage": "",
+      "amount": null
+    },
+    "seq": 1008,
+    "demo": {
+      "anchor": "2026-10-21"
+    },
+    "setup": {
+      "dates": false,
+      "hidden": false,
+      "internal": false
+    },
+    "tasks": [
+      {
+        "id": "x1",
+        "due": "2026-10-01",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph1",
+        "title": "Kick-off call with the customer team",
+        "parent": null,
+        "shared": true,
+        "status": "Closed",
+        "updates": [
+          {
+            "at": "2026-10-01",
+            "by": "u1",
+            "text": "Great kick-off, everyone attended."
+          }
+        ],
+        "closedAt": "2026-10-01",
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": true,
+        "recipients": []
+      },
+      {
+        "id": "x2",
+        "due": "2026-10-06",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph1",
+        "title": "Set up the pilot workspace",
+        "parent": null,
+        "shared": true,
+        "status": "Closed",
+        "updates": [],
+        "closedAt": "2026-10-06",
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x3",
+        "due": "2026-10-14",
+        "key": "demo",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph1",
+        "title": "Demo to the executive sponsor",
+        "parent": null,
+        "shared": true,
+        "status": "Closed",
+        "updates": [],
+        "closedAt": "2026-10-14",
+        "coworkers": [
+          "c1"
+        ],
+        "createdBy": "u1",
+        "milestone": true,
+        "recipients": []
+      },
+      {
+        "id": "x4",
+        "due": "2026-10-23",
+        "desc": "",
+        "owner": "c2",
+        "phase": "ph1",
+        "title": "Collect pilot feedback",
+        "parent": null,
+        "shared": true,
+        "status": "In progress",
+        "updates": [
+          {
+            "at": "2026-10-20",
+            "by": "c2",
+            "text": "Two more users want to join the pilot."
+          }
+        ],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c2",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x5",
+        "due": "2026-10-16",
+        "desc": "Margin sign-off with finance.",
+        "owner": "u1",
+        "phase": "ph1",
+        "title": "Internal pricing approval",
+        "parent": null,
+        "shared": false,
+        "status": "In progress",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x6",
+        "due": "2026-10-28",
+        "desc": "Vendor security review, SOC 2 report attached.",
+        "owner": "c3",
+        "phase": "ph2",
+        "title": "Return the security questionnaire",
+        "parent": null,
+        "shared": true,
+        "status": "In progress",
+        "updates": [
+          {
+            "at": "2026-10-19",
+            "by": "u1",
+            "text": "Sent the SOC 2 report."
+          }
+        ],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c3",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x7",
+        "due": "2026-11-05",
+        "desc": "",
+        "owner": "c2",
+        "phase": "ph2",
+        "title": "SSO and SCIM set-up",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c2",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x8",
+        "due": "2026-11-10",
+        "desc": "",
+        "owner": "c2",
+        "phase": "ph2",
+        "title": "Technical architecture review",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c2",
+        "milestone": true,
+        "recipients": []
+      },
+      {
+        "id": "x9",
+        "due": "2026-11-12",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph2",
+        "title": "Penetration test summary",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x10",
+        "due": "2026-11-17",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph3",
+        "title": "Business case workshop",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": true,
+        "recipients": []
+      },
+      {
+        "id": "x11",
+        "due": "2026-11-20",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph3",
+        "title": "Send the commercial proposal",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x12",
+        "due": "2026-11-26",
+        "desc": "",
+        "owner": "c1",
+        "phase": "ph3",
+        "title": "Executive approval",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x13",
+        "due": "2026-12-01",
+        "desc": "",
+        "owner": "c3",
+        "phase": "ph4",
+        "title": "Review the agreement",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c3",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x14",
+        "due": "2026-12-04",
+        "desc": "",
+        "owner": "c3",
+        "phase": "ph4",
+        "title": "Confirm the data privacy terms",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c3",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x15",
+        "due": "2026-12-11",
+        "key": "sign",
+        "desc": "",
+        "owner": "c1",
+        "phase": "ph4",
+        "title": "Signature",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c1",
+        "milestone": true,
+        "recipients": []
+      },
+      {
+        "id": "x16",
+        "due": "2026-12-15",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph5",
+        "title": "Project kick-off",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x17",
+        "due": "2026-12-18",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph5",
+        "title": "Admin training",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x18",
+        "due": "2027-01-12",
+        "key": "live",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph5",
+        "title": "Go-live",
+        "parent": null,
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": true,
+        "recipients": []
+      },
+      {
+        "id": "x19",
+        "due": "2026-10-30",
+        "desc": "",
+        "owner": "c3",
+        "phase": "ph2",
+        "title": "Fill in the questionnaire sections",
+        "parent": "x6",
+        "shared": true,
+        "status": "Open",
+        "updates": [],
+        "closedAt": null,
+        "coworkers": [],
+        "createdBy": "c3",
+        "milestone": false,
+        "recipients": []
+      },
+      {
+        "id": "x20",
+        "due": "2026-10-19",
+        "desc": "",
+        "owner": "u1",
+        "phase": "ph2",
+        "title": "Collect SOC 2 report",
+        "parent": "x6",
+        "shared": true,
+        "status": "Closed",
+        "updates": [],
+        "closedAt": "2026-10-19",
+        "coworkers": [],
+        "createdBy": "u1",
+        "milestone": false,
+        "recipients": []
+      }
+    ],
+    "title": "Acme Demo close plan",
+    "domain": "acme-demo.example",
+    "people": [
+      {
+        "id": "u1",
+        "name": "Sam Seller",
+        "role": "Account lead",
+        "side": "seller",
+        "email": "sam.seller@seller-demo.example",
+        "title": "Task AI user",
+        "access": {
+          "level": "all",
+          "create": true,
+          "manage": false
+        },
+        "invite": {
+          "status": "member"
+        }
+      },
+      {
+        "id": "c1",
+        "name": "Hannah Silva",
+        "role": "Economic buyer",
+        "side": "buyer",
+        "email": "hannah.silva@acme-demo.example",
+        "title": "VP Operations",
+        "access": {
+          "level": "all",
+          "create": false,
+          "manage": false
+        },
+        "invite": {
+          "status": "active",
+          "openedAt": "2026-10-20"
+        }
+      },
+      {
+        "id": "c2",
+        "name": "Lukas Fischer",
+        "role": "Economic buyer",
+        "side": "buyer",
+        "email": "lukas.fischer@acme-demo.example",
+        "title": "Head of IT",
+        "access": {
+          "level": "all",
+          "create": false,
+          "manage": false
+        },
+        "invite": {
+          "status": "none"
+        }
+      },
+      {
+        "id": "c3",
+        "name": "Olivia Costa",
+        "role": "Legal",
+        "side": "buyer",
+        "email": "olivia.costa@acme-demo.example",
+        "title": "Counsel",
+        "access": {
+          "level": "all",
+          "create": false,
+          "manage": false
+        },
+        "invite": {
+          "status": "none"
+        }
+      },
+      {
+        "id": "c4",
+        "name": "Marcus Lindgren",
+        "role": "Legal",
+        "side": "buyer",
+        "email": "marcus.lindgren@acme-demo.example",
+        "title": "Analyst",
+        "access": {
+          "level": "all",
+          "create": false,
+          "manage": false
+        },
+        "invite": {
+          "status": "none"
+        }
+      }
+    ],
+    "phases": [
+      {
+        "id": "ph1",
+        "end": "2026-10-23",
+        "goal": "Show the value in a hands-on pilot.",
+        "name": "Evaluation",
+        "start": "2026-09-28"
+      },
+      {
+        "id": "ph2",
+        "end": "2026-11-13",
+        "goal": "Confirm the technical and security fit.",
+        "name": "Validation",
+        "start": "2026-10-19"
+      },
+      {
+        "id": "ph3",
+        "end": "2026-11-27",
+        "goal": "Agree the business case and pricing.",
+        "name": "Business Validation",
+        "start": "2026-11-09"
+      },
+      {
+        "id": "ph4",
+        "end": "2026-12-11",
+        "goal": "Contract and data privacy terms signed.",
+        "name": "Legal & Paperwork",
+        "start": "2026-11-23"
+      },
+      {
+        "id": "ph5",
+        "end": "2027-01-15",
+        "goal": "Kick-off, training and first success checkpoint.",
+        "name": "Go Live",
+        "start": "2026-12-14"
+      }
+    ],
+    "status": "draft",
+    "account": "Acme Demo",
+    "activity": [
+      {
+        "at": "2026-10-21",
+        "by": "u1",
+        "task": null,
+        "text": "filled the plan with demo content: 4 made-up names, 0 roles, 8 tasks"
+      },
+      {
+        "at": "2026-10-14",
+        "by": "u1",
+        "task": "t1",
+        "text": "removed a status update by Hannah Silva on \u201cComplete the security questionnaire\u201d"
+      },
+      {
+        "at": "2026-10-14",
+        "by": "u1",
+        "task": "t1",
+        "text": "set \u201cComplete the security questionnaire\u201d to In progress"
+      },
+      {
+        "at": "2026-10-14",
+        "by": "u1",
+        "task": "t1",
+        "text": "closed \u201cComplete the security questionnaire\u201d"
+      },
+      {
+        "at": "2026-10-13",
+        "by": "u1",
+        "task": "t1",
+        "text": "set \u201cComplete the security questionnaire\u201d to In progress"
+      }
+    ],
+    "accountId": null,
+    "planOwners": {
+      "buyer": null,
+      "seller": "u1"
+    }
+  },
+  "title": "Acme Demo close plan",
+  "account": "Acme Demo",
+  "version": 18,
+  "deleted_at": null,
+  "member_emails": [
+    "sam.seller@seller-demo.example"
+  ]
+}
