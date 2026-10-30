@@ -1,0 +1,96 @@
+{
+  "table": "org_charts",
+  "note": "Fictional row. data = {nodes, roots, issues, salesforceBase}; edited holds the version changed in Task AI (null when not edited).",
+  "row": {
+    "id": "opportunity:006DEMO000000001AAA",
+    "kind": "opportunity",
+    "sfdc_id": "006DEMO000000001AAA",
+    "name": "Acme Demo - Platform rollout",
+    "account_id": "001DEMO000000001AAA",
+    "account_name": "Acme Demo",
+    "data": {
+      "nodes": [
+        {
+          "key": "003DEMO000000001AAA",
+          "roleId": "a1B000000000001AAA",
+          "name": "Hannah Silva",
+          "title": "VP Operations",
+          "email": "hannah.silva@acme-demo.example",
+          "phone": "",
+          "description": "Owns the budget",
+          "provisional": false,
+          "type": "Champion",
+          "dealRole": "Economic Buyer",
+          "powerBase": true,
+          "parentKey": null,
+          "order": 0,
+          "linkedin": "",
+          "left": false,
+          "openTasks": 2,
+          "activity": 3,
+          "photo": ""
+        },
+        {
+          "key": "003DEMO000000002AAA",
+          "roleId": "a1B000000000002AAA",
+          "name": "Lukas Fischer",
+          "title": "Head of IT",
+          "email": "lukas.fischer@acme-demo.example",
+          "phone": "",
+          "description": "Security gatekeeper",
+          "provisional": false,
+          "type": "Influencer",
+          "dealRole": "Technical Buyer",
+          "powerBase": false,
+          "parentKey": "003DEMO000000001AAA",
+          "order": 0,
+          "linkedin": "",
+          "left": false,
+          "openTasks": 1,
+          "activity": 2,
+          "photo": ""
+        },
+        {
+          "key": "003DEMO000000003AAA",
+          "roleId": "a1B000000000003AAA",
+          "name": "Olivia Costa",
+          "title": "Counsel",
+          "email": "olivia.costa@acme-demo.example",
+          "phone": "",
+          "description": "",
+          "provisional": false,
+          "type": "Neutral",
+          "dealRole": "Legal",
+          "powerBase": false,
+          "parentKey": "003DEMO000000001AAA",
+          "order": 1,
+          "linkedin": "",
+          "left": false,
+          "openTasks": 1,
+          "activity": 0,
+          "photo": ""
+        }
+      ],
+      "roots": [
+        "003DEMO000000001AAA"
+      ],
+      "issues": [],
+      "salesforceBase": "https://example.my.salesforce.com"
+    },
+    "people": 3,
+    "imported_at": "2026-10-20T09:00:00Z",
+    "edited": null,
+    "edited_at": null,
+    "logo": "",
+    "influences": [
+      {
+        "id": "inf1",
+        "from": "003DEMO000000002AAA",
+        "to": "003DEMO000000001AAA",
+        "strength": 2,
+        "tone": "positive",
+        "note": "Hannah follows his security view"
+      }
+    ]
+  }
+}
