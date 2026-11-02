@@ -73,3 +73,12 @@ test("a Site Admin can switch Close Plans and Org charts on for a collaborator",
   assert.equal(canViewOrgCharts({ email: "a", role: "readonly" }), false);
   assert.equal(canViewOrgCharts({ email: "a", role: "area_admin" }), true);
 });
+
+import { canViewVoiceAudit } from "../app/lib/permissions";
+test("canViewVoiceAudit: site admins, and anyone a site admin switched it on for; not area admins by role", () => {
+  assert.equal(canViewVoiceAudit({ role: "site_admin" }), true);
+  assert.equal(canViewVoiceAudit({ role: "collaborator", canViewVoiceAudit: true }), true);
+  assert.equal(canViewVoiceAudit({ role: "area_admin" }), false);
+  assert.equal(canViewVoiceAudit({ role: "collaborator" }), false);
+  assert.equal(canViewVoiceAudit(null), false);
+});

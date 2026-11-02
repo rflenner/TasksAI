@@ -1,3 +1,4 @@
+import { canViewVoiceAudit } from "../../../lib/permissions";
 import { currentActor } from "../../../lib/session";
 import { formatSessionsAsText, loadVoiceAuditSessions, parseAuditFilters } from "../../../lib/voice-audit";
 
@@ -5,13 +6,13 @@ import { formatSessionsAsText, loadVoiceAuditSessions, parseAuditFilters } from 
 // chat/email or saving as a file (requested 2026-10-02: "I think we should
 // be able to copy or download it so I can better share with you"). Built
 // from the exact same loader + filters as the /voice-audit page, so what's
-// exported is what's on screen. Site admins only, same as the page — it
+// exported is what's on screen. Site admins and people they switched it on for, same as the page — it
 // holds transcripts of what people said. `session=<key>` exports just
 // that one session; `download=1` makes the browser save it as a file.
 export async function GET(request: Request) {
   const actor = await currentActor();
   if (!actor) return Response.json({ error: "Sign in required" }, { status: 401 });
-  if (actor.role !== "site_admin") return Response.json({ error: "Only site admins can export the voice audit trail" }, { status: 403 });
+  if (!canViewVoiceAudit(actor)) return Response.json({ error: "You do not have access to the voice audit trail" }, { status: 403 });
 
   const url = new URL(request.url);
   const filters = parseAuditFilters(Object.fromEntries(url.searchParams));
