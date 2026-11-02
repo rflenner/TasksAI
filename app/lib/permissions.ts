@@ -1,5 +1,5 @@
 export type Role = "site_admin" | "area_admin" | "collaborator" | "readonly";
-export type Actor = { id?: number; email: string; name: string; role: Role; status: string; canInvite?: boolean; canCreatePlans?: boolean; canViewOrgCharts?: boolean; projects: string[]; meetings: string[]; topics: string[] };
+export type Actor = { id?: number; email: string; name: string; role: Role; status: string; canInvite?: boolean; canCreatePlans?: boolean; canViewOrgCharts?: boolean; canViewVoiceAudit?: boolean; projects: string[]; meetings: string[]; topics: string[] };
 export type TaskScope = { owner?: unknown; collaborators?: unknown; recipients?: unknown; project?: unknown; recurringMeeting?: unknown; recurring_meeting?: unknown; topic?: unknown };
 const list = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : [];
 export function relationship(task: TaskScope, actor: Actor) { const collaborators=list(task.collaborators),recipients=list(task.recipients); return actor.role === "readonly" ? recipients.includes(actor.name) : task.owner === actor.name || collaborators.includes(actor.name) || recipients.includes(actor.name); }
@@ -25,3 +25,7 @@ export function canSeeTask(task: TaskScope, actor: Actor) { if (actor.role === "
 export function canCreateTask(task: TaskScope, actor: Actor) { return actor.role !== "readonly" && inScope(task, actor) && !(actor.role === "collaborator" && !hasExplicitScope(actor) && !relationship(task, actor)); }
 export function canWriteTask(task: TaskScope, actor: Actor) { return actor.role !== "readonly" && canSeeTask(task, actor); }
 export function mayManageRole(actor: Actor | null, targetRole: Role) { return Boolean(actor && (actor.role === "site_admin" || actor.role === "area_admin" && actor.canInvite && targetRole !== "site_admin" && targetRole !== "area_admin")); }
+
+// The voice audit trail holds transcripts of what colleagues said, so it is not open to everyone: Site Admins, and
+// anyone a Site Admin switched it on for (Admin > Users). Area Admins do not get it through their role.
+export const canViewVoiceAudit = (actor: { role: Role; canViewVoiceAudit?: boolean } | null) => Boolean(actor && (actor.role === "site_admin" || actor.canViewVoiceAudit));

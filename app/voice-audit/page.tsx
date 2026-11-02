@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentActor } from "../lib/session";
+import { canViewVoiceAudit } from "../lib/permissions";
 import {
   isChange, loadVoiceAuditSessions, sessionPlanName, sessionSurface, SURFACE_NAME, parseAuditFilters, rowLabel, summarizeSessions, VOICE_AUDIT_MAX_ROWS, VOICE_AUDIT_RETENTION_DAYS,
   type RowTone, type VoiceAuditRecord,
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 // Voice audit trail viewer (requested 2026-10-02, "an audit trail what was
 // created, changed and done by voice live and what did not ... good to
-// debug"). Site admins only: it holds transcripts of what people said.
+// debug"). Site admins, and people they switched it on for under Admin > Users: it holds transcripts of what people said.
 const TONE: Record<RowTone, string> = {
   good: "bg-[#e4f4eb] text-[#25784b]", neutral: "bg-[#f2f4f7] text-[#202735]",
   warn: "bg-[#fff1d6] text-[#9b5d00]", bad: "bg-[#fdf1ef] text-[#a84235]", info: "bg-[#eef3fa] text-[#173f76]",
@@ -56,7 +57,7 @@ function Details({ row }: { row: VoiceAuditRecord }) {
 export default async function VoiceAuditPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const actor = await currentActor();
   if (!actor) redirect("/login?returnTo=/voice-audit");
-  if (actor.role !== "site_admin") redirect("/");
+  if (!canViewVoiceAudit(actor)) redirect("/");
 
   // The same filters + loader the export endpoint uses, so "Copy as text"
   // is exactly what's on this page.
